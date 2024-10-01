@@ -27,14 +27,12 @@ fn main() {
                 return;
             }
         }
+    } else if let Err(e) = repo::check_current_directory() {
+        eprintln!("Error: {}", e);
+        return;
     } else {
-        if let Err(e) = repo::check_current_directory() {
-            eprintln!("Error: {}", e);
-            return;
-        } else {
-            let repo_path = PathBuf::from(".");
-            filelist::list_files_in_repo(&repo_path)
-        }
+        let repo_path = PathBuf::from(".");
+        filelist::list_files_in_repo(&repo_path)
     };
 
     let grouped_files = filelist::group_files_by_directory(file_list);
