@@ -10,6 +10,7 @@ url = "2.2"
 clap = { version = "4.1", features = ["derive"] }
 regex = "1"
 ignore = "0.4"
+xml = "0.8"
 
 [features]
 default = []

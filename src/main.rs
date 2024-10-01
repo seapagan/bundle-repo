@@ -2,9 +2,13 @@ use clap::Parser;
 use git2::{Cred, FetchOptions, RemoteCallbacks, Repository};
 use ignore::WalkBuilder;
 use regex::Regex;
+use std::fs::File;
+use std::io::{self};
 use std::path::PathBuf;
 use tempfile::tempdir;
 use url::Url;
+use xml::writer::Error as XmlError;
+use xml::writer::{EmitterConfig, XmlEvent};
 
 /// Simple program to clone a GitHub repo or check if the current folder is a repo
 #[derive(Parser)]
@@ -24,33 +28,72 @@ struct Cli {
 fn main() {
     let args = Cli::parse();
 
-    if let Some(repo_input) = args.repo {
+    let file_list = if let Some(repo_input) = args.repo {
         // Handle the case where the user specifies a repo to clone
         match clone_repo(&repo_input, args.token.as_deref()) {
             Ok(repo_folder) => {
                 // List files in the cloned repository
-                let files = list_files_in_repo(&repo_folder);
-                for file in files {
-                    println!("{}", file);
-                }
+                list_files_in_repo(&repo_folder)
             }
             Err(e) => {
                 eprintln!("Error: {}", e);
+                return;
             }
         }
     } else {
         // Handle the case where no arguments are provided, check if the current directory is a repo
         if let Err(e) = check_current_directory() {
             eprintln!("Error: {}", e);
+            return;
         } else {
             // If successful, list files in the current directory
             let repo_path = PathBuf::from("."); // Current directory
-            let files = list_files_in_repo(&repo_path);
-            for file in files {
-                println!("{}", file);
-            }
+            list_files_in_repo(&repo_path)
         }
+    };
+
+    // Call the function to output the file list as XML
+    if let Err(e) = output_filelist_as_xml(file_list) {
+        eprintln!("Failed to write XML: {}", e);
+    } else {
+        println!("File list successfully written to filelist.xml");
     }
+}
+
+/// Outputs the list of files in XML format under <filelist>.
+fn output_filelist_as_xml(file_list: Vec<String>) -> Result<(), io::Error> {
+    let file = File::create("filelist.xml")?;
+    let mut writer = EmitterConfig::new()
+        .perform_indent(true)
+        .create_writer(file);
+
+    // Start the root element <filelist>
+    writer
+        .write(XmlEvent::start_element("filelist"))
+        .map_err(map_xml_error)?;
+
+    for file_path in file_list {
+        // Write each file path as a <file> element with path attribute
+        writer
+            .write(XmlEvent::start_element("file").attr("path", &file_path))
+            .map_err(map_xml_error)?;
+
+        writer
+            .write(XmlEvent::end_element())
+            .map_err(map_xml_error)?; // Corrected way to end an element
+    }
+
+    // End the root element </filelist>
+    writer
+        .write(XmlEvent::end_element())
+        .map_err(map_xml_error)?;
+
+    Ok(())
+}
+
+/// Helper function to map xml::writer::Error to std::io::Error
+fn map_xml_error(err: XmlError) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, err)
 }
 
 /// Validates if the input is a valid URL or a shorthand and clones the repository accordingly.
