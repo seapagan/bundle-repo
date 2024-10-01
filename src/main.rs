@@ -5,11 +5,18 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self};
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 use tempfile::tempdir;
 use url::Url;
 use xml::writer::Error as XmlError;
 use xml::writer::{EmitterConfig, XmlEvent};
+
+/// A struct to represent a folder node in the hierarchy.
+#[derive(Default)]
+struct FolderNode {
+    files: Vec<String>,                      // Files directly in this folder
+    subfolders: HashMap<String, FolderNode>, // Subfolders
+}
 
 /// Simple program to clone a GitHub repo or check if the current folder is a repo
 #[derive(Parser)]
@@ -64,10 +71,42 @@ fn main() {
     }
 }
 
-/// Outputs the list of files in XML format under <filelist>.
+/// Recursive function to output folders and their contents as XML.
+fn write_folder_to_xml(
+    writer: &mut xml::writer::EventWriter<File>,
+    folder_name: &str,
+    folder_node: &FolderNode,
+) -> Result<(), io::Error> {
+    // Start the folder element
+    writer
+        .write(XmlEvent::start_element("folder").attr("name", folder_name))
+        .map_err(map_xml_error)?;
+
+    // Write all files in this folder
+    for file in &folder_node.files {
+        writer
+            .write(XmlEvent::start_element("file").attr("path", file))
+            .map_err(map_xml_error)?;
+        writer
+            .write(XmlEvent::end_element())
+            .map_err(map_xml_error)?; // Close <file> tag
+    }
+
+    // Recursively write each subfolder
+    for (subfolder_name, subfolder_node) in &folder_node.subfolders {
+        write_folder_to_xml(writer, subfolder_name, subfolder_node)?;
+    }
+
+    // Close the folder element
+    writer
+        .write(XmlEvent::end_element())
+        .map_err(map_xml_error)?; // Close <folder> tag
+
+    Ok(())
+}
+
 /// Outputs the list of files in a nested XML format under <filelist>.
-/// Folders are represented as <folder> elements containing <file> elements.
-fn output_filelist_as_xml(grouped_files: HashMap<String, Vec<String>>) -> Result<(), io::Error> {
+fn output_filelist_as_xml(root_folder: FolderNode) -> Result<(), io::Error> {
     let file = File::create("filelist.xml")?;
     let mut writer = EmitterConfig::new()
         .perform_indent(true)
@@ -78,59 +117,47 @@ fn output_filelist_as_xml(grouped_files: HashMap<String, Vec<String>>) -> Result
         .write(XmlEvent::start_element("filelist"))
         .map_err(map_xml_error)?;
 
-    // Iterate over each folder and its files
-    for (folder, files) in grouped_files {
-        writer
-            .write(XmlEvent::start_element("folder").attr("name", &folder))
-            .map_err(map_xml_error)?;
+    // Write the root folder (empty string represents the root directory)
+    write_folder_to_xml(&mut writer, "root", &root_folder)?;
 
-        // Write each file inside the folder
-        for file_path in files {
-            writer
-                .write(XmlEvent::start_element("file").attr("path", &file_path))
-                .map_err(map_xml_error)?;
-            writer
-                .write(XmlEvent::end_element())
-                .map_err(map_xml_error)?; // Close <file> tag
-        }
-
-        writer
-            .write(XmlEvent::end_element())
-            .map_err(map_xml_error)?; // Close <folder> tag
-    }
-
+    // End the root element </filelist>
     writer
         .write(XmlEvent::end_element())
-        .map_err(map_xml_error)?; // Close <filelist> tag
+        .map_err(map_xml_error)?;
 
     Ok(())
-}
-
-/// Group the list of files by their parent directory.
-fn group_files_by_directory(file_list: Vec<String>) -> HashMap<String, Vec<String>> {
-    let mut grouped_files: HashMap<String, Vec<String>> = HashMap::new();
-
-    for file_path in file_list {
-        if let Some((folder, file)) = file_path.rsplit_once('/') {
-            grouped_files
-                .entry(folder.to_string())
-                .or_default()
-                .push(file.to_string());
-        } else {
-            // If no folder, put the file in the root directory
-            grouped_files
-                .entry(String::from("root"))
-                .or_default()
-                .push(file_path);
-        }
-    }
-
-    grouped_files
 }
 
 /// Helper function to map xml::writer::Error to std::io::Error
 fn map_xml_error(err: XmlError) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
+}
+
+/// Groups files into a hierarchical folder structure.
+fn group_files_by_directory(file_list: Vec<String>) -> FolderNode {
+    let mut root = FolderNode::default();
+
+    for file_path in file_list {
+        let path = PathBuf::from(&file_path); // Store the PathBuf in a variable
+        let path_components: Vec<Component> = path.components().collect(); // Now the components are borrowed from a longer-lived PathBuf
+
+        let mut current_node = &mut root;
+
+        // Iterate through the components of the path, building the folder structure
+        for component in path_components.iter().take(path_components.len() - 1) {
+            let folder_name = component.as_os_str().to_string_lossy().to_string();
+            current_node = current_node.subfolders.entry(folder_name).or_default();
+        }
+
+        // Add the file to the last folder node
+        if let Some(file_name) = path_components.last() {
+            current_node
+                .files
+                .push(file_name.as_os_str().to_string_lossy().to_string());
+        }
+    }
+
+    root
 }
 
 /// Validates if the input is a valid URL or a shorthand and clones the repository accordingly.
