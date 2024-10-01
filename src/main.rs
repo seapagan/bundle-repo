@@ -1,5 +1,6 @@
 use clap::Parser;
 use git2::{Cred, FetchOptions, RemoteCallbacks, Repository};
+use ignore::WalkBuilder;
 use regex::Regex;
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -25,19 +26,35 @@ fn main() {
 
     if let Some(repo_input) = args.repo {
         // Handle the case where the user specifies a repo to clone
-        if let Err(e) = clone_repo(&repo_input, args.token.as_deref()) {
-            eprintln!("Error: {}", e);
+        match clone_repo(&repo_input, args.token.as_deref()) {
+            Ok(repo_folder) => {
+                // List files in the cloned repository
+                let files = list_files_in_repo(&repo_folder);
+                for file in files {
+                    println!("{}", file);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+            }
         }
     } else {
         // Handle the case where no arguments are provided, check if the current directory is a repo
         if let Err(e) = check_current_directory() {
             eprintln!("Error: {}", e);
+        } else {
+            // If successful, list files in the current directory
+            let repo_path = PathBuf::from("."); // Current directory
+            let files = list_files_in_repo(&repo_path);
+            for file in files {
+                println!("{}", file);
+            }
         }
     }
 }
 
 /// Validates if the input is a valid URL or a shorthand and clones the repository accordingly.
-fn clone_repo(repo_input: &str, token: Option<&str>) -> Result<(), git2::Error> {
+fn clone_repo(repo_input: &str, token: Option<&str>) -> Result<PathBuf, git2::Error> {
     let repo_url = if is_valid_url(repo_input) {
         repo_input.to_string()
     } else if is_valid_shorthand(repo_input) {
@@ -71,9 +88,9 @@ fn clone_repo(repo_input: &str, token: Option<&str>) -> Result<(), git2::Error> 
     builder.fetch_options(fetch_options);
 
     match builder.clone(&repo_url, &repo_folder) {
-        Ok(repo) => {
-            println!("Successfully cloned into {}", repo.path().display());
-            Ok(())
+        Ok(_) => {
+            println!("Successfully cloned into {}", repo_folder.display());
+            Ok(repo_folder) // Return the repo folder
         }
         Err(e) => {
             eprintln!("Failed to clone: {}", e);
@@ -108,4 +125,46 @@ fn check_current_directory() -> Result<(), git2::Error> {
             Err(git2::Error::from_str("Not a git repository"))
         }
     }
+}
+
+/// Function to list all files in the repository while ignoring `.git` and respecting `.gitignore`.
+fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
+    let mut file_list = Vec::new();
+
+    // Create a walker that respects .gitignore and excludes the .git folder
+    let walker = WalkBuilder::new(repo_path)
+        .hidden(false) // Include hidden files unless excluded by .gitignore
+        .git_ignore(true) // Enable .gitignore
+        .git_exclude(true) // Respect global gitignore
+        .git_global(true) // Respect user-level .gitignore
+        .build();
+
+    for result in walker {
+        match result {
+            Ok(entry) => {
+                let path = entry.path();
+
+                // Check if the path is within the `.git` folder by examining the relative path
+                if let Ok(relative_path) = path.strip_prefix(repo_path) {
+                    if relative_path.components().any(|c| c.as_os_str() == ".git") {
+                        // Skip any file or folder inside `.git`
+                        continue;
+                    }
+                }
+
+                // Only store files
+                if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                    file_list.push(
+                        path.strip_prefix(repo_path)
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string(),
+                    );
+                }
+            }
+            Err(err) => eprintln!("Error: {}", err),
+        }
+    }
+
+    file_list
 }
