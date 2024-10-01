@@ -1,56 +1,80 @@
 <?xml version="1.0" encoding="utf-8"?>
 <filelist>
-  <file path="pyproject.toml" />
-  <file path="SECURITY.md" />
-  <file path="mkdocs.yml" />
-  <file path="CONTRIBUTING.md" />
-  <file path="docs/css/extra.css" />
-  <file path="docs/CNAME" />
-  <file path="docs/hooks/google_style_notes.py" />
-  <file path="docs/hooks/__init__.py" />
-  <file path="docs/contributing/index.md" />
-  <file path="docs/changelog/index.md" />
-  <file path="docs/guide/fields.md" />
-  <file path="docs/guide/transactions.md" />
-  <file path="docs/guide/exceptions.md" />
-  <file path="docs/guide/data-ops.md" />
-  <file path="docs/guide/guide.md" />
-  <file path="docs/guide/debug.md" />
-  <file path="docs/guide/tables.md" />
-  <file path="docs/guide/ordering.md" />
-  <file path="docs/guide/models.md" />
-  <file path="docs/guide/filtering.md" />
-  <file path="docs/guide/connecting.md" />
-  <file path="docs/quickstart.md" />
-  <file path="docs/installation.md" />
-  <file path="docs/index.md" />
-  <file path="docs/todo/index.md" />
-  <file path="README.md" />
-  <file path="CODE_OF_CONDUCT.md" />
-  <file path="demo.py" />
-  <file path="tests/test_execute_sql.py" />
-  <file path="tests/test_helpers.py" />
-  <file path="tests/test_drop_table.py" />
-  <file path="tests/test_sqliter.py" />
-  <file path="tests/test_optional_fields.py" />
-  <file path="tests/test_order_method.py" />
-  <file path="tests/test_model.py" />
-  <file path="tests/test_optional_fields_complex_model.py" />
-  <file path="tests/test_advanced_filters.py" />
-  <file path="tests/test_query.py" />
-  <file path="tests/__init__.py" />
-  <file path="tests/test_debug_logging.py" />
-  <file path="tests/test_execeptions.py" />
-  <file path="tests/conftest.py" />
-  <file path="CHANGELOG.md" />
-  <file path=".pre-commit-config.yaml" />
-  <file path="sqliter/model/model.py" />
-  <file path="sqliter/model/__init__.py" />
-  <file path="sqliter/query/__init__.py" />
-  <file path="sqliter/query/query.py" />
-  <file path="sqliter/exceptions.py" />
-  <file path="sqliter/constants.py" />
-  <file path="sqliter/sqliter.py" />
-  <file path="sqliter/helpers.py" />
-  <file path="sqliter/__init__.py" />
+  <folder name="docs/todo">
+    <file path="index.md" />
+  </folder>
+  <folder name="root">
+    <file path="pyproject.toml" />
+    <file path="SECURITY.md" />
+    <file path="mkdocs.yml" />
+    <file path="CONTRIBUTING.md" />
+    <file path="README.md" />
+    <file path="CODE_OF_CONDUCT.md" />
+    <file path="demo.py" />
+    <file path="CHANGELOG.md" />
+    <file path=".pre-commit-config.yaml" />
+  </folder>
+  <folder name="docs/contributing">
+    <file path="index.md" />
+  </folder>
+  <folder name="docs/guide">
+    <file path="fields.md" />
+    <file path="transactions.md" />
+    <file path="exceptions.md" />
+    <file path="data-ops.md" />
+    <file path="guide.md" />
+    <file path="debug.md" />
+    <file path="tables.md" />
+    <file path="ordering.md" />
+    <file path="models.md" />
+    <file path="filtering.md" />
+    <file path="connecting.md" />
+  </folder>
+  <folder name="docs">
+    <file path="CNAME" />
+    <file path="quickstart.md" />
+    <file path="installation.md" />
+    <file path="index.md" />
+  </folder>
+  <folder name="tests">
+    <file path="test_execute_sql.py" />
+    <file path="test_helpers.py" />
+    <file path="test_drop_table.py" />
+    <file path="test_sqliter.py" />
+    <file path="test_optional_fields.py" />
+    <file path="test_order_method.py" />
+    <file path="test_model.py" />
+    <file path="test_optional_fields_complex_model.py" />
+    <file path="test_advanced_filters.py" />
+    <file path="test_query.py" />
+    <file path="__init__.py" />
+    <file path="test_debug_logging.py" />
+    <file path="test_execeptions.py" />
+    <file path="conftest.py" />
+  </folder>
+  <folder name="sqliter/query">
+    <file path="__init__.py" />
+    <file path="query.py" />
+  </folder>
+  <folder name="docs/changelog">
+    <file path="index.md" />
+  </folder>
+  <folder name="docs/css">
+    <file path="extra.css" />
+  </folder>
+  <folder name="sqliter/model">
+    <file path="model.py" />
+    <file path="__init__.py" />
+  </folder>
+  <folder name="sqliter">
+    <file path="exceptions.py" />
+    <file path="constants.py" />
+    <file path="sqliter.py" />
+    <file path="helpers.py" />
+    <file path="__init__.py" />
+  </folder>
+  <folder name="docs/hooks">
+    <file path="google_style_notes.py" />
+    <file path="__init__.py" />
+  </folder>
 </filelist>

@@ -2,6 +2,7 @@ use clap::Parser;
 use git2::{Cred, FetchOptions, RemoteCallbacks, Repository};
 use ignore::WalkBuilder;
 use regex::Regex;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self};
 use std::path::PathBuf;
@@ -52,8 +53,11 @@ fn main() {
         }
     };
 
-    // Call the function to output the file list as XML
-    if let Err(e) = output_filelist_as_xml(file_list) {
+    // Group the files by their directory
+    let grouped_files = group_files_by_directory(file_list);
+
+    // Call the function to output the file list as nested XML
+    if let Err(e) = output_filelist_as_xml(grouped_files) {
         eprintln!("Failed to write XML: {}", e);
     } else {
         println!("File list successfully written to filelist.xml");
@@ -61,7 +65,9 @@ fn main() {
 }
 
 /// Outputs the list of files in XML format under <filelist>.
-fn output_filelist_as_xml(file_list: Vec<String>) -> Result<(), io::Error> {
+/// Outputs the list of files in a nested XML format under <filelist>.
+/// Folders are represented as <folder> elements containing <file> elements.
+fn output_filelist_as_xml(grouped_files: HashMap<String, Vec<String>>) -> Result<(), io::Error> {
     let file = File::create("filelist.xml")?;
     let mut writer = EmitterConfig::new()
         .perform_indent(true)
@@ -72,23 +78,54 @@ fn output_filelist_as_xml(file_list: Vec<String>) -> Result<(), io::Error> {
         .write(XmlEvent::start_element("filelist"))
         .map_err(map_xml_error)?;
 
-    for file_path in file_list {
-        // Write each file path as a <file> element with path attribute
+    // Iterate over each folder and its files
+    for (folder, files) in grouped_files {
         writer
-            .write(XmlEvent::start_element("file").attr("path", &file_path))
+            .write(XmlEvent::start_element("folder").attr("name", &folder))
             .map_err(map_xml_error)?;
+
+        // Write each file inside the folder
+        for file_path in files {
+            writer
+                .write(XmlEvent::start_element("file").attr("path", &file_path))
+                .map_err(map_xml_error)?;
+            writer
+                .write(XmlEvent::end_element())
+                .map_err(map_xml_error)?; // Close <file> tag
+        }
 
         writer
             .write(XmlEvent::end_element())
-            .map_err(map_xml_error)?; // Corrected way to end an element
+            .map_err(map_xml_error)?; // Close <folder> tag
     }
 
-    // End the root element </filelist>
     writer
         .write(XmlEvent::end_element())
-        .map_err(map_xml_error)?;
+        .map_err(map_xml_error)?; // Close <filelist> tag
 
     Ok(())
+}
+
+/// Group the list of files by their parent directory.
+fn group_files_by_directory(file_list: Vec<String>) -> HashMap<String, Vec<String>> {
+    let mut grouped_files: HashMap<String, Vec<String>> = HashMap::new();
+
+    for file_path in file_list {
+        if let Some((folder, file)) = file_path.rsplit_once('/') {
+            grouped_files
+                .entry(folder.to_string())
+                .or_default()
+                .push(file.to_string());
+        } else {
+            // If no folder, put the file in the root directory
+            grouped_files
+                .entry(String::from("root"))
+                .or_default()
+                .push(file_path);
+        }
+    }
+
+    grouped_files
 }
 
 /// Helper function to map xml::writer::Error to std::io::Error
