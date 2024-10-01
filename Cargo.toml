@@ -1,7 +1,16 @@
 [package]
 name = "bundle_repo"
 version = "0.1.0"
+description = "Pack a local or remote Git Repository for LLM Consumption."
 edition = "2021"
+authors = ["Grant Ramsay <seapagan@gmail.com>"]
+license = "MIT"
+homepage = "https://seapagan.github.io/bundle-repo/"
+exclude = [".github/*", "docs/*"]
+
+[[bin]]
+name = "bundlerepo"
+path = "src/main.rs"
 
 [dependencies]
 git2 = "0.19"
