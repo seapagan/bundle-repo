@@ -127,11 +127,28 @@ fn check_current_directory() -> Result<(), git2::Error> {
     }
 }
 
-/// Function to list all files in the repository while ignoring `.git` and respecting `.gitignore`.
+/// Function to list all files in the repository while ignoring `.git`, `.github`, and respecting `.gitignore`,
+/// as well as ignoring custom file patterns.
 fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
     let mut file_list = Vec::new();
 
-    // Create a walker that respects .gitignore and excludes the .git folder
+    // Define the static list of custom files and folders to ignore (case-insensitive)
+    let ignore_patterns = vec![
+        r"(?i)\.gitignore",        // .gitignore (case-insensitive)
+        r"(?i)renovate\.json",     // renovate.json (case-insensitive)
+        r"(?i)requirement.*\.txt", // requirement*.txt (case-insensitive)
+        r"(?i)\.lock$",            // *.lock (case-insensitive)
+        r"(?i)license(\..*)?",     // license*.* (or without extension, case-insensitive)
+        r"(?i)todo\..*",           // todo.* (case-insensitive)
+        r"(?i)\.github",           // .github folder (case-insensitive)
+        r"(?i)\.git",              // .git folder (case-insensitive)
+    ];
+    let regex_list: Vec<Regex> = ignore_patterns
+        .into_iter()
+        .map(|pattern| Regex::new(pattern).unwrap())
+        .collect();
+
+    // Create a walker that respects .gitignore
     let walker = WalkBuilder::new(repo_path)
         .hidden(false) // Include hidden files unless excluded by .gitignore
         .git_ignore(true) // Enable .gitignore
@@ -144,11 +161,13 @@ fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
             Ok(entry) => {
                 let path = entry.path();
 
-                // Check if the path is within the `.git` folder by examining the relative path
+                // Check if the path is within a folder we want to exclude (e.g., `.git` or `.github`)
                 if let Ok(relative_path) = path.strip_prefix(repo_path) {
-                    if relative_path.components().any(|c| c.as_os_str() == ".git") {
-                        // Skip any file or folder inside `.git`
-                        continue;
+                    let relative_path_str = relative_path.to_string_lossy().to_string();
+
+                    // Check if the path matches any folder or file ignore patterns
+                    if regex_list.iter().any(|re| re.is_match(&relative_path_str)) {
+                        continue; // Skip if it matches the ignore pattern
                     }
                 }
 
