@@ -74,14 +74,8 @@ fn main() {
 /// Recursive function to output folders and their contents as XML.
 fn write_folder_to_xml(
     writer: &mut xml::writer::EventWriter<File>,
-    folder_name: &str,
     folder_node: &FolderNode,
 ) -> Result<(), io::Error> {
-    // Start the folder element
-    writer
-        .write(XmlEvent::start_element("folder").attr("name", folder_name))
-        .map_err(map_xml_error)?;
-
     // Write all files in this folder
     for file in &folder_node.files {
         writer
@@ -94,13 +88,14 @@ fn write_folder_to_xml(
 
     // Recursively write each subfolder
     for (subfolder_name, subfolder_node) in &folder_node.subfolders {
-        write_folder_to_xml(writer, subfolder_name, subfolder_node)?;
+        writer
+            .write(XmlEvent::start_element("folder").attr("name", subfolder_name))
+            .map_err(map_xml_error)?;
+        write_folder_to_xml(writer, subfolder_node)?; // Recurse into the subfolder
+        writer
+            .write(XmlEvent::end_element())
+            .map_err(map_xml_error)?; // Close <folder> tag
     }
-
-    // Close the folder element
-    writer
-        .write(XmlEvent::end_element())
-        .map_err(map_xml_error)?; // Close <folder> tag
 
     Ok(())
 }
@@ -112,15 +107,15 @@ fn output_filelist_as_xml(root_folder: FolderNode) -> Result<(), io::Error> {
         .perform_indent(true)
         .create_writer(file);
 
-    // Start the root element <filelist>
+    // Start the root element <repository_structure>
     writer
-        .write(XmlEvent::start_element("filelist"))
+        .write(XmlEvent::start_element("repository_structure"))
         .map_err(map_xml_error)?;
 
-    // Write the root folder (empty string represents the root directory)
-    write_folder_to_xml(&mut writer, "root", &root_folder)?;
+    // Write the folder contents directly without a "root" folder
+    write_folder_to_xml(&mut writer, &root_folder)?;
 
-    // End the root element </filelist>
+    // End the root element </repository_structure>
     writer
         .write(XmlEvent::end_element())
         .map_err(map_xml_error)?;
