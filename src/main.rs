@@ -14,16 +14,18 @@ use xml::writer::{EmitterConfig, XmlEvent};
 /// A struct to represent a folder node in the hierarchy.
 #[derive(Default)]
 struct FolderNode {
-    files: Vec<String>,                      // Files directly in this folder
+    files: Vec<String>, // Files directly in this folder
     subfolders: HashMap<String, FolderNode>, // Subfolders
 }
 
-/// Simple program to clone a GitHub repo or check if the current folder is a repo
 #[derive(Parser)]
 #[command(name = "Repopack Clone Tool")]
 #[command(author = "Your Name")]
 #[command(version = "1.0")]
-#[command(about = "Clone a repo or check if the current folder is a Git repo", long_about = None)]
+#[command(
+    about = "Clone a repo or check if the current folder is a Git repo",
+    long_about = None
+)]
 struct Cli {
     /// GitHub repo URL or shorthand (user/repo)
     repo: Option<String>,
@@ -49,7 +51,8 @@ fn main() {
             }
         }
     } else {
-        // Handle the case where no arguments are provided, check if the current directory is a repo
+        // Handle the case where no arguments are provided, check if the current
+        // directory is a repo
         if let Err(e) = check_current_directory() {
             eprintln!("Error: {}", e);
             return;
@@ -89,9 +92,12 @@ fn write_folder_to_xml(
     // Recursively write each subfolder
     for (subfolder_name, subfolder_node) in &folder_node.subfolders {
         writer
-            .write(XmlEvent::start_element("folder").attr("name", subfolder_name))
+            .write(
+                XmlEvent::start_element("folder").attr("name", subfolder_name),
+            )
             .map_err(map_xml_error)?;
-        write_folder_to_xml(writer, subfolder_node)?; // Recurse into the subfolder
+        // Recurse into the subfolder
+        write_folder_to_xml(writer, subfolder_node)?;
         writer
             .write(XmlEvent::end_element())
             .map_err(map_xml_error)?; // Close <folder> tag
@@ -133,15 +139,21 @@ fn group_files_by_directory(file_list: Vec<String>) -> FolderNode {
     let mut root = FolderNode::default();
 
     for file_path in file_list {
-        let path = PathBuf::from(&file_path); // Store the PathBuf in a variable
-        let path_components: Vec<Component> = path.components().collect(); // Now the components are borrowed from a longer-lived PathBuf
+        // Store the PathBuf in a variable
+        let path = PathBuf::from(&file_path);
+        // Now the components are borrowed from a longer-lived PathBuf
+        let path_components: Vec<Component> = path.components().collect();
 
         let mut current_node = &mut root;
 
-        // Iterate through the components of the path, building the folder structure
-        for component in path_components.iter().take(path_components.len() - 1) {
-            let folder_name = component.as_os_str().to_string_lossy().to_string();
-            current_node = current_node.subfolders.entry(folder_name).or_default();
+        // Iterate through the components of the path, building the folder
+        // structure
+        for component in path_components.iter().take(path_components.len() - 1)
+        {
+            let folder_name =
+                component.as_os_str().to_string_lossy().to_string();
+            current_node =
+                current_node.subfolders.entry(folder_name).or_default();
         }
 
         // Add the file to the last folder node
@@ -155,8 +167,12 @@ fn group_files_by_directory(file_list: Vec<String>) -> FolderNode {
     root
 }
 
-/// Validates if the input is a valid URL or a shorthand and clones the repository accordingly.
-fn clone_repo(repo_input: &str, token: Option<&str>) -> Result<PathBuf, git2::Error> {
+/// Validates if the input is a valid URL or a shorthand and clones the
+/// repository accordingly.
+fn clone_repo(
+    repo_input: &str,
+    token: Option<&str>,
+) -> Result<PathBuf, git2::Error> {
     let repo_url = if is_valid_url(repo_input) {
         repo_input.to_string()
     } else if is_valid_shorthand(repo_input) {
@@ -170,7 +186,9 @@ fn clone_repo(repo_input: &str, token: Option<&str>) -> Result<PathBuf, git2::Er
     let mut repo_folder = PathBuf::from(temp_dir.path());
     repo_folder.push("repo_clone"); // Create subfolder.
 
-    let _persisted_dir = temp_dir.into_path(); // Prevent deletion of the temp directory.
+    // Prevent deletion of the temp directory. This is purely for development
+    // purposes, in the final version, the directory should be deleted.
+    let _persisted_dir = temp_dir.into_path();
 
     let mut callbacks = RemoteCallbacks::new();
     callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
@@ -178,13 +196,15 @@ fn clone_repo(repo_input: &str, token: Option<&str>) -> Result<PathBuf, git2::Er
             // Use the provided token for HTTPS cloning
             Cred::userpass_plaintext("oauth2", token)
         } else {
-            // Provide empty credentials for public repositories if no token is provided
+            // Provide empty credentials for public repositories if no token is
+            // provided
             Cred::userpass_plaintext("", "")
         }
     });
 
     let mut fetch_options = FetchOptions::new();
-    fetch_options.remote_callbacks(callbacks).depth(1); // Add the callback to fetch options
+    // Add the callback to fetch options
+    fetch_options.remote_callbacks(callbacks).depth(1);
 
     let mut builder = git2::build::RepoBuilder::new();
     builder.fetch_options(fetch_options);
@@ -229,21 +249,23 @@ fn check_current_directory() -> Result<(), git2::Error> {
     }
 }
 
-/// Function to list all files in the repository while ignoring `.git`, `.github`, and respecting `.gitignore`,
-/// as well as ignoring custom file patterns.
+/// Function to list all files in the repository while ignoring `.git`,
+/// `.github`, and respecting `.gitignore`, as well as ignoring custom file
+/// patterns.
 fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
     let mut file_list = Vec::new();
 
-    // Define the static list of custom files and folders to ignore (case-insensitive)
+    // Define the static list of custom files and folders to ignore
+    // (case-insensitive)
     let ignore_patterns = vec![
-        r"(?i)\.gitignore",        // .gitignore (case-insensitive)
-        r"(?i)renovate\.json",     // renovate.json (case-insensitive)
-        r"(?i)requirement.*\.txt", // requirement*.txt (case-insensitive)
-        r"(?i)\.lock$",            // *.lock (case-insensitive)
-        r"(?i)license(\..*)?",     // license*.* (or without extension, case-insensitive)
-        r"(?i)todo\..*",           // todo.* (case-insensitive)
-        r"(?i)\.github",           // .github folder (case-insensitive)
-        r"(?i)\.git",              // .git folder (case-insensitive)
+        r"(?i)\.gitignore",        // .gitignore
+        r"(?i)renovate\.json",     // renovate.json
+        r"(?i)requirement.*\.txt", // requirement*.txt
+        r"(?i)\.lock$",            // *.lock
+        r"(?i)license(\..*)?",     // license*.* (or without extension)
+        r"(?i)todo\..*",           // todo.*
+        r"(?i)\.github",           // .github folder
+        r"(?i)\.git",              // .git folder
     ];
     let regex_list: Vec<Regex> = ignore_patterns
         .into_iter()
@@ -263,12 +285,17 @@ fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
             Ok(entry) => {
                 let path = entry.path();
 
-                // Check if the path is within a folder we want to exclude (e.g., `.git` or `.github`)
+                // Check if the path is within a folder we want to exclude
                 if let Ok(relative_path) = path.strip_prefix(repo_path) {
-                    let relative_path_str = relative_path.to_string_lossy().to_string();
+                    let relative_path_str =
+                        relative_path.to_string_lossy().to_string();
 
-                    // Check if the path matches any folder or file ignore patterns
-                    if regex_list.iter().any(|re| re.is_match(&relative_path_str)) {
+                    // Check if the path matches any folder or file ignore
+                    // patterns
+                    if regex_list
+                        .iter()
+                        .any(|re| re.is_match(&relative_path_str))
+                    {
                         continue; // Skip if it matches the ignore pattern
                     }
                 }
