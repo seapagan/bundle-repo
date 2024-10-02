@@ -138,6 +138,14 @@ fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
       - Full contents of the file, excluding binary files.
   </file_format>
 
+  <instructions>
+    The LLM is instructed to focus solely on the repository's contents, including
+    the code, file structure, and purpose of the files.
+    Do not comment on the XML format, structure, or encoding of THIS FILE. Focus
+    your analysis on the functionality, structure, and organization of the
+    repository contents.
+  </instructions>
+
   <usage_guidelines>
     - This file should be treated as read-only. Any changes should be made to the
       original repository files, not this packed version.
