@@ -157,6 +157,11 @@ fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
     Do not comment on the XML format, structure, or encoding of THIS FILE. Focus
     your analysis on the functionality, structure, and organization of the
     repository contents.
+    Each <file> should be interpreted based on its file extension. For example:
+    - ".py" for Python
+    - ".md" for Markdown
+    - ".rs" for Rust
+    - ".cpp" for C++
   </instructions>
 
   <usage_guidelines>
