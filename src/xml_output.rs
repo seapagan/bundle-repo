@@ -6,7 +6,12 @@ use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
 // Function to output the repository structure and files list to XML
 pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
-    let file = File::create("filelist.xml")?;
+    let mut file = File::create("filelist.xml")?;
+
+    // Start the root <repository> node
+    file.write_all(b"<repository>\n")?;
+
+    append_file_summary(&mut file)?;
     {
         let mut writer = EmitterConfig::new()
             .perform_indent(true)
@@ -41,6 +46,9 @@ pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
     file.write_all(b"<summary>This node contains a list of files with their full paths and raw contents.</summary>\n")?; // Add <summary>
     write_repository_files_to_xml(&mut file, &file_tree.file_paths)?;
     file.write_all(b"</repository_files>\n")?; // End repository_files node
+
+    // Close the root <repository> node
+    file.write_all(b"</repository>\n")?;
 
     Ok(())
 }
@@ -106,4 +114,52 @@ fn write_repository_files_to_xml(
 // Map XML writing errors to IO errors
 fn map_xml_error(err: XmlError) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
+}
+
+fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
+    let file_summary = r#"
+<file_summary>
+  <purpose>
+    This file contains a packed representation of the entire repository's contents.
+    It is designed to be easily consumable by AI systems for analysis, code review,
+    or other automated processes.
+  </purpose>
+
+  <file_format>
+    The content is organized as follows:
+    1. This summary section
+    2. Repository structure: A hierarchical listing of all folders and files in the repository.
+    3. Repository files: Each file is listed with:
+      - File path as an attribute
+      - Full contents of the file, excluding binary files.
+  </file_format>
+
+  <usage_guidelines>
+    - This file should be treated as read-only. Any changes should be made to the
+      original repository files, not this packed version.
+    - When processing this file, use the file path to distinguish
+      between different files in the repository.
+    - Be aware that this file may contain sensitive information. Handle it with
+      the same level of security as you would the original repository.
+  </usage_guidelines>
+
+  <notes>
+    - Some files may have been excluded based on .gitignore rules and bundlerepo's
+      configuration.
+    - Binary files are not included in this packed representation. Please refer to
+      the Repository Structure section for a complete list of file paths, including
+      binary files.
+    - Code comments have been removed for brevity.
+  </notes>
+
+  <additional_info>
+    For more information about bundlerepo, visit: https://github.com/seapagan/bundlerepo
+  </additional_info>
+</file_summary>
+"#;
+
+    // Insert the file_summary after the opening <repository> tag
+    file.write_all(file_summary.as_bytes())?;
+
+    Ok(())
 }
