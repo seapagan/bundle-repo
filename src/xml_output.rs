@@ -8,6 +8,9 @@ use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
     let mut file = File::create("filelist.xml")?;
 
+    // Manually add the XML declaration at the very top of the file
+    file.write_all(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")?;
+
     // Start the root <repository> node
     file.write_all(b"<repository>\n")?;
 
@@ -15,6 +18,7 @@ pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
     {
         let mut writer = EmitterConfig::new()
             .perform_indent(true)
+            .write_document_declaration(false) // Disable automatic XML declaration
             .create_writer(file); // Use file directly, not &mut file
 
         // Ensure repository_structure is written first
@@ -153,9 +157,10 @@ fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
   </notes>
 
   <additional_info>
-    For more information about bundlerepo, visit: https://github.com/seapagan/bundlerepo
+    For more information about bundlerepo, visit: https://github.com/seapagan/bundle-repo
   </additional_info>
 </file_summary>
+
 "#;
 
     // Insert the file_summary after the opening <repository> tag
