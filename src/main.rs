@@ -48,6 +48,6 @@ fn main() {
     if let Err(e) = xml_output::output_repo_as_xml(file_tree, &base_path) {
         eprintln!("Failed to write XML: {}", e);
     } else {
-        println!("File list successfully written to packed-repo.xml");
+        println!("Repository Dump successfully written to packed-repo.xml");
     }
 }
