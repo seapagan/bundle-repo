@@ -9,6 +9,11 @@ pub struct FolderNode {
     pub subfolders: HashMap<String, FolderNode>,
 }
 
+pub struct FileTree {
+    pub folder_node: FolderNode,
+    pub file_paths: Vec<String>, // Add a list to track file paths for <repository_files>
+}
+
 pub fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
     let mut file_list = Vec::new();
 
@@ -65,8 +70,10 @@ pub fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
     file_list
 }
 
-pub fn group_files_by_directory(file_list: Vec<String>) -> FolderNode {
+pub fn group_files_by_directory(file_list: Vec<String>) -> FileTree {
     let mut root = FolderNode::default();
+    let mut file_paths = Vec::new(); // To store the relative paths of each file
+
     for file_path in file_list {
         let path = PathBuf::from(&file_path);
         let path_components: Vec<Component> = path.components().collect();
@@ -84,7 +91,12 @@ pub fn group_files_by_directory(file_list: Vec<String>) -> FolderNode {
             current_node
                 .files
                 .push(file_name.as_os_str().to_string_lossy().to_string());
+            file_paths.push(file_path); // Store the full relative path
         }
     }
-    root
+
+    FileTree {
+        folder_node: root,
+        file_paths,
+    }
 }

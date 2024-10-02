@@ -32,8 +32,8 @@ fn main() {
         filelist::list_files_in_repo(&repo_path)
     };
 
-    let grouped_files = filelist::group_files_by_directory(file_list);
-    if let Err(e) = xml_output::output_filelist_as_xml(grouped_files) {
+    let file_tree = filelist::group_files_by_directory(file_list);
+    if let Err(e) = xml_output::output_filelist_as_xml(file_tree) {
         eprintln!("Failed to write XML: {}", e);
     } else {
         println!("File list successfully written to filelist.xml");
