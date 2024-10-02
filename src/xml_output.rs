@@ -1,5 +1,5 @@
 use crate::filelist::{FileTree, FolderNode};
-use std::fs::{read_to_string, File};
+use std::fs::{metadata, read_to_string, File};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use xml::writer::Error as XmlError;
@@ -96,7 +96,6 @@ fn write_folder_to_xml(
 }
 
 // Function to write the repository files with contents to XML without escaping
-// Function to write the repository files with contents to XML without escaping
 fn write_repository_files_to_xml(
     file: &mut File,
     file_paths: &Vec<String>,
@@ -105,18 +104,37 @@ fn write_repository_files_to_xml(
     for file_path in file_paths {
         let full_path = base_path.join(file_path); // Construct the full path
 
-        // Write the <file> node with the path attribute
-        file.write_all(format!(r#"<file path="{}">"#, file_path).as_bytes())?;
-        file.write_all(b"\n")?; // Proper newline after the opening <file> tag
+        // Calculate file size
+        let file_size = metadata(&full_path)?.len();
 
         // Read the contents of the file using the full path
         match read_to_string(&full_path) {
             Ok(contents) => {
+                // Calculate number of lines
+                let line_count = contents.lines().count();
+
+                // Write the <file> node with size and line attributes
+                file.write_all(
+                    format!(
+                        r#"<file path="{}" size="{}" lines="{}">"#,
+                        file_path, file_size, line_count
+                    )
+                    .as_bytes(),
+                )?;
+                file.write_all(b"\n")?; // Proper newline after the opening <file> tag
+
                 // Write raw file contents without escaping
                 file.write_all(contents.as_bytes())?;
             }
             Err(err) => {
                 eprintln!("Failed to read {}: {}", full_path.display(), err);
+                file.write_all(
+                    format!(
+                        r#"<file path="{}" size="0" lines="0">"#,
+                        file_path
+                    )
+                    .as_bytes(),
+                )?;
                 file.write_all(b"<!-- Failed to read file -->")?;
             }
         }
