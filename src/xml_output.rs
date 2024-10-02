@@ -5,8 +5,8 @@ use xml::writer::Error as XmlError;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
 // Function to output the repository structure and files list to XML
-pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
-    let mut file = File::create("filelist.xml")?;
+pub fn output_repo_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
+    let mut file = File::create("packed-repo.xml")?;
 
     // Manually add the XML declaration at the very top of the file
     file.write_all(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")?;
@@ -40,7 +40,7 @@ pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
     } // End the writer block here
 
     // Reopen the file for manual writing without the EventWriter
-    let mut file = File::options().append(true).open("filelist.xml")?;
+    let mut file = File::options().append(true).open("packed-repo.xml")?;
 
     // Add two <CR> between the repository_structure and repository_files nodes
     file.write_all(b"\n\n")?; // Two carriage returns for clarity
