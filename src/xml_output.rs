@@ -1,11 +1,16 @@
 use crate::filelist::{FileTree, FolderNode};
 use std::fs::{read_to_string, File};
 use std::io::{self, Write};
+use std::path::PathBuf;
 use xml::writer::Error as XmlError;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
 // Function to output the repository structure and files list to XML
-pub fn output_repo_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
+// Function to output the repository structure and files list to XML
+pub fn output_repo_as_xml(
+    file_tree: FileTree,
+    base_path: &PathBuf,
+) -> Result<(), io::Error> {
     let mut file = File::create("packed-repo.xml")?;
 
     // Manually add the XML declaration at the very top of the file
@@ -45,10 +50,14 @@ pub fn output_repo_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
     // Add two <CR> between the repository_structure and repository_files nodes
     file.write_all(b"\n\n")?; // Two carriage returns for clarity
 
-    // Write repository_files node manually using file I/O to avoid escaping
+    // Pass the base_path to ensure correct file paths are used
     file.write_all(b"<repository_files>\n")?; // Start repository_files node
     file.write_all(b"<summary>This node contains a list of files with their full paths and raw contents.</summary>\n")?; // Add <summary>
-    write_repository_files_to_xml(&mut file, &file_tree.file_paths)?;
+    write_repository_files_to_xml(
+        &mut file,
+        &file_tree.file_paths,
+        base_path,
+    )?;
     file.write_all(b"</repository_files>\n")?; // End repository_files node
 
     // Close the root <repository> node
@@ -87,23 +96,27 @@ fn write_folder_to_xml(
 }
 
 // Function to write the repository files with contents to XML without escaping
+// Function to write the repository files with contents to XML without escaping
 fn write_repository_files_to_xml(
     file: &mut File,
     file_paths: &Vec<String>,
+    base_path: &PathBuf, // Pass the base_path to handle correct file paths
 ) -> Result<(), io::Error> {
     for file_path in file_paths {
+        let full_path = base_path.join(file_path); // Construct the full path
+
         // Write the <file> node with the path attribute
         file.write_all(format!(r#"<file path="{}">"#, file_path).as_bytes())?;
         file.write_all(b"\n")?; // Proper newline after the opening <file> tag
 
-        // Read the contents of the file
-        match read_to_string(&file_path) {
+        // Read the contents of the file using the full path
+        match read_to_string(&full_path) {
             Ok(contents) => {
                 // Write raw file contents without escaping
                 file.write_all(contents.as_bytes())?;
             }
             Err(err) => {
-                eprintln!("Failed to read {}: {}", file_path, err);
+                eprintln!("Failed to read {}: {}", full_path.display(), err);
                 file.write_all(b"<!-- Failed to read file -->")?;
             }
         }
