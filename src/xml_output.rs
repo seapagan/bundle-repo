@@ -16,6 +16,14 @@ pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
         writer
             .write(XmlEvent::start_element("repository_structure"))
             .map_err(map_xml_error)?;
+        writer
+            .write(XmlEvent::start_element("summary"))
+            .map_err(map_xml_error)?;
+        writer.write(XmlEvent::characters("This node contains the hierarchical structure of the repository's files and folders.")).map_err(map_xml_error)?;
+        writer
+            .write(XmlEvent::end_element())
+            .map_err(map_xml_error)?; // Close <summary>
+
         write_folder_to_xml(&mut writer, &file_tree.folder_node)?;
         writer
             .write(XmlEvent::end_element())
@@ -30,6 +38,7 @@ pub fn output_filelist_as_xml(file_tree: FileTree) -> Result<(), io::Error> {
 
     // Write repository_files node manually using file I/O to avoid escaping
     file.write_all(b"<repository_files>\n")?; // Start repository_files node
+    file.write_all(b"<summary>This node contains a list of files with their full paths and raw contents.</summary>\n")?; // Add <summary>
     write_repository_files_to_xml(&mut file, &file_tree.file_paths)?;
     file.write_all(b"</repository_files>\n")?; // End repository_files node
 
