@@ -1,7 +1,7 @@
 use crate::filelist::{FileTree, FolderNode};
 use std::fs::{metadata, read_to_string, File};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::Path;
 use tiktoken_rs::CoreBPE;
 use xml::writer::Error as XmlError;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
@@ -11,7 +11,7 @@ use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 pub fn output_repo_as_xml(
     output_file: &str,
     file_tree: FileTree,
-    base_path: &PathBuf,
+    base_path: &Path,
     tokenizer: &CoreBPE,
 ) -> Result<(), io::Error> {
     let mut file = File::create(output_file)?;
@@ -109,7 +109,7 @@ fn write_folder_to_xml(
 fn write_repository_files_to_xml(
     file: &mut File,
     file_paths: &Vec<String>,
-    base_path: &PathBuf, // Pass the base_path to handle correct file paths
+    base_path: &Path, // Pass the base_path to handle correct file paths
 ) -> Result<(), io::Error> {
     for file_path in file_paths {
         let full_path = base_path.join(file_path); // Construct the full path
