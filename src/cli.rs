@@ -15,13 +15,24 @@ pub struct Flags {
                 for a Git repository."
     )]
     pub repo: Option<String>,
+
     #[arg(
         long = "file",
         short = 'f',
-        help = "Filename to save the bundle as (default: 'packed-repo.xml')",
+        help = "Filename to save the bundle as.",
         default_value = "packed-repo.xml"
     )]
     pub output_file: String,
+
+    #[arg(
+        long = "model",
+        short = 'm',
+        default_value = "gpt4o",
+        help = "Model to use for tokenization. Supported \
+                models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2'"
+    )]
+    pub model: String,
+
     #[arg(
         short,
         long,
@@ -63,4 +74,13 @@ pub fn version_info() -> String {
         \nReleased under the MIT license by {}\n",
         version, description, authors
     )
+}
+
+pub fn show_header() {
+    println!(
+        "\nBundleRepo Version {}, \u{00A9} 2024 {}",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_AUTHORS")
+    );
+    println!("\n{}\n", env!("CARGO_PKG_DESCRIPTION"))
 }

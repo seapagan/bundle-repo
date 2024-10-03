@@ -17,3 +17,8 @@
 - allow to specify which branch of the repository to use, use the default
   branch if not specified. Local repositories should be able to have the same,
   but default to the checked-out branch.
+- ensure that the tool works on Windows, Linux, and macOS.
+- ensure that binary files are not included in the output.
+- allow to work with non-git repositories (local only obviously).
+- see if we can find a library to tokenize other models such as `Claude` or
+  `Gemini`

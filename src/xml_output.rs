@@ -1,7 +1,8 @@
 use crate::filelist::{FileTree, FolderNode};
 use std::fs::{metadata, read_to_string, File};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::Path;
+use tiktoken_rs::CoreBPE;
 use xml::writer::Error as XmlError;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
@@ -10,8 +11,9 @@ use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 pub fn output_repo_as_xml(
     output_file: &str,
     file_tree: FileTree,
-    base_path: &PathBuf,
-) -> Result<(), io::Error> {
+    base_path: &Path,
+    tokenizer: &CoreBPE,
+) -> Result<(usize, u64, usize), io::Error> {
     let mut file = File::create(output_file)?;
 
     // Manually add the XML declaration at the very top of the file
@@ -64,7 +66,17 @@ pub fn output_repo_as_xml(
     // Close the root <repository> node
     file.write_all(b"</repository>\n")?;
 
-    Ok(())
+    // Number of files processed
+    let number_of_files = file_tree.file_paths.len();
+
+    // Total size of the output file
+    let total_size = file.metadata()?.len(); // Total size of the written XML file
+
+    // Now let's calculate the token count of the generated XML
+    let xml_content = std::fs::read_to_string(output_file)?; // Read the XML file
+    let token_count = tokenizer.encode_ordinary(&xml_content).len(); // Count the tokens
+
+    Ok((number_of_files, total_size, token_count))
 }
 
 // Function to write folder structure to XML using EventWriter
@@ -100,7 +112,7 @@ fn write_folder_to_xml(
 fn write_repository_files_to_xml(
     file: &mut File,
     file_paths: &Vec<String>,
-    base_path: &PathBuf, // Pass the base_path to handle correct file paths
+    base_path: &Path, // Pass the base_path to handle correct file paths
 ) -> Result<(), io::Error> {
     for file_path in file_paths {
         let full_path = base_path.join(file_path); // Construct the full path

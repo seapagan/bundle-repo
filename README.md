@@ -1,18 +1,34 @@
 
 # BundleRepo <!-- omit in toc -->
 
-**BundleRepo** is a beta tool designed to clone and pack a local or remote Git
-repository into a comprehensive XML file. The packed XML includes detailed
-metadata about each file, such as the size in bytes and the number of lines,
-making it suitable for large language model (LLM) consumption, code analysis,
-and repository review.
+**BundleRepo** is a beta tool designed to clone and pack a local or remote
+(GitHub only for now) Git repository into a comprehensive XML file. The packed
+XML includes detailed metadata about each file, such as the size in bytes and
+the number of lines, making it suitable for large language model (LLM)
+consumption, code analysis, and repository review.
 
 XML was chosen for the file output format since it is very well structured and
 LLM models can easily parse it (better than a plain-text dump).
 
+It is inspired by [Repopack](#acknowledgements) which is a great tool, but is
+written in TypeScript and needs a Node.js environment to run. Eventually this
+project will produce binaries and not need Rust installed to run.
+
+The generated XML metadata and structure are inspired by the output of Repopack
+(a lot of the header text was taken from there), with enhancements that include
+additional file attributes, instructions for the LLM and a more robust
+structure. At this time `xml` output is the only supported output format,
+however future versions may include additional formats. XML was chosen since it
+is very well structured and LLM models can easily parse it (better than a
+plain-text dump).
+
 - [Features](#features)
 - [Usage](#usage)
-- [GitHub Token](#github-token)
+  - [Installation](#installation)
+  - [Running the Tool](#running-the-tool)
+  - [Output File](#output-file)
+  - [Choose Model for Token Count](#choose-model-for-token-count)
+  - [GitHub Token](#github-token)
 - [Help](#help)
 - [Planned Improvements](#planned-improvements)
 - [XML Layout](#xml-layout)
@@ -31,6 +47,9 @@ LLM models can easily parse it (better than a plain-text dump).
   - `size`: file size in bytes
   - `lines`: number of lines in the file
   - Raw file content (not escaped)
+- **Token Count**: Calculates the number of tokens in the final XML file, based
+  on the specified model (default is GPT-4o). Only OpenAI models are supported
+  at this time, though I may add support for others in the future.
 - **XML Output**: Generates an XML file (`packed-repo.xml`) that contains the
   entire repository structure and file details.
 
@@ -40,6 +59,8 @@ This will be available as a binary and from `Crates.io` in the future, but for
 now, you can build it from source. You will need to have
 [Rust](https://www.rust-lang.org/tools/install) installed on your system to
 build the project.
+
+### Installation
 
 1. Clone the project and install dependencies.
 
@@ -57,44 +78,87 @@ build the project.
     sudo mv ./target/release/bundlerepo /usr/local/bin
     ```
 
-3. Run the tool to clone a GitHub repository and generate the packed XML:
+### Running the Tool
 
-    Use the GitHub short form:
+Use the GitHub short form:
 
-    ```bash
-    bundlerepo user_name/repo_name
-    ```
+```bash
+bundlerepo user_name/repo_name
+```
 
-    Use the full URL:
+Use the full URL:
 
-    ```bash
-    bundlerepo https://github.com/user_name/repo_name
-    ```
+```bash
+bundlerepo https://github.com/user_name/repo_name
+```
 
-    Or use the current directory as a repository:
+Or use the current directory:
 
-    ```bash
-    bundlerepo
-    ```
+```bash
+bundlerepo
+```
 
-4. By default, the XML output will be written to `packed-repo.xml`, which
-   contains the hierarchical structure and metadata of the repository files.
-   This can then be passed to an LLM model for analysis (for example, attach the
-   output file to a ChatGPT or Claude prompt). The filename can be changed using
-   the `--file` or `-f` flag:
+> [!IMPORTANT]
+>
+> Only the `https` protocol is supported at this time. The tool will not yet work
+> with `ssh` URLs (ie **not** `git@github.com:seapagan/bundle-repo.git`)
 
-    ```bash
-    bundlerepo user_name/repo_name --file my-repo.xml
-    ```
+> [!NOTE]
+>
+> The tool will actually bundle **any** files in the current directory (unless
+> they are in the hard-coded ignore list).
+> This can probably be useful for bundling any related files that you wish to
+> feed to an AI. However, you may need to edit the `<purpose>` and
+> `<instructions>` nodes in the output XML. I may add a flag to make this easier
+> in the future (`--not-code` or something).
+>
+> However, it still needs to be an actual git repository or the code will exit.
+> I may add a flag to allow non-git repositories in the future.
 
-    The output file will be written to the current directory unless a path is
-    specified:
+### Output File
 
-    ```bash
-    bundlerepo user_name/repo_name --file /path/to/output.xml
-    ```
+By default, the XML output will be written to `packed-repo.xml`, which contains
+the hierarchical structure and metadata of the repository files. This can
+then be passed to an LLM model for analysis (for example, attach the output
+file to a ChatGPT or Claude prompt). The filename can be changed using the
+`--file` or `-f` flag:
 
-## GitHub Token
+```bash
+bundlerepo user_name/repo_name --file my-repo.xml
+```
+
+The output file will be written to the current directory unless a path is
+specified:
+
+```bash
+bundlerepo user_name/repo_name --file /path/to/output.xml
+```
+
+### Choose Model for Token Count
+
+After generating the xml file, the tool gives a count of the number of tokens
+in the file, to give you an idea of context usage and costs. By default it
+calculates the number of tokens for the GPT-4o model, but you can specify
+another model using the `--model` or `-m` flag:
+
+```bash
+bundlerepo user_name/repo_name --model gpt3.5
+```
+
+Valid models are `gpt4o`, `gpt4`, `gpt3.5`, `gpt3` and `gpt2`. It is important
+to use the correct model, as the token count is vastly different between the 3
+and 4 series models.
+
+> [!NOTE]
+>
+> Only OpenAI models are supported at this time, since the code uses the
+> `tiktoken` library from OpenAI to count the tokens. I may add support for
+> other models in the future, if I can find a decent library that supports them.
+>
+> Currently, the count returned by this tool is identical to that returned by
+> their [web app](https://platform.openai.com/tokenizer).
+
+### GitHub Token
 
 For **private repositories**, or to bypass usage restrictions, you can provide a
 GitHub token to access the repository. You can create a token by following the
@@ -106,6 +170,10 @@ Once you have the token, you can pass it to the tool using the `--token` flag:
 ```bash
 bundlerepo user_name/repo_name --token YOUR_GITHUB_TOKEN
 ```
+
+> [!NOTE]
+>
+> This is totally optional if you are only using public repositories.
 
 ## Help
 
@@ -168,13 +236,10 @@ in a variety of scenarios. This is a priority for the next release.
 ## Acknowledgements
 
 **Bundle Repo** is a rewrite of the original
-[Repopack](https://github.com/yamadashy/repopack) project. The generated XML
-metadata and structure are inspired by the output of Repopack, with enhancements
-that include additional file attributes, instructions for the LLM and a more
-robust structure. At this time `xml` output is the only supported output format,
-however future versions may include additional formats. XML was chosen since it
-is very well structured and LLM models can easily parse it (better than a
-plain-text dump).
+[Repopack](https://github.com/yamadashy/repopack) project, though none of the
+source code was used or even looked at. The idea was to create a similar tool
+from scratch, with a few enhancements and improvements. It's also part of my
+journey to learn Rust and build useful tools for all.
 
 ## License
 
