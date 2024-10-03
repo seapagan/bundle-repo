@@ -41,7 +41,7 @@ impl FromStr for Model {
             "gpt3.5" => Ok(Model::GPT3_5),
             "gpt3" => Ok(Model::GPT3),
             "gpt2" => Ok(Model::GPT2),
-            _ => Err(format!("Unsupported model: {}", s)),
+            _ => Err(format!("ERROR: Unsupported model: {}", s)),
         }
     }
 }

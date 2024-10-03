@@ -27,6 +27,16 @@ struct SummaryTable {
 fn main() {
     let args = cli::Flags::parse();
 
+    if args.version {
+        println!("{}", cli::version_info());
+        exit(0);
+    }
+
+    cli::show_header();
+
+    // Parse the tokenizer Model from the CLI argument. We will build the
+    // tokenizer from this and also use it to display the model name in the
+    // summary.
     let model = match args.model.parse::<Model>() {
         Ok(model) => model,
         Err(e) => {
@@ -35,24 +45,16 @@ fn main() {
         }
     };
 
-    if args.version {
-        println!("{}", cli::version_info());
-        exit(0);
-    }
-
-    cli::show_header();
-
-    // Parse the model from the CLI argument
-    let tokenizer = match args.model.parse::<Model>() {
-        Ok(model) => model.to_tokenizer().unwrap(),
+    // Create the tokenizer from the parsed model
+    let tokenizer = match model.to_tokenizer() {
+        Ok(tokenizer) => tokenizer,
         Err(e) => {
-            eprintln!("{}", e);
+            eprintln!("Error: Failed to create tokenizer: {}", e);
             exit(1);
         }
     };
 
     let file_list = if let Some(ref repo_input) = args.repo {
-        // Borrow repo_input
         match repo::clone_repo(repo_input, args.token.as_deref()) {
             Ok(repo_folder) => filelist::list_files_in_repo(&repo_folder),
             Err(e) => {
@@ -71,7 +73,6 @@ fn main() {
     let file_tree = filelist::group_files_by_directory(file_list);
 
     let base_path = if let Some(ref repo_input) = args.repo {
-        // Borrow repo_input here as well
         match repo::clone_repo(repo_input, args.token.as_deref()) {
             Ok(repo_folder) => repo_folder,
             Err(_) => PathBuf::from("."), // Fall back to current directory
