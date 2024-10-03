@@ -12,4 +12,8 @@
   the user that an update is available and where to get).
 - add the ability to specify the output file name.
 - actually remove comments from the generated XML file. Perhaps add a flag to
-  allow the user to choose whether to include comments or not.
+  allow the user to choose whether to include comments or not. Looking at using
+  'tree-sitter' to parse the code and remove comments.
+- allow to specify which branch of the repository to use, use the default
+  branch if not specified. Local repositories should be able to have the same,
+  but default to the checked-out branch.
