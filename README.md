@@ -10,6 +10,18 @@ consumption, code analysis, and repository review.
 XML was chosen for the file output format since it is very well structured and
 LLM models can easily parse it (better than a plain-text dump).
 
+It is inspired by [Repopack](#acknowledgements) which is a great tool, but is
+written in TypeScript and needs a Node.js environment to run. Eventually this
+project will produce binaries and not need Rust installed to run.
+
+The generated XML metadata and structure are inspired by the output of Repopack
+(a lot of the header text was taken from there), with enhancements that include
+additional file attributes, instructions for the LLM and a more robust
+structure. At this time `xml` output is the only supported output format,
+however future versions may include additional formats. XML was chosen since it
+is very well structured and LLM models can easily parse it (better than a
+plain-text dump).
+
 - [Features](#features)
 - [Usage](#usage)
   - [Installation](#installation)
@@ -35,6 +47,9 @@ LLM models can easily parse it (better than a plain-text dump).
   - `size`: file size in bytes
   - `lines`: number of lines in the file
   - Raw file content (not escaped)
+- **Token Count**: Calculates the number of tokens in the final XML file, based
+  on the specified model (default is GPT-4o). Only OpenAI models are supported
+  at this time, though I may add support for others in the future.
 - **XML Output**: Generates an XML file (`packed-repo.xml`) that contains the
   entire repository structure and file details.
 
@@ -221,13 +236,10 @@ in a variety of scenarios. This is a priority for the next release.
 ## Acknowledgements
 
 **Bundle Repo** is a rewrite of the original
-[Repopack](https://github.com/yamadashy/repopack) project. The generated XML
-metadata and structure are inspired by the output of Repopack, with enhancements
-that include additional file attributes, instructions for the LLM and a more
-robust structure. At this time `xml` output is the only supported output format,
-however future versions may include additional formats. XML was chosen since it
-is very well structured and LLM models can easily parse it (better than a
-plain-text dump).
+[Repopack](https://github.com/yamadashy/repopack) project, though none of the
+source code was used or even looked at. The idea was to create a similar tool
+from scratch, with a few enhancements and improvements. It's also part of my
+journey to learn Rust and build useful tools for all.
 
 ## License
 

@@ -20,12 +20,21 @@ mod xml_output;
 
 #[derive(Tabled)]
 struct SummaryTable {
-    metric: &'static str,
+    // metric: &'static str,
+    metric: String,
     value: String,
 }
 
 fn main() {
     let args = cli::Flags::parse();
+
+    let model = match args.model.parse::<Model>() {
+        Ok(model) => model,
+        Err(e) => {
+            eprintln!("{}", e);
+            exit(1);
+        }
+    };
 
     if args.version {
         println!("{}", cli::version_info());
@@ -81,15 +90,15 @@ fn main() {
         Ok((number_of_files, total_size, token_count)) => {
             let summary_data = vec![
                 SummaryTable {
-                    metric: "Total Files processed:",
+                    metric: "Total Files processed:".to_string(),
                     value: number_of_files.to_string(),
                 },
                 SummaryTable {
-                    metric: "Total output size (bytes):",
+                    metric: "Total output size (bytes):".to_string(),
                     value: total_size.to_string(),
                 },
                 SummaryTable {
-                    metric: "Token count:",
+                    metric: format!("Token count ({}):", model.display_name()),
                     value: token_count.to_string(),
                 },
             ];

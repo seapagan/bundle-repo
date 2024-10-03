@@ -18,6 +18,17 @@ impl Model {
             Model::GPT3 | Model::GPT2 => Ok(r50k_base().unwrap()),
         }
     }
+
+    /// Returns a user-friendly name for the model.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Model::GPT4o => "GPT-4o",
+            Model::GPT4 => "GPT-4",
+            Model::GPT3_5 => "GPT-3.5",
+            Model::GPT3 => "GPT-3",
+            Model::GPT2 => "GPT-2",
+        }
+    }
 }
 
 impl FromStr for Model {
