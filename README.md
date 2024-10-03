@@ -77,10 +77,22 @@ build the project.
     bundlerepo
     ```
 
-4. The XML output will be written to `packed-repo.xml`, which contains the
-   hierarchical structure and metadata of the repository files. This can then be
-   passed to an LLM model for analysis (for example, attach the output file to a
-   ChatGPT or Claude prompt).
+4. By default, the XML output will be written to `packed-repo.xml`, which
+   contains the hierarchical structure and metadata of the repository files.
+   This can then be passed to an LLM model for analysis (for example, attach the
+   output file to a ChatGPT or Claude prompt). The filename can be changed using
+   the `--file` or `-f` flag:
+
+    ```bash
+    bundlerepo user_name/repo_name --file my-repo.xml
+    ```
+
+    The output file will be written to the current directory unless a path is
+    specified:
+
+    ```bash
+    bundlerepo user_name/repo_name --file /path/to/output.xml
+    ```
 
 ## GitHub Token
 
@@ -126,8 +138,9 @@ understood by an LLM. Below is an example layout with explanations for each tag:
     </summary>
     <folder name="src">
       <!-- Folders contain nested folders and files -->
-      <file path="main.rs"/>
-      <!-- Files are listed by path relative to the repository root -->
+      <file path="main.rs">
+        <!-- Files are listed by path relative to the repository root -->
+      </file>
     </folder>
   </repository_structure>
 
