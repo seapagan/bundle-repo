@@ -4,8 +4,7 @@ use std::process::exit;
 use clap::Parser;
 use tabled::{
     settings::{
-        formatting::AlignmentStrategy,
-        object::{Rows, Segment},
+        object::{Columns, Rows},
         Alignment, Disable, Modify, Style,
     },
     Table, Tabled,
@@ -107,12 +106,7 @@ fn main() {
             let table = Table::new(summary_data)
                 .with(Disable::row(Rows::first()))
                 .with(Style::empty())
-                .with(
-                    Modify::new(Segment::all())
-                        .with(Alignment::right())
-                        .with(Alignment::left())
-                        .with(AlignmentStrategy::PerCell),
-                )
+                .with(Modify::list(Columns::first(), Alignment::right()))
                 .to_string();
 
             println!("-> Succesfully wrote XML to {}", args.output_file);
