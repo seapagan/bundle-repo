@@ -2,7 +2,7 @@ use crate::filelist::{FileTree, FolderNode};
 use std::fs::{metadata, read_to_string, File};
 use std::io::{self, Write};
 use std::path::PathBuf;
-use tiktoken_rs::o200k_base;
+use tiktoken_rs::CoreBPE;
 use xml::writer::Error as XmlError;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
@@ -12,6 +12,7 @@ pub fn output_repo_as_xml(
     output_file: &str,
     file_tree: FileTree,
     base_path: &PathBuf,
+    tokenizer: &CoreBPE,
 ) -> Result<(), io::Error> {
     let mut file = File::create(output_file)?;
 
@@ -66,7 +67,6 @@ pub fn output_repo_as_xml(
     file.write_all(b"</repository>\n")?;
 
     // Now let's calculate the token count of the generated XML
-    let tokenizer = o200k_base().unwrap(); // Create the tokenizer
     let xml_content = std::fs::read_to_string(output_file)?; // Read the XML file
     let token_count = tokenizer.encode_ordinary(&xml_content).len(); // Count the tokens
 

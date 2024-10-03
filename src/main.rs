@@ -2,10 +2,12 @@ use std::path::PathBuf;
 use std::process::exit;
 
 use clap::Parser;
+use tokenizer::Model;
 
 mod cli;
 mod filelist;
 mod repo;
+mod tokenizer;
 mod xml_output;
 
 fn main() {
@@ -15,6 +17,15 @@ fn main() {
         println!("{}", cli::version_info());
         exit(0);
     }
+
+    // Parse the model from the CLI argument
+    let tokenizer = match args.model.parse::<Model>() {
+        Ok(model) => model.to_tokenizer().unwrap(),
+        Err(e) => {
+            eprintln!("{}", e);
+            exit(1);
+        }
+    };
 
     let file_list = if let Some(ref repo_input) = args.repo {
         // Borrow repo_input
@@ -49,6 +60,7 @@ fn main() {
         &args.output_file,
         file_tree,
         &base_path,
+        &tokenizer,
     ) {
         eprintln!("Failed to write XML: {}", e);
     } else {

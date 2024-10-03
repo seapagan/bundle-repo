@@ -15,6 +15,7 @@ pub struct Flags {
                 for a Git repository."
     )]
     pub repo: Option<String>,
+
     #[arg(
         long = "file",
         short = 'f',
@@ -22,6 +23,15 @@ pub struct Flags {
         default_value = "packed-repo.xml"
     )]
     pub output_file: String,
+
+    #[arg(
+        long = "model",
+        short = 'm',
+        default_value = "gpt4",
+        help = "Model to use for tokenization"
+    )]
+    pub model: String,
+
     #[arg(
         short,
         long,
