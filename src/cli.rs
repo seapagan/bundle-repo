@@ -16,12 +16,20 @@ pub struct Flags {
     )]
     pub repo: Option<String>,
     #[arg(
+        long = "file",
+        short = 'f',
+        help = "Filename to save the bundle as (default: 'packed-repo.xml')",
+        default_value = "packed-repo.xml"
+    )]
+    pub output_file: String,
+    #[arg(
         short,
         long,
         help = "GitHub personal access token (required for private repos and \
                 to pass rate limits)"
     )]
     pub token: Option<String>,
+
     #[arg(
         long = "version",
         short = 'V',

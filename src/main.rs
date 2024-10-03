@@ -45,9 +45,16 @@ fn main() {
         PathBuf::from(".")
     };
 
-    if let Err(e) = xml_output::output_repo_as_xml(file_tree, &base_path) {
+    if let Err(e) = xml_output::output_repo_as_xml(
+        &args.output_file,
+        file_tree,
+        &base_path,
+    ) {
         eprintln!("Failed to write XML: {}", e);
     } else {
-        println!("Repository Dump successfully written to packed-repo.xml");
+        println!(
+            "Repository Dump successfully written to {}",
+            args.output_file
+        );
     }
 }
