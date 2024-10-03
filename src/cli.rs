@@ -19,7 +19,7 @@ pub struct Flags {
     #[arg(
         long = "file",
         short = 'f',
-        help = "Filename to save the bundle as (default: 'packed-repo.xml')",
+        help = "Filename to save the bundle as.",
         default_value = "packed-repo.xml"
     )]
     pub output_file: String,
@@ -27,8 +27,9 @@ pub struct Flags {
     #[arg(
         long = "model",
         short = 'm',
-        default_value = "gpt4",
-        help = "Model to use for tokenization"
+        default_value = "gpt4o",
+        help = "Model to use for tokenization. Supported \
+                models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2'"
     )]
     pub model: String,
 
