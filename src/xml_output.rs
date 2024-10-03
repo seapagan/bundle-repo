@@ -13,7 +13,7 @@ pub fn output_repo_as_xml(
     file_tree: FileTree,
     base_path: &Path,
     tokenizer: &CoreBPE,
-) -> Result<(), io::Error> {
+) -> Result<(usize, u64, usize), io::Error> {
     let mut file = File::create(output_file)?;
 
     // Manually add the XML declaration at the very top of the file
@@ -66,14 +66,17 @@ pub fn output_repo_as_xml(
     // Close the root <repository> node
     file.write_all(b"</repository>\n")?;
 
+    // Number of files processed
+    let number_of_files = file_tree.file_paths.len();
+
+    // Total size of the output file
+    let total_size = file.metadata()?.len(); // Total size of the written XML file
+
     // Now let's calculate the token count of the generated XML
     let xml_content = std::fs::read_to_string(output_file)?; // Read the XML file
     let token_count = tokenizer.encode_ordinary(&xml_content).len(); // Count the tokens
 
-    // Print the token count to the user
-    println!("Approximate token count: {}", token_count);
-
-    Ok(())
+    Ok((number_of_files, total_size, token_count))
 }
 
 // Function to write folder structure to XML using EventWriter

@@ -63,13 +63,13 @@ pub fn check_current_directory() -> Result<(), git2::Error> {
     match Repository::discover(".") {
         Ok(repo) => {
             println!(
-                "Found a git repository in the current directory: {}",
-                repo.path().display()
+                "-> Found a git repository in the current directory: {}",
+                repo.path().parent().unwrap().display()
             );
             Ok(())
         }
         Err(_) => {
-            eprintln!("No git repository found in the current directory.");
+            eprintln!("X  No git repository found in the current directory.");
             Err(git2::Error::from_str("Not a git repository"))
         }
     }

@@ -21,6 +21,7 @@ regex = "1"
 ignore = "0.4"
 xml = "0.8"
 tiktoken-rs = "0.5.9"
+tabled = "0.16.0"
 
 [features]
 default = []
