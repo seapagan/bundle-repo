@@ -1,5 +1,6 @@
 use crate::cli::Flags;
 use crate::filelist::{FileTree, FolderNode};
+use arboard::Clipboard;
 use std::fs::{metadata, File};
 use std::io::Cursor;
 use std::io::{self, Read, Write};
@@ -7,7 +8,7 @@ use std::path::Path;
 use tiktoken_rs::CoreBPE;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
-// Function to output the repository structure and files list to XML
+/// Function to output the repository structure and files list to XML
 pub fn output_repo_as_xml(
     flags: &Flags,
     file_tree: FileTree,
@@ -73,25 +74,40 @@ pub fn output_repo_as_xml(
 
         Ok((file_tree.file_paths.len(), 0, 0)) // Summary metrics not needed for stdout
     } else {
-        // Write the XML to the specified output file
-        let mut file = File::create(&flags.output_file)?;
-        file.write_all(&buffer.into_inner())?;
+        // Extract XML content from buffer
+        let xml_content =
+            String::from_utf8(buffer.into_inner()).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+            })?;
+
+        if flags.clipboard {
+            // Copy XML to clipboard
+            let mut clipboard = Clipboard::new().map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            })?;
+            clipboard.set_text(xml_content.clone()).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            })?;
+        } else {
+            // Write the XML to the specified output file
+            let mut file = File::create(&flags.output_file)?;
+            file.write_all(xml_content.as_bytes())?;
+        }
 
         // Number of files processed
         let number_of_files = file_tree.file_paths.len();
 
-        // Total size of the output file
-        let total_size = file.metadata()?.len();
+        // Total size of the XML content
+        let total_size = xml_content.len() as u64;
 
         // Calculate token count of the generated XML
-        let xml_content = std::fs::read_to_string(&flags.output_file)?;
         let token_count = tokenizer.encode_ordinary(&xml_content).len();
 
         Ok((number_of_files, total_size, token_count))
     }
 }
 
-// Function to write folder structure to XML using EventWriter
+/// Function to write folder structure to XML using EventWriter
 fn write_folder_to_xml<W: Write>(
     writer: &mut EventWriter<W>,
     folder_node: &FolderNode,
@@ -120,7 +136,7 @@ fn write_folder_to_xml<W: Write>(
     Ok(())
 }
 
-// Function to write the repository files with contents to XML without escaping
+/// Function to write the repository files with contents to XML without escaping
 fn write_repository_files_to_xml<W: Write>(
     writer: &mut W,
     file_paths: &Vec<String>,
@@ -196,11 +212,16 @@ fn write_repository_files_to_xml<W: Write>(
     Ok(())
 }
 
-// Map XML writing errors to IO errors
+/// Map XML writing errors to IO errors
 fn map_xml_error(err: xml::writer::Error) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, err)
 }
 
+/// Function to append the file summary section to the head of the XML output
+///
+/// This section provides information about the content and usage of the XML
+/// file. It is designed to be read by AI systems for analysis, code review, or
+/// other automated processes.
 fn append_file_summary<W: Write>(
     writer: &mut W,
 ) -> Result<(), std::io::Error> {

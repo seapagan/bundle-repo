@@ -42,6 +42,14 @@ pub struct Flags {
     pub model: String,
 
     #[arg(
+        long = "clipboard",
+        short = 'c',
+        action = ArgAction::SetTrue,
+        help = "Copy the XML to the clipboard after creating it."
+    )]
+    pub clipboard: bool,
+
+    #[arg(
         short,
         long,
         help = "GitHub personal access token (required for private repos and \

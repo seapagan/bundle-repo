@@ -94,7 +94,14 @@ fn main() {
         Ok((number_of_files, total_size, token_count)) => {
             if !args.stdout {
                 // Print the summary only if not using stdout
-                println!("-> Successfully wrote XML to {}", args.output_file);
+                if args.clipboard {
+                    println!("-> Successfully copied XML to clipboard");
+                } else {
+                    println!(
+                        "-> Successfully wrote XML to {}",
+                        args.output_file
+                    );
+                }
                 println!("\nSummary:");
                 let summary_data = vec![
                     SummaryTable {
