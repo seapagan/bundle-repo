@@ -7,8 +7,10 @@ on:
 
 jobs:
   build:
+    # disable the job
+    if: false
     name: Build Binaries
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform }}
 
     strategy:
       matrix:
@@ -16,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
@@ -25,81 +27,87 @@ jobs:
           profile: minimal
 
       - name: Build the project
+        run: cargo build --release
+
+      - name: Check release directory contents
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: Get-ChildItem -Path target/release
+
+      - name: Rename the binary to .exe (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
         run: |
-          cargo build --release
+          Rename-Item -Path target/release/bundlerepo -NewName bundlerepo.exe
+          Get-ChildItem -Path target/release
+
+      - name: Package the binary (Linux/macOS)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          BINARY_NAME="bundlerepo"
           mkdir -p binaries
-          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-            cp target/release/*.exe binaries/
-          else
-            cp target/release/* binaries/
-          fi
+          tar -czvf binaries/${BINARY_NAME}-${{ matrix.platform }}.tar.gz -C target/release ${BINARY_NAME}
+
+      - name: Package the binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $BINARY_NAME = "bundlerepo.exe"
+          New-Item -ItemType Directory -Path binaries -Force
+          Compress-Archive -Path target/release/$BINARY_NAME -DestinationPath binaries\$BINARY_NAME-window-latest.zip
 
       - name: Upload Binaries
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-binaries
           path: binaries/
 
   release:
+    # disable the job
+    if: false
     name: Release Artifacts
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download Binaries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ubuntu-latest-binaries
           path: ./dist
 
       - name: Download macOS Binaries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: macos-latest-binaries
           path: ./dist
 
       - name: Download Windows Binaries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: windows-latest-binaries
           path: ./dist
 
-      - name: Get release information
+      - name: Get latest release tag
         id: get_release
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const latestRelease = await github.repos.getLatestRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            return latestRelease.data.tag_name;
-          result-encoding: string
-
-      - name: Delete existing release assets
-        id: delete_assets
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const release = await github.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: "${{ steps.get_release.outputs.result || github.event.release.tag_name }}"
-            });
-            for (const asset of release.data.assets) {
-              await github.repos.deleteReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: asset.id
-              });
-            }
+        run: |
+          latest_tag=$(gh release list -L 1 --json tagName -q '.[0].tagName')
+          echo "Latest release tag: $latest_tag"
+          echo "RELEASE_TAG=$latest_tag" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Assets to Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/bundlerepo-ubuntu-latest.tar.gz
+            dist/bundlerepo-macos-latest.tar.gz
+            dist/bundlerepo.exe-window-latest.zip
           tag_name:
-            ${{ steps.get_release.outputs.result ||
+            ${{ steps.get_release.outputs.RELEASE_TAG ||
             github.event.release.tag_name }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
