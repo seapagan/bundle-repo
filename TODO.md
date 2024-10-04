@@ -1,7 +1,6 @@
 # Planned Improvements
 
 - add more output formats - Text, Markdown, maybe others.
-- output a summary of the file after generation.
 - add a test suite to ensure the tool works as expected in a variety of
   scenarios.
 - add a configuration file to store the token and other settings, will probably
@@ -10,7 +9,6 @@
   by default to be included.
 - add the ability to check for updates and update the tool (or at least notify
   the user that an update is available and where to get).
-- add the ability to specify the output file name.
 - actually remove comments from the generated XML file. Perhaps add a flag to
   allow the user to choose whether to include comments or not. Looking at using
   'tree-sitter' to parse the code and remove comments.
@@ -18,7 +16,6 @@
   branch if not specified. Local repositories should be able to have the same,
   but default to the checked-out branch.
 - ensure that the tool works on Windows, Linux, and macOS.
-- ensure that binary files are not included in the output.
 - allow to work with non-git repositories (local only obviously).
 - see if we can find a library to tokenize other models such as `Claude` or
   `Gemini`

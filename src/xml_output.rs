@@ -112,15 +112,15 @@ fn write_folder_to_xml(
 fn write_repository_files_to_xml(
     file: &mut File,
     file_paths: &Vec<String>,
-    base_path: &Path, // Pass the base_path to handle correct file paths
+    base_path: &Path,
 ) -> Result<(), io::Error> {
     for file_path in file_paths {
-        let full_path = base_path.join(file_path); // Construct the full path
+        let full_path = base_path.join(file_path);
 
         // Calculate file size
         let file_size = metadata(&full_path)?.len();
 
-        // Read the contents of the file using the full path
+        // Try to read the file contents using the full path
         match read_to_string(&full_path) {
             Ok(contents) => {
                 // Calculate number of lines
@@ -140,15 +140,32 @@ fn write_repository_files_to_xml(
                 file.write_all(contents.as_bytes())?;
             }
             Err(err) => {
-                eprintln!("Failed to read {}: {}", full_path.display(), err);
-                file.write_all(
-                    format!(
-                        r#"<file path="{}" size="0" lines="0">"#,
-                        file_path
-                    )
-                    .as_bytes(),
-                )?;
-                file.write_all(b"<!-- Failed to read file -->")?;
+                // Check for specific phrase in the error message to determine if it's a UTF-8 error
+                let error_message = err.to_string();
+                if error_message.contains("stream did not contain valid UTF-8")
+                {
+                    // Handle UTF-8 decoding error: Assume it's a binary file
+                    file.write_all(
+                        format!(
+                            r#"<file path="{}" size="{}" lines="0">"#,
+                            file_path, file_size
+                        )
+                        .as_bytes(),
+                    )?;
+                    file.write_all(
+                        b"\n<!-- This file is a binary file and not included -->\n",
+                    )?;
+                } else {
+                    // For other types of errors, write a general failure message
+                    file.write_all(
+                        format!(
+                            r#"<file path="{}" size="0" lines="0">"#,
+                            file_path
+                        )
+                        .as_bytes(),
+                    )?;
+                    file.write_all(b"\n<!-- Failed to read file -->\n")?;
+                }
             }
         }
 
