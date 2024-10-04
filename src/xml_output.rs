@@ -1,6 +1,7 @@
 use crate::filelist::{FileTree, FolderNode};
-use std::fs::{metadata, read_to_string, File};
-use std::io::{self, Write};
+use infer;
+use std::fs::{metadata, File};
+use std::io::{self, Read, Write};
 use std::path::Path;
 use tiktoken_rs::CoreBPE;
 use xml::writer::Error as XmlError;
@@ -36,7 +37,12 @@ pub fn output_repo_as_xml(
         writer
             .write(XmlEvent::start_element("summary"))
             .map_err(map_xml_error)?;
-        writer.write(XmlEvent::characters("This node contains the hierarchical structure of the repository's files and folders.")).map_err(map_xml_error)?;
+        writer
+        .write(
+            XmlEvent::characters(
+                "This node contains the hierarchical structure of the repository's files and folders."
+            )
+        ).map_err(map_xml_error)?;
         writer
             .write(XmlEvent::end_element())
             .map_err(map_xml_error)?; // Close <summary>
@@ -120,8 +126,24 @@ fn write_repository_files_to_xml(
         // Calculate file size
         let file_size = metadata(&full_path)?.len();
 
+        // Check if file is binary using infer
+        if is_binary_file(&full_path)? {
+            file.write_all(
+                format!(
+                    r#"<file path="{}" size="{}" lines="0">"#,
+                    file_path, file_size
+                )
+                .as_bytes(),
+            )?;
+            file.write_all(
+                b"\n<!-- This file is a binary file and not included -->\n",
+            )?;
+            file.write_all(b"</file>\n\n")?;
+            continue;
+        }
+
         // Try to read the file contents using the full path
-        match read_to_string(&full_path) {
+        match std::fs::read_to_string(&full_path) {
             Ok(contents) => {
                 // Calculate number of lines
                 let line_count = contents.lines().count();
@@ -140,37 +162,29 @@ fn write_repository_files_to_xml(
                 file.write_all(contents.as_bytes())?;
             }
             Err(err) => {
-                // Check for specific phrase in the error message to determine if it's a UTF-8 error
+                // For other types of errors, write a general failure message with the error description
                 let error_message = err.to_string();
-                if error_message.contains("stream did not contain valid UTF-8")
-                {
-                    // Handle UTF-8 decoding error: Assume it's a binary file
-                    file.write_all(
-                        format!(
-                            r#"<file path="{}" size="{}" lines="0">"#,
-                            file_path, file_size
-                        )
-                        .as_bytes(),
-                    )?;
-                    file.write_all(
-                        b"\n<!-- This file is a binary file and not included -->\n",
-                    )?;
-                } else {
-                    // For other types of errors, write a general failure message
-                    file.write_all(
-                        format!(
-                            r#"<file path="{}" size="0" lines="0">"#,
-                            file_path
-                        )
-                        .as_bytes(),
-                    )?;
-                    file.write_all(b"\n<!-- Failed to read file -->\n")?;
-                }
+                eprintln!(
+                    "Error reading file '{}': {}",
+                    full_path.display(),
+                    error_message
+                );
+                file.write_all(
+                    format!(
+                        r#"<file path="{}" size="0" lines="0">"#,
+                        file_path
+                    )
+                    .as_bytes(),
+                )?;
+                file.write_all(
+                    format!(
+                        "<!-- Failed to read file: {} -->\n</file>\n\n",
+                        error_message
+                    )
+                    .as_bytes(),
+                )?;
             }
         }
-
-        // End the <file> node, add a new line
-        file.write_all(b"</file>\n\n")?;
     }
 
     Ok(())
@@ -241,4 +255,33 @@ fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
     file.write_all(file_summary.as_bytes())?;
 
     Ok(())
+}
+
+/// Determines if a file is binary by using magic number detection.
+fn is_binary_file(path: &Path) -> io::Result<bool> {
+    let mut file = File::open(path)?;
+    let mut buffer = [0; 1024];
+
+    // Read the first chunk of the file
+    let bytes_read = file.read(&mut buffer)?;
+
+    // Use the infer crate to detect the type
+    if let Some(kind) = infer::get(&buffer[..bytes_read]) {
+        // Check if the file is not recognized as a text format
+        if kind.mime_type().starts_with("text/") {
+            return Ok(false);
+        } else {
+            return Ok(true);
+        }
+    }
+
+    // If infer can't determine, fall back to heuristic approach
+    let mut non_printable_count = 0;
+    for &byte in &buffer[..bytes_read] {
+        if byte < 0x09 || (byte > 0x0D && byte < 0x20) || byte > 0x7E {
+            non_printable_count += 1;
+        }
+    }
+    let threshold = (bytes_read as f32) * 0.3;
+    Ok(non_printable_count as f32 > threshold)
 }
