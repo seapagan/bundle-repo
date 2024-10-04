@@ -19,3 +19,6 @@
 - allow to work with non-git repositories (local only obviously).
 - see if we can find a library to tokenize other models such as `Claude` or
   `Gemini`
+- change file encoding to UTF-8 for included files, this is to ensure that the
+  XML file is valid and can be read by other tools and specifically LLM's who
+  generally prefer UTF-8.
