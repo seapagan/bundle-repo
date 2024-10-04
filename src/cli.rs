@@ -25,6 +25,14 @@ pub struct Flags {
     pub output_file: String,
 
     #[arg(
+        long = "stdout",
+        short = 's',
+        action = clap::ArgAction::SetTrue,
+        help = "Output the XML directly to stdout without creating a file."
+    )]
+    pub stdout: bool,
+
+    #[arg(
         long = "model",
         short = 'm',
         default_value = "gpt4o",
@@ -32,6 +40,14 @@ pub struct Flags {
                 models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2'"
     )]
     pub model: String,
+
+    #[arg(
+        long = "clipboard",
+        short = 'c',
+        action = ArgAction::SetTrue,
+        help = "Copy the XML to the clipboard after creating it."
+    )]
+    pub clipboard: bool,
 
     #[arg(
         short,

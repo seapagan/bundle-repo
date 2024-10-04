@@ -1,35 +1,35 @@
+use crate::cli::Flags;
 use crate::filelist::{FileTree, FolderNode};
+use arboard::Clipboard;
 use std::fs::{metadata, File};
+use std::io::Cursor;
 use std::io::{self, Read, Write};
 use std::path::Path;
 use tiktoken_rs::CoreBPE;
-use xml::writer::Error as XmlError;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
-// Function to output the repository structure and files list to XML
-// Function to output the repository structure and files list to XML
+/// Function to output the repository structure and files list to XML
 pub fn output_repo_as_xml(
-    output_file: &str,
+    flags: &Flags,
     file_tree: FileTree,
     base_path: &Path,
     tokenizer: &CoreBPE,
-) -> Result<(usize, u64, usize), io::Error> {
-    let mut file = File::create(output_file)?;
+) -> Result<(usize, u64, usize), std::io::Error> {
+    // Use an in-memory buffer instead of a physical file
+    let mut buffer = Cursor::new(Vec::new());
 
-    // Manually add the XML declaration at the very top of the file
-    file.write_all(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")?;
+    // Generate the XML content in memory
+    buffer.write_all(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")?;
+    buffer.write_all(b"<repository>\n")?;
+    append_file_summary(&mut buffer)?;
 
-    // Start the root <repository> node
-    file.write_all(b"<repository>\n")?;
-
-    append_file_summary(&mut file)?;
+    // Write repository structure and repository files nodes
     {
         let mut writer = EmitterConfig::new()
             .perform_indent(true)
-            .write_document_declaration(false) // Disable automatic XML declaration
-            .create_writer(file); // Use file directly, not &mut file
+            .write_document_declaration(false)
+            .create_writer(&mut buffer);
 
-        // Ensure repository_structure is written first
         writer
             .write(XmlEvent::start_element("repository_structure"))
             .map_err(map_xml_error)?;
@@ -37,11 +37,10 @@ pub fn output_repo_as_xml(
             .write(XmlEvent::start_element("summary"))
             .map_err(map_xml_error)?;
         writer
-        .write(
-            XmlEvent::characters(
-                "This node contains the hierarchical structure of the repository's files and folders."
-            )
-        ).map_err(map_xml_error)?;
+            .write(XmlEvent::characters(
+                "This node contains the hierarchical structure of the repository's files and folders.",
+            ))
+            .map_err(map_xml_error)?;
         writer
             .write(XmlEvent::end_element())
             .map_err(map_xml_error)?; // Close <summary>
@@ -49,46 +48,70 @@ pub fn output_repo_as_xml(
         write_folder_to_xml(&mut writer, &file_tree.folder_node)?;
         writer
             .write(XmlEvent::end_element())
-            .map_err(map_xml_error)?;
-    } // End the writer block here
+            .map_err(map_xml_error)?; // Close <repository_structure>
+    }
 
-    // Reopen the file for manual writing without the EventWriter
-    let mut file = File::options().append(true).open(output_file)?;
-
-    // Add two <CR> between the repository_structure and repository_files nodes
-    file.write_all(b"\n\n")?; // Two carriage returns for clarity
-
-    // Pass the base_path to ensure correct file paths are used
-    file.write_all(b"<repository_files>\n")?; // Start repository_files node
-    file.write_all(b"<summary>This node contains a list of files with their full paths and raw contents.</summary>\n")?; // Add <summary>
+    buffer.write_all(b"\n\n")?;
+    buffer.write_all(b"<repository_files>\n")?;
+    buffer.write_all(b"<summary>This node contains a list of files with their full paths and raw contents.</summary>\n")?;
     write_repository_files_to_xml(
-        &mut file,
+        &mut buffer,
         &file_tree.file_paths,
         base_path,
     )?;
-    file.write_all(b"</repository_files>\n")?; // End repository_files node
+    buffer.write_all(b"</repository_files>\n")?;
+    buffer.write_all(b"</repository>\n")?;
 
-    // Close the root <repository> node
-    file.write_all(b"</repository>\n")?;
+    // Output handling based on CLI flag
+    if flags.stdout {
+        // Print XML directly to stdout
+        println!(
+            "{}",
+            String::from_utf8(buffer.into_inner()).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+            })?
+        );
 
-    // Number of files processed
-    let number_of_files = file_tree.file_paths.len();
+        Ok((file_tree.file_paths.len(), 0, 0)) // Summary metrics not needed for stdout
+    } else {
+        // Extract XML content from buffer
+        let xml_content =
+            String::from_utf8(buffer.into_inner()).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+            })?;
 
-    // Total size of the output file
-    let total_size = file.metadata()?.len(); // Total size of the written XML file
+        if flags.clipboard {
+            // Copy XML to clipboard
+            let mut clipboard = Clipboard::new().map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            })?;
+            clipboard.set_text(xml_content.clone()).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            })?;
+        } else {
+            // Write the XML to the specified output file
+            let mut file = File::create(&flags.output_file)?;
+            file.write_all(xml_content.as_bytes())?;
+        }
 
-    // Now let's calculate the token count of the generated XML
-    let xml_content = std::fs::read_to_string(output_file)?; // Read the XML file
-    let token_count = tokenizer.encode_ordinary(&xml_content).len(); // Count the tokens
+        // Number of files processed
+        let number_of_files = file_tree.file_paths.len();
 
-    Ok((number_of_files, total_size, token_count))
+        // Total size of the XML content
+        let total_size = xml_content.len() as u64;
+
+        // Calculate token count of the generated XML
+        let token_count = tokenizer.encode_ordinary(&xml_content).len();
+
+        Ok((number_of_files, total_size, token_count))
+    }
 }
 
-// Function to write folder structure to XML using EventWriter
-fn write_folder_to_xml(
-    writer: &mut EventWriter<File>,
+/// Function to write folder structure to XML using EventWriter
+fn write_folder_to_xml<W: Write>(
+    writer: &mut EventWriter<W>,
     folder_node: &FolderNode,
-) -> Result<(), io::Error> {
+) -> Result<(), std::io::Error> {
     for file in &folder_node.files {
         writer
             .write(XmlEvent::start_element("file").attr("path", file))
@@ -113,12 +136,12 @@ fn write_folder_to_xml(
     Ok(())
 }
 
-// Function to write the repository files with contents to XML without escaping
-fn write_repository_files_to_xml(
-    file: &mut File,
+/// Function to write the repository files with contents to XML without escaping
+fn write_repository_files_to_xml<W: Write>(
+    writer: &mut W,
     file_paths: &Vec<String>,
     base_path: &Path,
-) -> Result<(), io::Error> {
+) -> Result<(), std::io::Error> {
     for file_path in file_paths {
         let full_path = base_path.join(file_path);
 
@@ -127,17 +150,17 @@ fn write_repository_files_to_xml(
 
         // Check if file is binary using infer
         if is_binary_file(&full_path)? {
-            file.write_all(
+            writer.write_all(
                 format!(
                     r#"<file path="{}" size="{}" lines="0">"#,
                     file_path, file_size
                 )
                 .as_bytes(),
             )?;
-            file.write_all(
+            writer.write_all(
                 b"\n<!-- This file is a binary file and not included -->\n",
             )?;
-            file.write_all(b"</file>\n\n")?;
+            writer.write_all(b"</file>\n\n")?;
             continue;
         }
 
@@ -148,17 +171,17 @@ fn write_repository_files_to_xml(
                 let line_count = contents.lines().count();
 
                 // Write the <file> node with size and line attributes
-                file.write_all(
+                writer.write_all(
                     format!(
                         r#"<file path="{}" size="{}" lines="{}">"#,
                         file_path, file_size, line_count
                     )
                     .as_bytes(),
                 )?;
-                file.write_all(b"\n")?; // Proper newline after the opening <file> tag
+                writer.write_all(b"\n")?; // Proper newline after the opening <file> tag
 
                 // Write raw file contents without escaping
-                file.write_all(contents.as_bytes())?;
+                writer.write_all(contents.as_bytes())?;
             }
             Err(err) => {
                 // For other types of errors, write a general failure message with the error description
@@ -168,14 +191,14 @@ fn write_repository_files_to_xml(
                     full_path.display(),
                     error_message
                 );
-                file.write_all(
+                writer.write_all(
                     format!(
                         r#"<file path="{}" size="0" lines="0">"#,
                         file_path
                     )
                     .as_bytes(),
                 )?;
-                file.write_all(
+                writer.write_all(
                     format!(
                         "<!-- Failed to read file: {} -->\n</file>\n\n",
                         error_message
@@ -189,12 +212,19 @@ fn write_repository_files_to_xml(
     Ok(())
 }
 
-// Map XML writing errors to IO errors
-fn map_xml_error(err: XmlError) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err)
+/// Map XML writing errors to IO errors
+fn map_xml_error(err: xml::writer::Error) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, err)
 }
 
-fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
+/// Function to append the file summary section to the head of the XML output
+///
+/// This section provides information about the content and usage of the XML
+/// file. It is designed to be read by AI systems for analysis, code review, or
+/// other automated processes.
+fn append_file_summary<W: Write>(
+    writer: &mut W,
+) -> Result<(), std::io::Error> {
     let file_summary = r#"
 <file_summary>
   <purpose>
@@ -250,7 +280,7 @@ fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
 "#;
 
     // Insert the file_summary after the opening <repository> tag
-    file.write_all(file_summary.as_bytes())?;
+    writer.write_all(file_summary.as_bytes())?;
 
     Ok(())
 }

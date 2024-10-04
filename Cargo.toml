@@ -23,6 +23,9 @@ xml = "0.8"
 tiktoken-rs = "0.5.9"
 tabled = "0.16.0"
 infer = "0.16.0"
+arboard = { version = "3.4.1", default-features = false, features = [
+  "windows-sys",
+] }
 
 [features]
 default = []

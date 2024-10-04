@@ -3,12 +3,17 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use url::Url;
 
+use crate::cli::Flags;
+
 pub fn clone_repo(
+    flags: &Flags,
     repo_input: &str,
     token: Option<&str>,
     temp_dir_path: &Path,
 ) -> Result<PathBuf, git2::Error> {
-    println!("-> Cloning repository...");
+    if !flags.stdout {
+        println!("-> Cloning repository...");
+    }
 
     let repo_url = if is_valid_url(repo_input) {
         repo_input.to_string()
@@ -38,10 +43,12 @@ pub fn clone_repo(
 
     match builder.clone(&repo_url, &repo_folder) {
         Ok(_) => {
-            println!(
-                "-> Successfully cloned repository '{}'",
-                &repo_url.trim_end_matches(".git")
-            );
+            if !flags.stdout {
+                println!(
+                    "-> Successfully cloned repository '{}'",
+                    &repo_url.trim_end_matches(".git")
+                );
+            }
             Ok(repo_folder)
         }
         Err(e) => {
@@ -60,13 +67,15 @@ pub fn is_valid_shorthand(input: &str) -> bool {
     re.is_match(input)
 }
 
-pub fn check_current_directory() -> Result<(), git2::Error> {
+pub fn check_current_directory(flags: &Flags) -> Result<(), git2::Error> {
     match Repository::discover(".") {
         Ok(repo) => {
-            println!(
-                "-> Found a git repository in the current directory: {}",
-                repo.path().parent().unwrap().display()
-            );
+            if !flags.stdout {
+                println!(
+                    "-> Found a git repository in the current directory: {}",
+                    repo.path().parent().unwrap().display()
+                );
+            }
             Ok(())
         }
         Err(_) => {
