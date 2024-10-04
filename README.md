@@ -22,6 +22,7 @@ however future versions may include additional formats. XML was chosen since it
 is very well structured and LLM models can easily parse it (better than a
 plain-text dump).
 
+- [Compatibility](#compatibility)
 - [Features](#features)
 - [Usage](#usage)
   - [Installation](#installation)
@@ -39,6 +40,11 @@ plain-text dump).
 - [Beta Status](#beta-status)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
+
+## Compatibility
+
+The tool is designed and tested to work on Linux, MacOS, and Windows (Windows 10
+and 11 tested).
 
 ## Features
 
@@ -69,6 +75,10 @@ plain-text dump).
   at this time, though I may add support for others in the future.
 - **XML Output**: Generates an XML file (`packed-repo.xml`) that contains the
   entire repository structure and file details.
+
+This tool is currently under active development, and more features will be
+implemented quickly. Please **star** this repository to stay updated on new
+releases and features.
 
 ## Usage
 
@@ -317,9 +327,10 @@ understood by an LLM. Below is an example layout with explanations for each tag:
 
 **Bundle Repo** is a rewrite of the original
 [Repopack](https://github.com/yamadashy/repopack) project, though none of the
-source code was used or even looked at. The idea was to create a similar tool
-from scratch, with a few enhancements and improvements. It's also part of my
-journey to learn Rust and build useful tools for all.
+source code was used or even looked at (the output file header however was
+heavily borrowed from). The idea was to create a similar tool from scratch, with
+a few enhancements and improvements. It's also part of my journey to learn Rust
+and build useful tools for all.
 
 ## License
 

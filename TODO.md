@@ -20,7 +20,9 @@
 - allow to specify which branch of the repository to use, use the default
   branch if not specified. Local repositories should be able to have the same,
   but default to the checked-out branch.
-- ensure that the tool works on Windows, Linux, and macOS.
+- ensure that the tool works on Windows, Linux, and macOS. It does work great on
+  all 3 at this current code state, but we need to develop a test suite and get
+  the CI pipeline working to ensure that it continues to work on all 3.
 - allow to work with non-git repositories (local only obviously).
 - see if we can find a library to tokenize other models such as `Claude` or
   `Gemini`
@@ -31,3 +33,9 @@
   store information about the repository, such as the name, description, extra
   instructions, etc. Would again be once the TOML file is implemented.
 - ignore `dotfiles` by default, but allow the user to include them if they want.
+- Add secret-checking to the tool, to ensure that no secrets are included in the
+  output XML file. Hopefully this can be done with a library, but may need to
+  write our own checks.
+- option to include line numbers for files in the XML file, this could be useful
+  for debugging or for other tools that may need to know the line number of a
+  particular piece of code.
