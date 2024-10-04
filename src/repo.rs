@@ -1,13 +1,15 @@
 use git2::{Cred, FetchOptions, RemoteCallbacks, Repository};
 use regex::Regex;
-use std::path::PathBuf;
-use tempfile::tempdir;
+use std::path::{Path, PathBuf};
 use url::Url;
 
 pub fn clone_repo(
     repo_input: &str,
     token: Option<&str>,
+    temp_dir_path: &Path,
 ) -> Result<PathBuf, git2::Error> {
+    println!("-> Cloning repository...");
+
     let repo_url = if is_valid_url(repo_input) {
         repo_input.to_string()
     } else if is_valid_shorthand(repo_input) {
@@ -17,11 +19,7 @@ pub fn clone_repo(
         return Err(git2::Error::from_str("Invalid repository shorthand"));
     };
 
-    let temp_dir = tempdir().unwrap();
-    let mut repo_folder = PathBuf::from(temp_dir.path());
-    repo_folder.push("repo_clone");
-
-    let _persisted_dir = temp_dir.into_path();
+    let repo_folder = temp_dir_path.join("repo_clone");
 
     let mut callbacks = RemoteCallbacks::new();
     callbacks.credentials(move |_url, _username_from_url, _allowed_types| {
@@ -40,11 +38,14 @@ pub fn clone_repo(
 
     match builder.clone(&repo_url, &repo_folder) {
         Ok(_) => {
-            println!("Successfully cloned into {}", repo_folder.display());
+            println!(
+                "-> Successfully cloned repository '{}'",
+                &repo_url.trim_end_matches(".git")
+            );
             Ok(repo_folder)
         }
         Err(e) => {
-            eprintln!("Failed to clone: {}", e);
+            eprintln!("X  Failed to clone: {}", e);
             Err(e)
         }
     }
