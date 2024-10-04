@@ -3,3 +3,4 @@ filelist.xml
 packed-repo.xml
 local_notes
 repopack-output.xml
+.changelog_generator.toml
