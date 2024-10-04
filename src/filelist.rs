@@ -23,7 +23,7 @@ pub fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
         r"(?i)requirement.*\.txt",
         r"(?i)\.lock$",
         r"(?i)license(\..*)?",
-        r"(?i)todo\..*",
+        // r"(?i)todo\..*",
         r"(?i)\.github",
         r"(?i)\.git",
     ];
