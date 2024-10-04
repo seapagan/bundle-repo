@@ -1,0 +1,105 @@
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Build the project
+        run: |
+          cargo build --release
+          mkdir -p binaries
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            cp target/release/*.exe binaries/
+          else
+            cp target/release/* binaries/
+          fi
+
+      - name: Upload Binaries
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.platform }}-binaries
+          path: binaries/
+
+  release:
+    name: Release Artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Binaries
+        uses: actions/download-artifact@v3
+        with:
+          name: ubuntu-latest-binaries
+          path: ./dist
+
+      - name: Download macOS Binaries
+        uses: actions/download-artifact@v3
+        with:
+          name: macos-latest-binaries
+          path: ./dist
+
+      - name: Download Windows Binaries
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-latest-binaries
+          path: ./dist
+
+      - name: Get release information
+        id: get_release
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const latestRelease = await github.repos.getLatestRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            return latestRelease.data.tag_name;
+          result-encoding: string
+
+      - name: Delete existing release assets
+        id: delete_assets
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const release = await github.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: "${{ steps.get_release.outputs.result || github.event.release.tag_name }}"
+            });
+            for (const asset of release.data.assets) {
+              await github.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: asset.id
+              });
+            }
+
+      - name: Upload Assets to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*
+          tag_name:
+            ${{ steps.get_release.outputs.result ||
+            github.event.release.tag_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
