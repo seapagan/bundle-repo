@@ -29,6 +29,7 @@ plain-text dump).
   - [Output File](#output-file)
   - [Choose Model for Token Count](#choose-model-for-token-count)
   - [GitHub Token](#github-token)
+- [Ignored Files](#ignored-files)
 - [Help](#help)
 - [Planned Improvements](#planned-improvements)
 - [XML Layout](#xml-layout)
@@ -40,8 +41,21 @@ plain-text dump).
 
 - **Clone Git Repositories**: Supports cloning both public and private
   repositories (with token support). Only supports `https` URLs at this time.
-- **File Scanning**: Automatically scans the repository and lists all files,
-  excluding standard ignored files (e.g., `.gitignore`, `LICENSE`).
+- **File Scanning**: Automatically scans the repository and adds all files to
+  the output, excluding standard ignored files (e.g. `.gitignore`, `LICENSE`,
+  etc).
+
+> [!NOTE]
+>
+> Any file listed in a `.gitignore` file will be excluded from the output and
+> metadata.
+>
+> Binary file content will always be excluded, though they will be listed in
+> the `<repository_structure>` node and a `<file>` node will be created in the
+> XML to show that the file was excluded and why.
+>
+> See [Ignored Files](#ignored-files) for a full list of excluded files.
+
 - **Metadata Extraction**: For each file, the XML output includes:
   - `path`: the file path relative to the repository root
   - `size`: file size in bytes
@@ -174,6 +188,36 @@ bundlerepo user_name/repo_name --token YOUR_GITHUB_TOKEN
 > [!NOTE]
 >
 > This is totally optional if you are only using public repositories.
+
+## Ignored Files
+
+The tool will ignore the following files by default and (except for binary, see
+below) they will not be listed anywhere in the XML output:
+
+- **ANY Binary File**. If you have a binary file in your repository, it will be
+  listed in the XML output, but the content will be excluded.
+- `.gitignore`
+- any file **listed** in a `.gitignore` file
+- `.git` folder and it's contents
+- `.github` folder and it's contents
+- Python requirements files (`requirements.txt`, `requirements-dev.txt`, etc)
+- Lockfiles - any file ending in `.lock`
+- `renovate.json`
+- `license` files (e.g. `LICENSE`, `LICENSE.md`, etc)
+
+This list is hard-coded (and to be honest is tuned to my current workflow) and
+cannot be changed at this time. However, that will be changed once the
+configuration file functionality is added.
+
+> [!TIP]
+>
+> I'm very open to adding other files that should be ignored by default, If you
+> have a suggestion, please open a PR! For example, tool configuration files
+> (eslintrc, prettierrc, etc), which are not needed by an LLM and just take up
+> token space.
+>
+> If there is demand, i may add a flag to allow the user to bypass this list and
+> include all files.
 
 ## Help
 

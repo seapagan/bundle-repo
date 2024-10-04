@@ -4,7 +4,7 @@
 - add a test suite to ensure the tool works as expected in a variety of
   scenarios.
 - add a configuration file to store the token and other settings, will probably
-  be a TOML file.
+  be a TOML file. Allow local and global configuration files.
 - allow the user to add extra file exclusions, or allow files that are excluded
   by default to be included.
 - add the ability to check for updates and update the tool (or at least notify
@@ -22,3 +22,6 @@
 - change file encoding to UTF-8 for included files, this is to ensure that the
   XML file is valid and can be read by other tools and specifically LLM's who
   generally prefer UTF-8.
+- allow user to add custom metadata to the XML file, this could be used to
+  store information about the repository, such as the name, description, extra
+  instructions, etc. Would again be once the TOML file is implemented.
