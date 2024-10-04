@@ -33,7 +33,9 @@ fn main() {
         exit(0);
     }
 
-    cli::show_header();
+    if !args.stdout {
+        cli::show_header();
+    }
 
     // Parse the tokenizer Model from the CLI argument. We will build the
     // tokenizer from this and also use it to display the model name in the
@@ -55,10 +57,11 @@ fn main() {
         }
     };
 
-    // Create a temporary directory in main and pass it to clone_repo
+    // Create a temporary directory for cloning the repository
     let temp_dir = tempdir().unwrap();
     let repo_folder = if let Some(ref repo_input) = args.repo {
         match repo::clone_repo(
+            &args,
             repo_input,
             args.token.as_deref(),
             temp_dir.path(),
@@ -69,7 +72,7 @@ fn main() {
                 return;
             }
         }
-    } else if let Err(e) = repo::check_current_directory() {
+    } else if let Err(e) = repo::check_current_directory(&args) {
         eprintln!("Error: {}", e);
         return;
     } else {
@@ -81,38 +84,45 @@ fn main() {
     let file_tree = filelist::group_files_by_directory(file_list);
 
     // Output XML
+    // Output XML
     match xml_output::output_repo_as_xml(
-        &args.output_file,
+        &args,
         file_tree,
         &repo_folder,
         &tokenizer,
     ) {
         Ok((number_of_files, total_size, token_count)) => {
-            let summary_data = vec![
-                SummaryTable {
-                    metric: "Total Files processed:".to_string(),
-                    value: number_of_files.to_string(),
-                },
-                SummaryTable {
-                    metric: "Total output size (bytes):".to_string(),
-                    value: total_size.to_string(),
-                },
-                SummaryTable {
-                    metric: format!("Token count ({}):", model.display_name()),
-                    value: token_count.to_string(),
-                },
-            ];
+            if !args.stdout {
+                // Print the summary only if not using stdout
+                println!("-> Successfully wrote XML to {}", args.output_file);
+                println!("\nSummary:");
+                let summary_data = vec![
+                    SummaryTable {
+                        metric: "Total Files processed:".to_string(),
+                        value: number_of_files.to_string(),
+                    },
+                    SummaryTable {
+                        metric: "Total output size (bytes):".to_string(),
+                        value: total_size.to_string(),
+                    },
+                    SummaryTable {
+                        metric: format!(
+                            "Token count ({}):",
+                            model.display_name()
+                        ),
+                        value: token_count.to_string(),
+                    },
+                ];
 
-            // Build and print the table
-            let table = Table::new(summary_data)
-                .with(Disable::row(Rows::first()))
-                .with(Style::empty())
-                .with(Modify::list(Columns::first(), Alignment::right()))
-                .to_string();
+                // Build and print the table
+                let table = Table::new(summary_data)
+                    .with(Disable::row(Rows::first()))
+                    .with(Style::empty())
+                    .with(Modify::list(Columns::first(), Alignment::right()))
+                    .to_string();
 
-            println!("-> Succesfully wrote XML to {}", args.output_file);
-            println!("\nSummary:");
-            println!("{}\n", table);
+                println!("{}\n", table);
+            }
         }
         Err(e) => {
             eprintln!("X  Failed to write XML: {}", e);

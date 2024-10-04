@@ -1,3 +1,4 @@
+use crate::cli::Flags;
 use crate::filelist::{FileTree, FolderNode};
 use std::fs::{metadata, File};
 use std::io::Cursor;
@@ -8,7 +9,7 @@ use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
 // Function to output the repository structure and files list to XML
 pub fn output_repo_as_xml(
-    output_file: &str,
+    flags: &Flags,
     file_tree: FileTree,
     base_path: &Path,
     tokenizer: &CoreBPE,
@@ -16,20 +17,18 @@ pub fn output_repo_as_xml(
     // Use an in-memory buffer instead of a physical file
     let mut buffer = Cursor::new(Vec::new());
 
-    // Manually add the XML declaration at the very top of the buffer
+    // Generate the XML content in memory
     buffer.write_all(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")?;
-
-    // Start the root <repository> node
     buffer.write_all(b"<repository>\n")?;
-
     append_file_summary(&mut buffer)?;
+
+    // Write repository structure and repository files nodes
     {
         let mut writer = EmitterConfig::new()
             .perform_indent(true)
-            .write_document_declaration(false) // Disable automatic XML declaration
+            .write_document_declaration(false)
             .create_writer(&mut buffer);
 
-        // Ensure repository_structure is written first
         writer
             .write(XmlEvent::start_element("repository_structure"))
             .map_err(map_xml_error)?;
@@ -37,11 +36,10 @@ pub fn output_repo_as_xml(
             .write(XmlEvent::start_element("summary"))
             .map_err(map_xml_error)?;
         writer
-        .write(
-            XmlEvent::characters(
-                "This node contains the hierarchical structure of the repository's files and folders."
-            )
-        ).map_err(map_xml_error)?;
+            .write(XmlEvent::characters(
+                "This node contains the hierarchical structure of the repository's files and folders.",
+            ))
+            .map_err(map_xml_error)?;
         writer
             .write(XmlEvent::end_element())
             .map_err(map_xml_error)?; // Close <summary>
@@ -49,40 +47,48 @@ pub fn output_repo_as_xml(
         write_folder_to_xml(&mut writer, &file_tree.folder_node)?;
         writer
             .write(XmlEvent::end_element())
-            .map_err(map_xml_error)?;
-    } // End the writer block here
+            .map_err(map_xml_error)?; // Close <repository_structure>
+    }
 
-    // Add two <CR> between the repository_structure and repository_files nodes
-    buffer.write_all(b"\n\n")?; // Two carriage returns for clarity
-
-    // Pass the base_path to ensure correct file paths are used
-    buffer.write_all(b"<repository_files>\n")?; // Start repository_files node
-    buffer.write_all(b"<summary>This node contains a list of files with their full paths and raw contents.</summary>\n")?; // Add <summary>
+    buffer.write_all(b"\n\n")?;
+    buffer.write_all(b"<repository_files>\n")?;
+    buffer.write_all(b"<summary>This node contains a list of files with their full paths and raw contents.</summary>\n")?;
     write_repository_files_to_xml(
         &mut buffer,
         &file_tree.file_paths,
         base_path,
     )?;
-    buffer.write_all(b"</repository_files>\n")?; // End repository_files node
-
-    // Close the root <repository> node
+    buffer.write_all(b"</repository_files>\n")?;
     buffer.write_all(b"</repository>\n")?;
 
-    // Now that we have the complete XML in memory, write it to the output file
-    let mut file = File::create(output_file)?;
-    file.write_all(&buffer.into_inner())?;
+    // Output handling based on CLI flag
+    if flags.stdout {
+        // Print XML directly to stdout
+        println!(
+            "{}",
+            String::from_utf8(buffer.into_inner()).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+            })?
+        );
 
-    // Number of files processed
-    let number_of_files = file_tree.file_paths.len();
+        Ok((file_tree.file_paths.len(), 0, 0)) // Summary metrics not needed for stdout
+    } else {
+        // Write the XML to the specified output file
+        let mut file = File::create(&flags.output_file)?;
+        file.write_all(&buffer.into_inner())?;
 
-    // Total size of the output file
-    let total_size = file.metadata()?.len(); // Total size of the written XML file
+        // Number of files processed
+        let number_of_files = file_tree.file_paths.len();
 
-    // Now let's calculate the token count of the generated XML
-    let xml_content = std::fs::read_to_string(output_file)?; // Read the XML file
-    let token_count = tokenizer.encode_ordinary(&xml_content).len(); // Count the tokens
+        // Total size of the output file
+        let total_size = file.metadata()?.len();
 
-    Ok((number_of_files, total_size, token_count))
+        // Calculate token count of the generated XML
+        let xml_content = std::fs::read_to_string(&flags.output_file)?;
+        let token_count = tokenizer.encode_ordinary(&xml_content).len();
+
+        Ok((number_of_files, total_size, token_count))
+    }
 }
 
 // Function to write folder structure to XML using EventWriter
