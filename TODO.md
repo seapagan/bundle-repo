@@ -31,5 +31,3 @@
   store information about the repository, such as the name, description, extra
   instructions, etc. Would again be once the TOML file is implemented.
 - ignore `dotfiles` by default, but allow the user to include them if they want.
-- add option to copy to clipboard instead of saving to a file.
-- add option to output the XML to stdout.

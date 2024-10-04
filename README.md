@@ -26,7 +26,10 @@ plain-text dump).
 - [Usage](#usage)
   - [Installation](#installation)
   - [Running the Tool](#running-the-tool)
-  - [Output File](#output-file)
+  - [Output](#output)
+    - [Output to File](#output-to-file)
+    - [Output to stdout](#output-to-stdout)
+    - [Copy to Clipboard](#copy-to-clipboard)
   - [Choose Model for Token Count](#choose-model-for-token-count)
   - [GitHub Token](#github-token)
 - [Ignored Files](#ignored-files)
@@ -129,13 +132,16 @@ bundlerepo
 > However, it still needs to be an actual git repository or the code will exit.
 > I may add a flag to allow non-git repositories in the future.
 
-### Output File
+### Output
 
-By default, the XML output will be written to `packed-repo.xml`, which contains
-the hierarchical structure and metadata of the repository files. This can
-then be passed to an LLM model for analysis (for example, attach the output
-file to a ChatGPT or Claude prompt). The filename can be changed using the
-`--file` or `-f` flag:
+#### Output to File
+
+This is the default operation of the tool, the XML output will be written to
+`packed-repo.xml`, which contains the hierarchical structure and metadata of the
+repository files. This can then be passed to an LLM model for analysis (for
+example, attach the output file to a ChatGPT or Claude prompt).
+
+The filename can be changed using the `--file` or `-f` flag:
 
 ```bash
 bundlerepo user_name/repo_name --file my-repo.xml
@@ -147,6 +153,34 @@ specified:
 ```bash
 bundlerepo user_name/repo_name --file /path/to/output.xml
 ```
+
+#### Output to stdout
+
+You can output the XML to the terminal by using the `--stdout` or `-s` flag:
+
+```bash
+bundlerepo user_name/repo_name --stdout
+```
+
+This will print the XML output to the terminal, which can then be redirected to
+a file or piped to another application.
+
+In this case, the `--file` flag is ignored and no file is written to disk.
+
+#### Copy to Clipboard
+
+You can copy the XML output to the clipboard by using the `--clipboard` or `-c`
+flag:
+
+```bash
+bundlerepo user_name/repo_name --clipboard
+```
+
+This will copy the XML output to the clipboard, which can then be pasted into
+another application or file, or indeed directly into an LLM prompt. Note that it
+is likely to be a large amount of text, so ensure your clipboard can handle it.
+
+In this case, the `--file` flag is ignored and no file is written to disk.
 
 ### Choose Model for Token Count
 
@@ -270,12 +304,14 @@ understood by an LLM. Below is an example layout with explanations for each tag:
 
 ## Beta Status
 
-This tool is currently in **beta**. While the core functionality works, there
-may be edge cases or features yet to be fully refined. Feedback and
-contributions are welcome to improve and stabilize the tool.
-
-There is a pressing need for a test suite to ensure the tool works as expected
-in a variety of scenarios. This is a priority for the next release.
+> [!WARNING]
+>
+> This tool is currently in **beta**. While the core functionality works, there
+> may be edge cases or features yet to be fully refined. Feedback and
+> contributions are welcome to improve and stabilize the tool.
+>
+> There is a pressing need for a test suite to ensure the tool works as expected
+> in a variety of scenarios. This is a priority for the next release.
 
 ## Acknowledgements
 
