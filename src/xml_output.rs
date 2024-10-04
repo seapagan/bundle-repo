@@ -1,5 +1,4 @@
 use crate::filelist::{FileTree, FolderNode};
-use infer;
 use std::fs::{metadata, File};
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -241,7 +240,6 @@ fn append_file_summary(file: &mut File) -> Result<(), io::Error> {
     - Binary files are not included in this packed representation. Please refer to
       the Repository Structure section for a complete list of file paths, including
       binary files.
-    - Code comments have been removed for brevity.
   </notes>
 
   <additional_info>

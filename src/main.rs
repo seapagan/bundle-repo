@@ -9,6 +9,7 @@ use tabled::{
     },
     Table, Tabled,
 };
+use tempfile::tempdir;
 use tokenizer::Model;
 
 mod cli;
@@ -54,9 +55,15 @@ fn main() {
         }
     };
 
-    let file_list = if let Some(ref repo_input) = args.repo {
-        match repo::clone_repo(repo_input, args.token.as_deref()) {
-            Ok(repo_folder) => filelist::list_files_in_repo(&repo_folder),
+    // Create a temporary directory in main and pass it to clone_repo
+    let temp_dir = tempdir().unwrap();
+    let repo_folder = if let Some(ref repo_input) = args.repo {
+        match repo::clone_repo(
+            repo_input,
+            args.token.as_deref(),
+            temp_dir.path(),
+        ) {
+            Ok(repo_folder) => repo_folder,
             Err(e) => {
                 eprintln!("Error: {}", e);
                 return;
@@ -66,25 +73,18 @@ fn main() {
         eprintln!("Error: {}", e);
         return;
     } else {
-        let repo_path = PathBuf::from(".");
-        filelist::list_files_in_repo(&repo_path)
-    };
-
-    let file_tree = filelist::group_files_by_directory(file_list);
-
-    let base_path = if let Some(ref repo_input) = args.repo {
-        match repo::clone_repo(repo_input, args.token.as_deref()) {
-            Ok(repo_folder) => repo_folder,
-            Err(_) => PathBuf::from("."), // Fall back to current directory
-        }
-    } else {
         PathBuf::from(".")
     };
 
+    // List and group files
+    let file_list = filelist::list_files_in_repo(&repo_folder);
+    let file_tree = filelist::group_files_by_directory(file_list);
+
+    // Output XML
     match xml_output::output_repo_as_xml(
         &args.output_file,
         file_tree,
-        &base_path,
+        &repo_folder,
         &tokenizer,
     ) {
         Ok((number_of_files, total_size, token_count)) => {
