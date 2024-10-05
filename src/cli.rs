@@ -42,6 +42,14 @@ pub struct Flags {
     pub model: String,
 
     #[arg(
+        long= "remove-comments",
+        short = 'r',
+        action = ArgAction::SetTrue,
+        help = "Remove existing code comments from the XML output."
+    )]
+    pub remove_comments: bool,
+
+    #[arg(
         long = "clipboard",
         short = 'c',
         action = ArgAction::SetTrue,
