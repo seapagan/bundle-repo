@@ -182,6 +182,7 @@ fn write_repository_files_to_xml<W: Write>(
 
                 // Write raw file contents without escaping
                 writer.write_all(contents.as_bytes())?;
+                writer.write_all(b"</file>\n\n")?; // Close the <file> node
             }
             Err(err) => {
                 // For other types of errors, write a general failure message with the error description
