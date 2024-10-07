@@ -58,6 +58,7 @@ pub fn output_repo_as_xml(
         &mut buffer,
         &file_tree.file_paths,
         base_path,
+        flags,
     )?;
     buffer.write_all(b"</repository_files>\n")?;
     buffer.write_all(b"</repository>\n")?;
@@ -141,6 +142,7 @@ fn write_repository_files_to_xml<W: Write>(
     writer: &mut W,
     file_paths: &Vec<String>,
     base_path: &Path,
+    flags: &Flags, // Add the Flags reference here to access the lnumbers flag
 ) -> Result<(), std::io::Error> {
     for file_path in file_paths {
         let full_path = base_path.join(file_path);
@@ -166,7 +168,12 @@ fn write_repository_files_to_xml<W: Write>(
 
         // Try to read the file contents using the full path
         match std::fs::read_to_string(&full_path) {
-            Ok(contents) => {
+            Ok(mut contents) => {
+                // Apply line numbering if the lnumbers flag is set
+                if flags.lnumbers {
+                    contents = add_line_numbers(&contents);
+                }
+
                 // Calculate number of lines
                 let line_count = contents.lines().count();
 
@@ -313,4 +320,37 @@ fn is_binary_file(path: &Path) -> io::Result<bool> {
     }
     let threshold = (bytes_read as f32) * 0.3;
     Ok(non_printable_count as f32 > threshold)
+}
+
+/// Adds line numbers to the given file content, ensuring the content ends
+/// with a newline. The line numbers are dynamically padded to fit the largest
+/// line number.
+///
+/// Args:
+///     file_content: A string containing the raw content of the file.
+///
+/// Returns:
+///     A string with line numbers added to each line, left-padded, and
+///     followed by 4 spaces. Ensures the final content ends with a newline.
+fn add_line_numbers(file_content: &str) -> String {
+    let lines: Vec<&str> = file_content.lines().collect();
+    let total_lines = lines.len();
+
+    // Determine the width needed for the largest line number
+    let width = total_lines.to_string().len();
+
+    // Add line numbers with dynamic width padding
+    let mut numbered_content = lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| format!("{:>width$}  {}", i + 1, line, width = width))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Ensure the content ends with a newline
+    if !numbered_content.ends_with('\n') {
+        numbered_content.push('\n');
+    }
+
+    numbered_content
 }
