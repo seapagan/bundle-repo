@@ -31,6 +31,7 @@ plain-text dump).
     - [Output to File](#output-to-file)
     - [Output to stdout](#output-to-stdout)
     - [Copy to Clipboard](#copy-to-clipboard)
+    - [Add line numbers](#add-line-numbers)
   - [Choose Model for Token Count](#choose-model-for-token-count)
   - [GitHub Token](#github-token)
 - [Ignored Files](#ignored-files)
@@ -191,6 +192,20 @@ another application or file, or indeed directly into an LLM prompt. Note that it
 is likely to be a large amount of text, so ensure your clipboard can handle it.
 
 In this case, the `--file` flag is ignored and no file is written to disk.
+
+#### Add line numbers
+
+If you want to add line numbers to the output, you can use the `--lnumbers` or
+`-l` flag:
+
+```bash
+bundlerepo user_name/repo_name --lnumbers
+```
+
+This will add line numbers physically to each line in the output, which can be
+useful for debugging or analysis. Note that this will increase the token count
+of the output, so be aware of that when using it. Extra info for the LLM will
+be added to the `<instructions>` node to explain the line numbers.
 
 ### Choose Model for Token Count
 

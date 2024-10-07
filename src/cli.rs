@@ -50,6 +50,14 @@ pub struct Flags {
     pub clipboard: bool,
 
     #[arg(
+    long = "lnumbers",
+    short = 'l',
+    action = clap::ArgAction::SetTrue,
+    help = "Add line numbers to each code file in the output."
+    )]
+    pub lnumbers: bool,
+
+    #[arg(
         short,
         long,
         help = "GitHub personal access token (required for private repos and \
