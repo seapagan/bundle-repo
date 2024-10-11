@@ -17,6 +17,13 @@ pub struct Flags {
     pub repo: Option<String>,
 
     #[arg(
+        long = "branch",
+        short = 'b',
+        help = "Specify a branch to checkout for remote repositories"
+    )]
+    pub branch: Option<String>,
+
+    #[arg(
         long = "file",
         short = 'f',
         help = "Filename to save the bundle as.",

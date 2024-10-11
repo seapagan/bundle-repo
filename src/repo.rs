@@ -41,6 +41,13 @@ pub fn clone_repo(
     let mut builder = git2::build::RepoBuilder::new();
     builder.fetch_options(fetch_options);
 
+    if let Some(branch_name) = &flags.branch {
+        builder.branch(&branch_name);
+        if !flags.stdout {
+            println!("-> Checking out branch: {}", branch_name);
+        }
+    }
+
     match builder.clone(&repo_url, &repo_folder) {
         Ok(_) => {
             if !flags.stdout {
