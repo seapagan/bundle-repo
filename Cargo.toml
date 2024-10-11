@@ -1,12 +1,19 @@
 [package]
 name = "bundle_repo"
 version = "0.1.0"
-description = "Pack a local or remote Git Repository for LLM Consumption."
+description = "Pack a local or remote Git Repository to XML for LLM Consumption."
 edition = "2021"
 authors = ["Grant Ramsay <seapagan@gmail.com>"]
 license = "MIT"
 homepage = "https://seapagan.github.io/bundle-repo/"
 exclude = [".github/*", "docs/*"]
+categories = [
+  "command-line-utilities",
+  "development-tools",
+  "text-processing",
+  "parsing",
+]
+keywords = ["llm", "tokenizer", "ai", "cli", "git"]
 
 [[bin]]
 name = "bundlerepo"
