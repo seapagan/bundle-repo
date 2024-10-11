@@ -1,4 +1,6 @@
-use git2::{Cred, FetchOptions, RemoteCallbacks, Repository};
+use git2::{
+    Cred, ErrorClass, ErrorCode, FetchOptions, RemoteCallbacks, Repository,
+};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use url::Url;
@@ -41,19 +43,43 @@ pub fn clone_repo(
     let mut builder = git2::build::RepoBuilder::new();
     builder.fetch_options(fetch_options);
 
+    if let Some(branch_name) = &flags.branch {
+        builder.branch(&branch_name);
+        if !flags.stdout {
+            println!("-> Checking out branch: {}", branch_name);
+        }
+    }
+
     match builder.clone(&repo_url, &repo_folder) {
         Ok(_) => {
             if !flags.stdout {
                 println!(
-                    "-> Successfully cloned repository '{}'",
-                    &repo_url.trim_end_matches(".git")
+                    "-> Successfully cloned repository '{}'{}",
+                    &repo_url.trim_end_matches(".git"),
+                    flags.branch.as_ref().map_or(String::new(), |b| format!(
+                        " (branch: {})",
+                        b
+                    ))
                 );
             }
             Ok(repo_folder)
         }
         Err(e) => {
-            eprintln!("X  Failed to clone: {}", e);
-            Err(e)
+            let error_message = match (e.class(), e.code()) {
+            (ErrorClass::Reference, ErrorCode::NotFound) => {
+                if flags.branch.is_some() {
+                    format!("The specified branch '{}' does not exist in the repository.", flags.branch.as_ref().unwrap())
+                } else {
+                    format!("Failed to clone: {}", e)
+                }
+            },
+            (ErrorClass::Net, _) => format!("Network error: The repository '{}' might not exist or you may not have permission to access it.", repo_input),
+            (ErrorClass::Http, _) if e.message().contains("too many redirects or authentication replays") => {
+                format!("The repository '{}' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option.", repo_input)
+            },
+            _ => format!("Failed to clone: {}", e),
+        };
+            Err(git2::Error::from_str(&error_message))
         }
     }
 }
