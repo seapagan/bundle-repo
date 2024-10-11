@@ -71,9 +71,11 @@ pub fn check_current_directory(flags: &Flags) -> Result<(), git2::Error> {
     match Repository::discover(".") {
         Ok(repo) => {
             if !flags.stdout {
+                let repo_path = repo.path().parent().unwrap().display();
+                let branch_name = get_current_branch_name(&repo)?;
                 println!(
-                    "-> Found a git repository in the current directory: {}",
-                    repo.path().parent().unwrap().display()
+                    "-> Found a git repository in the current directory: '{}' (branch: {})",
+                    repo_path, branch_name
                 );
             }
             Ok(())
@@ -82,5 +84,14 @@ pub fn check_current_directory(flags: &Flags) -> Result<(), git2::Error> {
             eprintln!("X  No git repository found in the current directory.");
             Err(git2::Error::from_str("Not a git repository"))
         }
+    }
+}
+
+fn get_current_branch_name(repo: &Repository) -> Result<String, git2::Error> {
+    let head = repo.head()?;
+    if let Some(name) = head.shorthand() {
+        Ok(name.to_string())
+    } else {
+        Ok("detached HEAD".to_string())
     }
 }
