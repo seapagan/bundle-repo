@@ -36,6 +36,3 @@
 - Add secret-checking to the tool, to ensure that no secrets are included in the
   output XML file. Hopefully this can be done with a library, but may need to
   write our own checks.
-- option to include line numbers for files in the XML file, this could be useful
-  for debugging or for other tools that may need to know the line number of a
-  particular piece of code.
