@@ -103,8 +103,8 @@ releases and features.
 
 ## Usage
 
-This will be available as a binary and from `Crates.io` in the future, but for
-now, you can build it from source. You will need to have
+This will be available as a binary download in the future, but for now, you can
+build it from source or install from `crates.io`. You will need to have
 [Rust](https://www.rust-lang.org/tools/install) installed on your system to
 build the project.
 
@@ -112,11 +112,19 @@ build the project.
 
 1. Clone the project and install dependencies.
 
-    ```bash
-    git clone https://github.com/seapagan/bundle-repo.git
-    cd bundle-repo
-    cargo build --release
-    ```
+   - From [crates.io][crates-io-page]:
+
+      ```bash
+      cargo install bundle_repo
+      ```
+
+   - From source:
+
+      ```bash
+      git clone https://github.com/seapagan/bundle-repo.git
+      cd bundle-repo
+      cargo build --release
+      ```
 
 2. Move the binary to a directory in your `PATH`:
 
@@ -432,3 +440,4 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 [why-xml]: https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags
+[crates-io-page]: https://crates.io/crates/bundle_repo
