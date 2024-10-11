@@ -43,7 +43,7 @@ pub struct Flags {
         long = "model",
         short = 'm',
         default_value = "gpt4o",
-        help = "Model to use for tokenization. Supported \
+        help = "Model to use for tokenization count. Supported \
                 models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2'"
     )]
     pub model: String,
