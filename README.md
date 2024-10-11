@@ -27,6 +27,7 @@ plain-text dump).
 - [Usage](#usage)
   - [Installation](#installation)
   - [Running the Tool](#running-the-tool)
+    - [Specify the branch for a remote Git repository](#specify-the-branch-for-a-remote-git-repository)
   - [Output](#output)
     - [Output to File](#output-to-file)
     - [Output to stdout](#output-to-stdout)
@@ -34,6 +35,7 @@ plain-text dump).
     - [Add line numbers](#add-line-numbers)
   - [Choose Model for Token Count](#choose-model-for-token-count)
   - [GitHub Token](#github-token)
+- [Command Line Options](#command-line-options)
 - [Ignored Files](#ignored-files)
 - [Help](#help)
 - [Planned Improvements](#planned-improvements)
@@ -120,7 +122,7 @@ Use the full URL:
 bundlerepo https://github.com/user_name/repo_name
 ```
 
-Or use the current directory:
+Or use the current directory (if it is a git repository):
 
 ```bash
 bundlerepo
@@ -142,6 +144,25 @@ bundlerepo
 >
 > However, it still needs to be an actual git repository or the code will exit.
 > I may add a flag to allow non-git repositories in the future.
+
+#### Specify the branch for a remote Git repository
+
+If you want to specify a branch for a remote repository, you can do so using the
+`--branch` or `-b` flag:
+
+```bash
+bundlerepo user_name/repo_name --branch my_branch
+```
+
+Without this flag, the default branch will be used, which is usually `main` or
+`master`.
+
+> [!NOTE]
+>
+> The `--branch` option only works for **remote repositories**. It has no effect
+> when bundling a local repository. If you want to bundle a local repository
+> with a specific branch, you will need to check out that branch before running
+> the tool.
 
 ### Output
 
@@ -248,6 +269,31 @@ bundlerepo user_name/repo_name --token YOUR_GITHUB_TOKEN
 >
 > This is totally optional if you are only using public repositories.
 
+## Command Line Options
+
+The full list of command line options can be seen by running with the `--help`
+flag:
+
+```pre
+Pack a local or remote Git Repository to XML for LLM Consumption.
+
+Usage: bundlerepo [OPTIONS] [REPO]
+
+Arguments:
+  [REPO]  GitHub repository to clone (e.g. 'user/repo' or full GitHub URL). If not provided, the current directory will be searched for a Git repository.
+
+Options:
+  -b, --branch <BRANCH>     Specify a branch to checkout for remote repositories
+  -f, --file <OUTPUT_FILE>  Filename to save the bundle as. [default: packed-repo.xml]
+  -s, --stdout              Output the XML directly to stdout without creating a file.
+  -m, --model <MODEL>       Model to use for tokenization. Supported models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2' [default: gpt4o]
+  -c, --clipboard           Copy the XML to the clipboard after creating it.
+  -l, --lnumbers            Add line numbers to each code file in the output.
+  -t, --token <TOKEN>       GitHub personal access token (required for private repos and to pass rate limits)
+  -V, --version             Print version information and exit
+  -h, --help                Print help
+```
+
 ## Ignored Files
 
 The tool will ignore the following files by default and (except for binary, see
@@ -271,12 +317,13 @@ configuration file functionality is added.
 > [!TIP]
 >
 > I'm very open to adding other files that should be ignored by default, If you
-> have a suggestion, please open a PR! For example, tool configuration files
-> (eslintrc, prettierrc, etc), which are not needed by an LLM and just take up
-> token space.
+> have a suggestion, please open a PR or an Issue on GitHub. For example, tool
+> configuration files (eslintrc, prettierrc, etc), which are not needed by an
+> LLM and just take up token space.
 >
-> If there is demand, i may add a flag to allow the user to bypass this list and
-> include all files.
+> If there is demand, I may add a flag to allow the user to bypass this list and
+> include all files. However, binary files will always be excluded as they don't
+> fit well in XML.
 
 ## Help
 
