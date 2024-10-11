@@ -17,9 +17,9 @@
   always good to have comments in the returned code from the LLM. Needs more
   thought. **If we add this, remember to re-add the note on comment removal to
   the output file `<notes>` node.**
-- allow to specify which branch of the repository to use, use the default
-  branch if not specified. Local repositories should be able to have the same,
-  but default to the checked-out branch.
+- allow to specify which branch of the repository to use, use the default branch
+  if not specified. Local repositories should just use the checked-out branch -
+  if you want to use a different branch, you should check it out first.
 - ensure that the tool works on Windows, Linux, and macOS. It does work great on
   all 3 at this current code state, but we need to develop a test suite and get
   the CI pipeline working to ensure that it continues to work on all 3.
