@@ -18,9 +18,28 @@ The generated XML metadata and structure are inspired by the output of Repopack
 (a lot of the header text was taken from there), with enhancements that include
 additional file attributes, instructions for the LLM and a more robust
 structure. At this time `xml` output is the only supported output format,
-however future versions may include additional formats. XML was chosen since it
-is very well structured and LLM models can easily parse it (better than a
-plain-text dump).
+however future versions may include additional formats.
+
+> [!TIP]
+>
+> XML was chosen as the default output format since it is very well
+> structured and LLM models can easily parse it (better than a plain-text dump -
+> see this [link][why-xml] from Anthropic as to why XML is a superior format for
+> feeding context and instructions into an LLM).
+
+```pre
+BundleRepo Version 0.1.0, © 2024 Grant Ramsay <seapagan@gmail.com>
+
+Pack a local or remote Git Repository to XML for LLM Consumption.
+
+-> Found a git repository in the current directory: '/home/seapagan/data/work/own/bundle-repo' (branch: main)
+-> Successfully wrote XML to packed-repo.xml
+
+Summary:
+     Total Files processed:  11
+ Total output size (bytes):  47906
+      Token count (GPT-4o):  11344
+```
 
 - [Compatibility](#compatibility)
 - [Features](#features)
@@ -37,7 +56,6 @@ plain-text dump).
   - [GitHub Token](#github-token)
 - [Command Line Options](#command-line-options)
 - [Ignored Files](#ignored-files)
-- [Help](#help)
 - [Planned Improvements](#planned-improvements)
 - [XML Layout](#xml-layout)
 - [Beta Status](#beta-status)
@@ -265,9 +283,9 @@ Once you have the token, you can pass it to the tool using the `--token` flag:
 bundlerepo user_name/repo_name --token YOUR_GITHUB_TOKEN
 ```
 
-> [!NOTE]
+> [!TIP]
 >
-> This is totally optional if you are only using public repositories.
+> Passing a token is totally optional if you are only using public repositories.
 
 ## Command Line Options
 
@@ -324,14 +342,6 @@ configuration file functionality is added.
 > If there is demand, I may add a flag to allow the user to bypass this list and
 > include all files. However, binary files will always be excluded as they don't
 > fit well in XML.
-
-## Help
-
-For help and additional options, you can run:
-
-```bash
-bundlerepo --help
-```
 
 ## Planned Improvements
 
@@ -420,3 +430,5 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+[why-xml]: https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags
