@@ -28,7 +28,7 @@ clap = { version = "4.1", features = ["derive"] }
 regex = "1"
 ignore = "0.4"
 xml = "0.8"
-tiktoken-rs = "0.5.9"
+tiktoken-rs = "0.6.0"
 tabled = "0.16.0"
 infer = "0.16.0"
 arboard = { version = "3.4.1", default-features = false, features = [
