@@ -22,7 +22,6 @@ pub fn clone_repo(
     } else if is_valid_shorthand(repo_input) {
         format!("https://github.com/{}.git", repo_input)
     } else {
-        eprintln!("Invalid repository shorthand.");
         return Err(git2::Error::from_str("Invalid repository shorthand"));
     };
 
