@@ -110,29 +110,29 @@ build the project.
 
 ### Installation
 
-1. Clone the project and install dependencies.
+Clone the project and install dependencies.
 
-   - From [crates.io][crates-io-page]:
+- From [crates.io][crates-io-page]:
 
-      ```bash
-      cargo install bundle_repo
-      ```
+   ```bash
+   cargo install bundle_repo
+   ```
 
-   - From source:
+- From source:
 
-      ```bash
-      git clone https://github.com/seapagan/bundle-repo.git
-      cd bundle-repo
-      cargo build --release
-      ```
+   ```bash
+   git clone https://github.com/seapagan/bundle-repo.git
+   cd bundle-repo
+   cargo build --release
+   ```
 
-2. Move the binary to a directory in your `PATH`:
+  Move the resulting binary to a directory in your `PATH`:
 
-    eg for Linux or MacOS:
+  eg for Linux or MacOS:
 
-    ```bash
-    sudo mv ./target/release/bundlerepo /usr/local/bin
-    ```
+  ```bash
+  sudo mv ./target/release/bundlerepo /usr/local/bin
+  ```
 
 ### Running the Tool
 
