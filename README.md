@@ -18,23 +18,44 @@ The generated XML metadata and structure are inspired by the output of Repopack
 (a lot of the header text was taken from there), with enhancements that include
 additional file attributes, instructions for the LLM and a more robust
 structure. At this time `xml` output is the only supported output format,
-however future versions may include additional formats. XML was chosen since it
-is very well structured and LLM models can easily parse it (better than a
-plain-text dump).
+however future versions may include additional formats.
+
+> [!TIP]
+>
+> XML was chosen as the default output format since it is very well
+> structured and LLM models can easily parse it (better than a plain-text dump -
+> see this [link][why-xml] from Anthropic as to why XML is a superior format for
+> feeding context and instructions into an LLM).
+
+```pre
+BundleRepo Version 0.1.0, © 2024 Grant Ramsay <seapagan@gmail.com>
+
+Pack a local or remote Git Repository to XML for LLM Consumption.
+
+-> Found a git repository in the current directory: '/home/seapagan/data/work/own/bundle-repo' (branch: main)
+-> Successfully wrote XML to packed-repo.xml
+
+Summary:
+     Total Files processed:  11
+ Total output size (bytes):  47906
+      Token count (GPT-4o):  11344
+```
 
 - [Compatibility](#compatibility)
 - [Features](#features)
 - [Usage](#usage)
   - [Installation](#installation)
   - [Running the Tool](#running-the-tool)
+    - [Specify the branch for a remote Git repository](#specify-the-branch-for-a-remote-git-repository)
   - [Output](#output)
     - [Output to File](#output-to-file)
     - [Output to stdout](#output-to-stdout)
     - [Copy to Clipboard](#copy-to-clipboard)
+    - [Add line numbers](#add-line-numbers)
   - [Choose Model for Token Count](#choose-model-for-token-count)
   - [GitHub Token](#github-token)
+- [Command Line Options](#command-line-options)
 - [Ignored Files](#ignored-files)
-- [Help](#help)
 - [Planned Improvements](#planned-improvements)
 - [XML Layout](#xml-layout)
 - [Beta Status](#beta-status)
@@ -82,28 +103,36 @@ releases and features.
 
 ## Usage
 
-This will be available as a binary and from `Crates.io` in the future, but for
-now, you can build it from source. You will need to have
+This will be available as a binary download in the future, but for now, you can
+build it from source or install from `crates.io`. You will need to have
 [Rust](https://www.rust-lang.org/tools/install) installed on your system to
 build the project.
 
 ### Installation
 
-1. Clone the project and install dependencies.
+Clone the project and install dependencies.
 
-    ```bash
-    git clone https://github.com/seapagan/bundle-repo.git
-    cd bundle-repo
-    cargo build --release
-    ```
+- From [crates.io][crates-io-page]:
 
-2. Move the binary to a directory in your `PATH`:
+   ```bash
+   cargo install bundle_repo
+   ```
 
-    eg for Linux or MacOS:
+- From source:
 
-    ```bash
-    sudo mv ./target/release/bundlerepo /usr/local/bin
-    ```
+   ```bash
+   git clone https://github.com/seapagan/bundle-repo.git
+   cd bundle-repo
+   cargo build --release
+   ```
+
+  Move the resulting binary to a directory in your `PATH`:
+
+  eg for Linux or MacOS:
+
+  ```bash
+  sudo mv ./target/release/bundlerepo /usr/local/bin
+  ```
 
 ### Running the Tool
 
@@ -119,7 +148,7 @@ Use the full URL:
 bundlerepo https://github.com/user_name/repo_name
 ```
 
-Or use the current directory:
+Or use the current directory (if it is a git repository):
 
 ```bash
 bundlerepo
@@ -141,6 +170,25 @@ bundlerepo
 >
 > However, it still needs to be an actual git repository or the code will exit.
 > I may add a flag to allow non-git repositories in the future.
+
+#### Specify the branch for a remote Git repository
+
+If you want to specify a branch for a remote repository, you can do so using the
+`--branch` or `-b` flag:
+
+```bash
+bundlerepo user_name/repo_name --branch my_branch
+```
+
+Without this flag, the default branch will be used, which is usually `main` or
+`master`.
+
+> [!NOTE]
+>
+> The `--branch` option only works for **remote repositories**. It has no effect
+> when bundling a local repository. If you want to bundle a local repository
+> with a specific branch, you will need to check out that branch before running
+> the tool.
 
 ### Output
 
@@ -192,6 +240,20 @@ is likely to be a large amount of text, so ensure your clipboard can handle it.
 
 In this case, the `--file` flag is ignored and no file is written to disk.
 
+#### Add line numbers
+
+If you want to add line numbers to the output, you can use the `--lnumbers` or
+`-l` flag:
+
+```bash
+bundlerepo user_name/repo_name --lnumbers
+```
+
+This will add line numbers physically to each line in the output, which can be
+useful for debugging or analysis. Note that this will increase the token count
+of the output, so be aware of that when using it. Extra info for the LLM will
+be added to the `<instructions>` node to explain the line numbers.
+
 ### Choose Model for Token Count
 
 After generating the xml file, the tool gives a count of the number of tokens
@@ -229,9 +291,34 @@ Once you have the token, you can pass it to the tool using the `--token` flag:
 bundlerepo user_name/repo_name --token YOUR_GITHUB_TOKEN
 ```
 
-> [!NOTE]
+> [!TIP]
 >
-> This is totally optional if you are only using public repositories.
+> Passing a token is totally optional if you are only using public repositories.
+
+## Command Line Options
+
+The full list of command line options can be seen by running with the `--help`
+flag:
+
+```pre
+Pack a local or remote Git Repository to XML for LLM Consumption.
+
+Usage: bundlerepo [OPTIONS] [REPO]
+
+Arguments:
+  [REPO]  GitHub repository to clone (e.g. 'user/repo' or full GitHub URL). If not provided, the current directory will be searched for a Git repository.
+
+Options:
+  -b, --branch <BRANCH>     Specify a branch to checkout for remote repositories
+  -f, --file <OUTPUT_FILE>  Filename to save the bundle as. [default: packed-repo.xml]
+  -s, --stdout              Output the XML directly to stdout without creating a file.
+  -m, --model <MODEL>       Model to use for tokenization. Supported models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2' [default: gpt4o]
+  -c, --clipboard           Copy the XML to the clipboard after creating it.
+  -l, --lnumbers            Add line numbers to each code file in the output.
+  -t, --token <TOKEN>       GitHub personal access token (required for private repos and to pass rate limits)
+  -V, --version             Print version information and exit
+  -h, --help                Print help
+```
 
 ## Ignored Files
 
@@ -256,20 +343,13 @@ configuration file functionality is added.
 > [!TIP]
 >
 > I'm very open to adding other files that should be ignored by default, If you
-> have a suggestion, please open a PR! For example, tool configuration files
-> (eslintrc, prettierrc, etc), which are not needed by an LLM and just take up
-> token space.
+> have a suggestion, please open a PR or an Issue on GitHub. For example, tool
+> configuration files (eslintrc, prettierrc, etc), which are not needed by an
+> LLM and just take up token space.
 >
-> If there is demand, i may add a flag to allow the user to bypass this list and
-> include all files.
-
-## Help
-
-For help and additional options, you can run:
-
-```bash
-bundlerepo --help
-```
+> If there is demand, I may add a flag to allow the user to bypass this list and
+> include all files. However, binary files will always be excluded as they don't
+> fit well in XML.
 
 ## Planned Improvements
 
@@ -358,3 +438,6 @@ DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+[why-xml]: https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags
+[crates-io-page]: https://crates.io/crates/bundle_repo

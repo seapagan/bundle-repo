@@ -17,6 +17,13 @@ pub struct Flags {
     pub repo: Option<String>,
 
     #[arg(
+        long = "branch",
+        short = 'b',
+        help = "Specify a branch to checkout for remote repositories"
+    )]
+    pub branch: Option<String>,
+
+    #[arg(
         long = "file",
         short = 'f',
         help = "Filename to save the bundle as.",
@@ -36,7 +43,7 @@ pub struct Flags {
         long = "model",
         short = 'm',
         default_value = "gpt4o",
-        help = "Model to use for tokenization. Supported \
+        help = "Model to use for tokenization count. Supported \
                 models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2'"
     )]
     pub model: String,
@@ -56,6 +63,14 @@ pub struct Flags {
         help = "Copy the XML to the clipboard after creating it."
     )]
     pub clipboard: bool,
+
+    #[arg(
+    long = "lnumbers",
+    short = 'l',
+    action = clap::ArgAction::SetTrue,
+    help = "Add line numbers to each code file in the output."
+    )]
+    pub lnumbers: bool,
 
     #[arg(
         short,

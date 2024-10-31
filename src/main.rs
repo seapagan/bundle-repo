@@ -69,12 +69,12 @@ fn main() {
             Ok(repo_folder) => repo_folder,
             Err(e) => {
                 eprintln!("Error: {}", e);
-                return;
+                exit(2);
             }
         }
     } else if let Err(e) = repo::check_current_directory(&args) {
         eprintln!("Error: {}", e);
-        return;
+        exit(3);
     } else {
         PathBuf::from(".")
     };
@@ -133,6 +133,7 @@ fn main() {
         }
         Err(e) => {
             eprintln!("X  Failed to write XML: {}", e);
+            exit(4);
         }
     }
 }

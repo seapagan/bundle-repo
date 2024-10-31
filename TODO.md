@@ -17,9 +17,6 @@
   always good to have comments in the returned code from the LLM. Needs more
   thought. **If we add this, remember to re-add the note on comment removal to
   the output file `<notes>` node.**
-- allow to specify which branch of the repository to use, use the default
-  branch if not specified. Local repositories should be able to have the same,
-  but default to the checked-out branch.
 - ensure that the tool works on Windows, Linux, and macOS. It does work great on
   all 3 at this current code state, but we need to develop a test suite and get
   the CI pipeline working to ensure that it continues to work on all 3.
@@ -36,6 +33,3 @@
 - Add secret-checking to the tool, to ensure that no secrets are included in the
   output XML file. Hopefully this can be done with a library, but may need to
   write our own checks.
-- option to include line numbers for files in the XML file, this could be useful
-  for debugging or for other tools that may need to know the line number of a
-  particular piece of code.

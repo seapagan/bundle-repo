@@ -1,12 +1,20 @@
 [package]
 name = "bundle_repo"
-version = "0.1.0"
-description = "Pack a local or remote Git Repository for LLM Consumption."
+version = "0.2.0"
+description = "Pack a local or remote Git Repository to XML for LLM Consumption."
+readme = "README.md"
 edition = "2021"
 authors = ["Grant Ramsay <seapagan@gmail.com>"]
 license = "MIT"
-homepage = "https://seapagan.github.io/bundle-repo/"
+repository = "https://seapagan.github.io/bundle-repo/"
 exclude = [".github/*", "docs/*"]
+categories = [
+  "command-line-utilities",
+  "development-tools",
+  "text-processing",
+  "parsing",
+]
+keywords = ["llm", "tokenizer", "ai", "cli", "git"]
 
 [[bin]]
 name = "bundlerepo"
@@ -20,7 +28,7 @@ clap = { version = "4.5", features = ["derive"] }
 regex = "1"
 ignore = "0.4"
 xml = "0.8"
-tiktoken-rs = "0.5.9"
+tiktoken-rs = "0.6.0"
 tabled = "0.16.0"
 infer = "0.16.0"
 arboard = { version = "3.4.1", default-features = false, features = [

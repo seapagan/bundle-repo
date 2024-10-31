@@ -21,7 +21,7 @@ pub fn output_repo_as_xml(
     // Generate the XML content in memory
     buffer.write_all(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")?;
     buffer.write_all(b"<repository>\n")?;
-    append_file_summary(&mut buffer)?;
+    append_file_summary(&mut buffer, flags)?;
 
     // Write repository structure and repository files nodes
     {
@@ -58,6 +58,7 @@ pub fn output_repo_as_xml(
         &mut buffer,
         &file_tree.file_paths,
         base_path,
+        flags,
     )?;
     buffer.write_all(b"</repository_files>\n")?;
     buffer.write_all(b"</repository>\n")?;
@@ -141,6 +142,7 @@ fn write_repository_files_to_xml<W: Write>(
     writer: &mut W,
     file_paths: &Vec<String>,
     base_path: &Path,
+    flags: &Flags, // Add the Flags reference here to access the lnumbers flag
 ) -> Result<(), std::io::Error> {
     for file_path in file_paths {
         let full_path = base_path.join(file_path);
@@ -166,7 +168,12 @@ fn write_repository_files_to_xml<W: Write>(
 
         // Try to read the file contents using the full path
         match std::fs::read_to_string(&full_path) {
-            Ok(contents) => {
+            Ok(mut contents) => {
+                // Apply line numbering if the lnumbers flag is set
+                if flags.lnumbers {
+                    contents = add_line_numbers(&contents);
+                }
+
                 // Calculate number of lines
                 let line_count = contents.lines().count();
 
@@ -182,6 +189,7 @@ fn write_repository_files_to_xml<W: Write>(
 
                 // Write raw file contents without escaping
                 writer.write_all(contents.as_bytes())?;
+                writer.write_all(b"</file>\n\n")?; // Close the <file> node
             }
             Err(err) => {
                 // For other types of errors, write a general failure message with the error description
@@ -217,16 +225,22 @@ fn map_xml_error(err: xml::writer::Error) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, err)
 }
 
-/// Function to append the file summary section to the head of the XML output
+/// Function to append the file summary section to the head of the XML output.
+/// This section provides information about the content and usage of the XML file,
+/// and dynamically adjusts the instructions if line numbers are present.
 ///
-/// This section provides information about the content and usage of the XML
-/// file. It is designed to be read by AI systems for analysis, code review, or
-/// other automated processes.
+/// Args:
+///     writer: The writer to which the summary will be written.
+///     flags: The CLI flags to determine if line numbering is active.
+///
+/// Returns:
+///     A result with any IO errors encountered.
 fn append_file_summary<W: Write>(
     writer: &mut W,
+    flags: &Flags,
 ) -> Result<(), std::io::Error> {
-    let file_summary = r#"
-<file_summary>
+    // First part of the file summary up to the optional line number instructions
+    let first_part = r#"<file_summary>
   <purpose>
     This file contains a packed representation of the entire repository's contents.
     It is designed to be easily consumable by AI systems for analysis, code review,
@@ -243,16 +257,29 @@ fn append_file_summary<W: Write>(
   </file_format>
 
   <instructions>
-    The LLM is instructed to focus solely on the repository's contents, including
-    the code, file structure, and purpose of the files.
-    Do not comment on the XML format, structure, or encoding of THIS FILE. Focus
-    your analysis on the functionality, structure, and organization of the
-    repository contents.
-    Each <file> should be interpreted based on its file extension. For example:
-    - ".py" for Python
-    - ".md" for Markdown
-    - ".rs" for Rust
-    - ".cpp" for C++
+    - The LLM is instructed to focus solely on the repository's contents, including
+      the code, file structure, and purpose of the files.
+    - Do not comment on the XML format, structure, or encoding of THIS FILE. Focus
+      your analysis on the functionality, structure, and organization of the
+      repository contents."#;
+
+    // if the --lnumbers flag is set, add line number instructions
+    let optional_part = if flags.lnumbers {
+        r#"
+    - Line numbers have been added to the code for reference. Please use them for
+      referring to specific lines of code when needed. However, do NOT include line
+      numbers when outputting or displaying code in responses."#
+    } else {
+        ""
+    };
+
+    // Final part: Everything after the optional instructions
+    let final_part = r#"
+    - Each <file> should be interpreted based on its file extension. For example:
+      - ".py" for Python
+      - ".md" for Markdown
+      - ".rs" for Rust
+      - ".cpp" for C++
   </instructions>
 
   <usage_guidelines>
@@ -276,11 +303,12 @@ fn append_file_summary<W: Write>(
     For more information about bundlerepo, visit: https://github.com/seapagan/bundle-repo
   </additional_info>
 </file_summary>
-
 "#;
 
-    // Insert the file_summary after the opening <repository> tag
-    writer.write_all(file_summary.as_bytes())?;
+    // Concatenate the parts and write to the writer in one go
+    writer.write_all(
+        format!("{}{}{}", first_part, optional_part, final_part).as_bytes(),
+    )?;
 
     Ok(())
 }
@@ -312,4 +340,37 @@ fn is_binary_file(path: &Path) -> io::Result<bool> {
     }
     let threshold = (bytes_read as f32) * 0.3;
     Ok(non_printable_count as f32 > threshold)
+}
+
+/// Adds line numbers to the given file content, ensuring the content ends
+/// with a newline. The line numbers are dynamically padded to fit the largest
+/// line number.
+///
+/// Args:
+///     file_content: A string containing the raw content of the file.
+///
+/// Returns:
+///     A string with line numbers added to each line, left-padded, and
+///     followed by 4 spaces. Ensures the final content ends with a newline.
+fn add_line_numbers(file_content: &str) -> String {
+    let lines: Vec<&str> = file_content.lines().collect();
+    let total_lines = lines.len();
+
+    // Determine the width needed for the largest line number
+    let width = total_lines.to_string().len();
+
+    // Add line numbers with dynamic width padding
+    let mut numbered_content = lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| format!("{:>width$}  {}", i + 1, line, width = width))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Ensure the content ends with a newline
+    if !numbered_content.ends_with('\n') {
+        numbered_content.push('\n');
+    }
+
+    numbered_content
 }
