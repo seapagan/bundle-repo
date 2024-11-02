@@ -89,8 +89,6 @@ fn main() {
         branch: args.branch.or(config.branch),
     };
 
-    // println!("params: {:#?}", params);
-
     if !params.stdout {
         cli::show_header();
     }

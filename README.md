@@ -96,6 +96,9 @@ and 11 tested).
   at this time, though I may add support for others in the future.
 - **XML Output**: Generates an XML file (`packed-repo.xml`) that contains the
   entire repository structure and file details.
+- **Global and local configuration files**: Allows you to set default values
+  globally and override them on a per-project basis. All settings can be
+  further overridden by command line options.
 
 This tool is currently under active development, and more features will be
 implemented quickly. Please **star** this repository to stay updated on new
@@ -322,12 +325,19 @@ Options:
 
 ## Configuration File
 
-The tool supports a configuration file located at `~/.config/bundlerepo/config.toml`. This allows you to set default values that will be used unless overridden by command line options.
+The tool supports two configuration files:
 
-The configuration file uses TOML format. Here's an example configuration:
+- Global config at `~/.config/bundlerepo/config.toml`
+- Local config at `.bundlerepo.toml` in your current directory
+
+This allows you to set default values globally and override them on a
+per-project basis. All settings can be further overridden by command line
+options.
+
+The configuration files use TOML format. Here's an example configuration:
 
 ```toml
-# ~/.config/bundlerepo/config.toml
+# ~/.config/bundlerepo/config.toml or .bundlerepo.toml
 output_file = "my-default-output.xml"
 model = "gpt3.5"
 stdout = false
@@ -336,7 +346,13 @@ line_numbers = true
 token = "your-github-token"
 ```
 
-All settings are optional. If a setting is not specified in the config file, the tool's built-in defaults will be used. Command line options always take precedence over both config file settings and built-in defaults.
+All settings are optional. Settings are applied in the following order of
+precedence (highest to lowest):
+
+1. Command line options
+2. Local config file (`.bundlerepo.toml`)
+3. Global config file (`~/.config/bundlerepo/config.toml`)
+4. Built-in defaults
 
 Available configuration options:
 

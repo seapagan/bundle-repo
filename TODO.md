@@ -3,10 +3,6 @@
 - add more output formats - Text, Markdown, maybe others.
 - add a test suite to ensure the tool works as expected in a variety of
   scenarios.
-- add ability to use a **local** config file that will overwrite the current
-  **global** config file. This will allow the user to have a global config file
-  that is used for all repositories, but then have a local config file that is
-  used for a specific repository.
 - allow the user to add extra file exclusions, or allow files that are excluded
   by default to be included.
 - add the ability to check for updates and update the tool (or at least notify
