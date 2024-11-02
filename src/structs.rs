@@ -204,9 +204,9 @@ macro_rules! config_to_params {
 
 #[derive(Debug, Deserialize)]
 pub struct Params {
-    pub output_file: String,
+    pub output_file: Option<String>,
     pub stdout: bool,
-    pub model: String,
+    pub model: Option<String>,
     pub clipboard: bool,
     pub line_numbers: bool,
     pub token: Option<String>,
@@ -216,9 +216,9 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Self {
         Params {
-            output_file: "packed-repo.xml".to_string(),
+            output_file: Some("packed-repo.xml".to_string()),
             stdout: false,
-            model: "gpt4o".to_string(),
+            model: Some("gpt4o".to_string()),
             clipboard: false,
             line_numbers: false,
             token: None,

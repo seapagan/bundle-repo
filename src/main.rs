@@ -68,26 +68,18 @@ fn main() {
     // Load config values
     let config = load_config();
 
-    println!("config = {:#?},", config);
-
     let params = Params {
-        // If CLI arg is at default value, treat it as None and use config
-        output_file: Some(args.output_file)
-            .filter(|v| v != &Params::default().output_file)
-            .unwrap_or(config.output_file),
-        model: Some(args.model)
-            .filter(|v| v != &Params::default().model)
-            .unwrap_or(config.model),
-        // For bools, if CLI flag not set, use config value
+        output_file: args
+            .output_file
+            .or(config.output_file)
+            .or(Params::default().output_file),
+        model: args.model.or(config.model).or(Params::default().model),
         stdout: args.stdout || config.stdout,
         clipboard: args.clipboard || config.clipboard,
         line_numbers: args.lnumbers || config.line_numbers,
-        // For Options, chain with or()
         token: args.token.or(config.token),
         branch: args.branch.or(config.branch),
     };
-
-    print!("params = {:#?},", params);
 
     if !params.stdout {
         cli::show_header();
@@ -96,7 +88,7 @@ fn main() {
     // Parse the tokenizer Model from the CLI argument. We will build the
     // tokenizer from this and also use it to display the model name in the
     // summary.
-    let model = match params.model.parse::<Model>() {
+    let model = match params.model.clone().unwrap().parse::<Model>() {
         Ok(model) => model,
         Err(e) => {
             eprintln!("{}", e);
@@ -153,7 +145,7 @@ fn main() {
                     println!("-> Successfully copied XML to clipboard");
                 } else {
                     println!(
-                        "-> Successfully wrote XML to {}",
+                        "-> Successfully wrote XML to {:?}",
                         params.output_file
                     );
                 }

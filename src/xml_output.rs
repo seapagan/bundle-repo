@@ -91,7 +91,8 @@ pub fn output_repo_as_xml(
             })?;
         } else {
             // Write the XML to the specified output file
-            let mut file = File::create(&flags.output_file)?;
+            let output_path = flags.output_file.as_ref().unwrap();
+            let mut file = File::create(&output_path)?;
             file.write_all(xml_content.as_bytes())?;
         }
 
