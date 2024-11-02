@@ -6,6 +6,25 @@ project since the first release, with the latest changes at the top.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.0](https://github.com/seapagan/bundle-repo/releases/tag/0.3.0) (November 02, 2024)
+
+**New Features**
+
+- Implement a local config file to override the global one ([#19](https://github.com/seapagan/bundle-repo/pull/19)) by [seapagan](https://github.com/seapagan)
+- Add a TOML configuration file to the project ([#18](https://github.com/seapagan/bundle-repo/pull/18)) by [seapagan](https://github.com/seapagan)
+- Add exit codes where missing ([#16](https://github.com/seapagan/bundle-repo/pull/16)) by [seapagan](https://github.com/seapagan)
+
+**Documentation**
+
+- Fix README rendered by crates.io ([#17](https://github.com/seapagan/bundle-repo/pull/17)) by [seapagan](https://github.com/seapagan)
+
+**Dependency Updates**
+
+- Update Rust crate regex to v1.11.1 ([#15](https://github.com/seapagan/bundle-repo/pull/15)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate tiktoken-rs to 0.6.0 ([#14](https://github.com/seapagan/bundle-repo/pull/14)) by [renovate[bot]](https://github.com/apps/renovate)
+
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.2.0...0.3.0) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.2.0...0.3.0.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.2.0...0.3.0.patch)
+
 ## [0.2.0](https://github.com/seapagan/bundle-repo/releases/tag/0.2.0) (October 11, 2024)
 
 **New Features**

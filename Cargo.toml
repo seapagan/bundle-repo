@@ -1,6 +1,6 @@
 [package]
 name = "bundle_repo"
-version = "0.2.0"
+version = "0.3.0"
 description = "Pack a local or remote Git Repository to XML for LLM Consumption."
 readme = "README-cratesio.md"
 edition = "2021"
