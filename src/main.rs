@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use clap::Parser;
@@ -30,29 +30,37 @@ struct SummaryTable {
 }
 
 fn load_config() -> Params {
-    let mut config_path = PathBuf::new();
+    let mut config_builder = Config::builder();
 
-    // Get the home directory and construct the path
+    // Get the home directory and construct the global config path
     if let Some(home_dir) = home_dir() {
-        config_path.push(home_dir);
-        config_path.push(".config/bundlerepo/config.toml");
+        let global_config_path =
+            home_dir.join(".config/bundlerepo/config.toml");
+
+        // Add global config as the base if it exists
+        if global_config_path.exists() {
+            config_builder = config_builder.add_source(File::new(
+                global_config_path.to_str().unwrap(),
+                FileFormat::Toml,
+            ));
+        }
     }
 
-    let settings = Config::builder()
-        .add_source(File::new(config_path.to_str().unwrap(), FileFormat::Toml))
-        .build();
+    // Check for local config file in the current directory
+    let local_config_path = Path::new(".bundlerepo.toml");
+    if local_config_path.exists() {
+        // Add local config as an override
+        config_builder = config_builder.add_source(File::new(
+            local_config_path.to_str().unwrap(),
+            FileFormat::Toml,
+        ));
+    }
 
-    match settings {
+    match config_builder.build() {
         Ok(config) => config.into(), // Convert Config into Params using the From trait
         Err(e) => {
-            // If the error is related to the file not being found, return default Params
-            if e.to_string().contains("not found") {
-                eprintln!("Config file not found, using default values");
-                Params::default()
-            } else {
-                eprintln!("Error loading config: {}", e);
-                Params::default()
-            }
+            eprintln!("Error loading config: {}", e);
+            Params::default()
         }
     }
 }
