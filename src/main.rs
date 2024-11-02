@@ -145,8 +145,8 @@ fn main() {
                     println!("-> Successfully copied XML to clipboard");
                 } else {
                     println!(
-                        "-> Successfully wrote XML to {:?}",
-                        params.output_file
+                        "-> Successfully wrote XML to '{}'",
+                        params.output_file.unwrap()
                     );
                 }
                 println!("\nSummary:");
