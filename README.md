@@ -32,12 +32,12 @@ BundleRepo Version 0.2.0, © 2024 Grant Ramsay <seapagan@gmail.com>
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
 -> Found a git repository in the current directory: '/home/seapagan/data/work/own/bundle-repo' (branch: add-config-file)
--> Successfully wrote XML to "packed-repo.xml"
+-> Successfully wrote XML to 'packed-repo.xml'
 
 Summary:
      Total Files processed:  13
- Total output size (bytes):  78919
-      Token count (GPT-4o):  18732
+ Total output size (bytes):  79068
+      Token count (GPT-4o):  18766
 ```
 
 - [Compatibility](#compatibility)
@@ -351,7 +351,7 @@ Available configuration options:
 >
 > Storing your GitHub token in the configuration file can be more convenient
 > than passing it via command line, especially if you frequently work with
-> private repositories.
+> private repositories. Just be sure to keep your configuration file secure.
 
 ## Ignored Files
 
