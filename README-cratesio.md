@@ -120,19 +120,19 @@ build the project.
 
    - From source:
 
-      ```bash
-      git clone https://github.com/seapagan/bundle-repo.git
-      cd bundle-repo
-      cargo build --release
-      ```
+     ```bash
+     git clone https://github.com/seapagan/bundle-repo.git
+     cd bundle-repo
+     cargo build --release
+     ```
 
-2. Move the binary to a directory in your `PATH`:
+     Move the binary to a directory in your `PATH`:
 
-    eg for Linux or MacOS:
+     eg for Linux or MacOS:
 
-    ```bash
-    sudo mv ./target/release/bundlerepo /usr/local/bin
-    ```
+     ```bash
+     sudo mv ./target/release/bundlerepo /usr/local/bin
+     ```
 
 ### Running the Tool
 
