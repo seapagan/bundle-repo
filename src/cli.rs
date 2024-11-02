@@ -4,7 +4,7 @@ use clap::{ArgAction, Parser};
 #[command(
     name = "Repopack Clone Tool",
     author = env!("CARGO_PKG_AUTHORS"),
-    about =env!("CARGO_PKG_DESCRIPTION"),
+    about = env!("CARGO_PKG_DESCRIPTION"),
     long_about = None,
 )]
 
