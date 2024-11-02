@@ -5,10 +5,10 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use url::Url;
 
-use crate::cli::Flags;
+use crate::structs::Params;
 
 pub fn clone_repo(
-    flags: &Flags,
+    flags: &Params,
     repo_input: &str,
     token: Option<&str>,
     temp_dir_path: &Path,
@@ -92,7 +92,7 @@ pub fn is_valid_shorthand(input: &str) -> bool {
     re.is_match(input)
 }
 
-pub fn check_current_directory(flags: &Flags) -> Result<(), git2::Error> {
+pub fn check_current_directory(flags: &Params) -> Result<(), git2::Error> {
     match Repository::discover(".") {
         Ok(repo) => {
             if !flags.stdout {

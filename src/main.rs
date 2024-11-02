@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use std::process::exit;
 
 use clap::Parser;
+use config::{Config, File, FileFormat};
+use dirs_next::home_dir;
+use structs::Params;
 use tabled::{
     settings::{
         object::{Columns, Rows},
@@ -15,6 +18,7 @@ use tokenizer::Model;
 mod cli;
 mod filelist;
 mod repo;
+mod structs;
 mod tokenizer;
 mod xml_output;
 
@@ -25,6 +29,34 @@ struct SummaryTable {
     value: String,
 }
 
+fn load_config() -> Params {
+    let mut config_path = PathBuf::new();
+
+    // Get the home directory and construct the path
+    if let Some(home_dir) = home_dir() {
+        config_path.push(home_dir);
+        config_path.push(".config/bundlerepo/config.toml");
+    }
+
+    let settings = Config::builder()
+        .add_source(File::new(config_path.to_str().unwrap(), FileFormat::Toml))
+        .build();
+
+    match settings {
+        Ok(config) => config.into(), // Convert Config into Params using the From trait
+        Err(e) => {
+            // If the error is related to the file not being found, return default Params
+            if e.to_string().contains("not found") {
+                eprintln!("Config file not found, using default values");
+                Params::default()
+            } else {
+                eprintln!("Error loading config: {}", e);
+                Params::default()
+            }
+        }
+    }
+}
+
 fn main() {
     let args = cli::Flags::parse();
 
@@ -33,14 +65,30 @@ fn main() {
         exit(0);
     }
 
-    if !args.stdout {
+    // Load config values
+    let config = load_config();
+
+    let params = Params {
+        output_file: args
+            .output_file
+            .or(config.output_file)
+            .or(Params::default().output_file),
+        model: args.model.or(config.model).or(Params::default().model),
+        stdout: args.stdout || config.stdout,
+        clipboard: args.clipboard || config.clipboard,
+        line_numbers: args.lnumbers || config.line_numbers,
+        token: args.token.or(config.token),
+        branch: args.branch.or(config.branch),
+    };
+
+    if !params.stdout {
         cli::show_header();
     }
 
     // Parse the tokenizer Model from the CLI argument. We will build the
     // tokenizer from this and also use it to display the model name in the
     // summary.
-    let model = match args.model.parse::<Model>() {
+    let model = match params.model.clone().unwrap().parse::<Model>() {
         Ok(model) => model,
         Err(e) => {
             eprintln!("{}", e);
@@ -61,9 +109,9 @@ fn main() {
     let temp_dir = tempdir().unwrap();
     let repo_folder = if let Some(ref repo_input) = args.repo {
         match repo::clone_repo(
-            &args,
+            &params,
             repo_input,
-            args.token.as_deref(),
+            params.token.as_deref(),
             temp_dir.path(),
         ) {
             Ok(repo_folder) => repo_folder,
@@ -72,7 +120,7 @@ fn main() {
                 exit(2);
             }
         }
-    } else if let Err(e) = repo::check_current_directory(&args) {
+    } else if let Err(e) = repo::check_current_directory(&params) {
         eprintln!("Error: {}", e);
         exit(3);
     } else {
@@ -84,22 +132,21 @@ fn main() {
     let file_tree = filelist::group_files_by_directory(file_list);
 
     // Output XML
-    // Output XML
     match xml_output::output_repo_as_xml(
-        &args,
+        &params,
         file_tree,
         &repo_folder,
         &tokenizer,
     ) {
         Ok((number_of_files, total_size, token_count)) => {
-            if !args.stdout {
+            if !params.stdout {
                 // Print the summary only if not using stdout
-                if args.clipboard {
+                if params.clipboard {
                     println!("-> Successfully copied XML to clipboard");
                 } else {
                     println!(
-                        "-> Successfully wrote XML to {}",
-                        args.output_file
+                        "-> Successfully wrote XML to '{}'",
+                        params.output_file.unwrap()
                     );
                 }
                 println!("\nSummary:");

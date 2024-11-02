@@ -1,10 +1,12 @@
 use clap::{ArgAction, Parser};
 
+use crate::structs::Params;
+
 #[derive(Parser)]
 #[command(
     name = "Repopack Clone Tool",
     author = env!("CARGO_PKG_AUTHORS"),
-    about =env!("CARGO_PKG_DESCRIPTION"),
+    about = env!("CARGO_PKG_DESCRIPTION"),
     long_about = None,
 )]
 
@@ -26,10 +28,10 @@ pub struct Flags {
     #[arg(
         long = "file",
         short = 'f',
-        help = "Filename to save the bundle as.",
-        default_value = "packed-repo.xml"
+        help = &format!("Filename to save the bundle as. (Defaults to '{}')",
+            Params::default().output_file.unwrap_or_default())
     )]
-    pub output_file: String,
+    pub output_file: Option<String>,
 
     #[arg(
         long = "stdout",
@@ -42,11 +44,12 @@ pub struct Flags {
     #[arg(
         long = "model",
         short = 'm',
-        default_value = "gpt4o",
-        help = "Model to use for tokenization count. Supported \
-                models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2'"
+        help = &format!(
+            "Model to use for tokenization count. Supported \
+            models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2' \
+            (Defaults to '{}')",Params::default().model.unwrap_or_default())
     )]
-    pub model: String,
+    pub model: Option<String>,
 
     #[arg(
         long = "clipboard",

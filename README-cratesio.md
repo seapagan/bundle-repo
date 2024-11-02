@@ -53,6 +53,7 @@ Summary:
   - [Choose Model for Token Count](#choose-model-for-token-count)
   - [GitHub Token](#github-token)
 - [Command Line Options](#command-line-options)
+- [Configuration File](#configuration-file)
 - [Ignored Files](#ignored-files)
 - [Planned Improvements](#planned-improvements)
 - [XML Layout](#xml-layout)
@@ -306,6 +307,37 @@ Options:
   -V, --version             Print version information and exit
   -h, --help                Print help
 ```
+
+## Configuration File
+
+The tool supports a configuration file located at `~/.config/bundlerepo/config.toml`. This allows you to set default values that will be used unless overridden by command line options.
+
+The configuration file uses TOML format. Here's an example configuration:
+
+```toml
+# ~/.config/bundlerepo/config.toml
+output_file = "my-default-output.xml"
+model = "gpt3.5"
+stdout = false
+clipboard = false
+line_numbers = true
+token = "your-github-token"
+```
+
+All settings are optional. If a setting is not specified in the config file, the tool's built-in defaults will be used. Command line options always take precedence over both config file settings and built-in defaults.
+
+Available configuration options:
+
+- `output_file`: Default output filename (default: "packed-repo.xml")
+- `model`: Default model for token counting (default: "gpt4o")
+- `stdout`: Whether to output to stdout by default (default: false)
+- `clipboard`: Whether to copy to clipboard by default (default: false)
+- `line_numbers`: Whether to add line numbers by default (default: false)
+- `token`: Your GitHub personal access token (default: none)
+
+> Storing your GitHub token in the configuration file can be more convenient
+> than passing it via command line, especially if you frequently work with
+> private repositories. Just be sure to keep your configuration file secure.
 
 ## Ignored Files
 
