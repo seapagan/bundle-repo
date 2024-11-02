@@ -1,5 +1,5 @@
-use crate::cli::Flags;
 use crate::filelist::{FileTree, FolderNode};
+use crate::structs::Params;
 use arboard::Clipboard;
 use std::fs::{metadata, File};
 use std::io::Cursor;
@@ -10,7 +10,7 @@ use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
 /// Function to output the repository structure and files list to XML
 pub fn output_repo_as_xml(
-    flags: &Flags,
+    flags: &Params,
     file_tree: FileTree,
     base_path: &Path,
     tokenizer: &CoreBPE,
@@ -142,7 +142,7 @@ fn write_repository_files_to_xml<W: Write>(
     writer: &mut W,
     file_paths: &Vec<String>,
     base_path: &Path,
-    flags: &Flags, // Add the Flags reference here to access the lnumbers flag
+    flags: &Params,
 ) -> Result<(), std::io::Error> {
     for file_path in file_paths {
         let full_path = base_path.join(file_path);
@@ -170,7 +170,7 @@ fn write_repository_files_to_xml<W: Write>(
         match std::fs::read_to_string(&full_path) {
             Ok(mut contents) => {
                 // Apply line numbering if the lnumbers flag is set
-                if flags.lnumbers {
+                if flags.line_numbers {
                     contents = add_line_numbers(&contents);
                 }
 
@@ -237,7 +237,7 @@ fn map_xml_error(err: xml::writer::Error) -> std::io::Error {
 ///     A result with any IO errors encountered.
 fn append_file_summary<W: Write>(
     writer: &mut W,
-    flags: &Flags,
+    flags: &Params,
 ) -> Result<(), std::io::Error> {
     // First part of the file summary up to the optional line number instructions
     let first_part = r#"<file_summary>
@@ -264,7 +264,7 @@ fn append_file_summary<W: Write>(
       repository contents."#;
 
     // if the --lnumbers flag is set, add line number instructions
-    let optional_part = if flags.lnumbers {
+    let optional_part = if flags.line_numbers {
         r#"
     - Line numbers have been added to the code for reference. Please use them for
       referring to specific lines of code when needed. However, do NOT include line

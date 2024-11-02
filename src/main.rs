@@ -47,6 +47,7 @@ fn load_config() -> Params {
         Err(e) => {
             // If the error is related to the file not being found, return default Params
             if e.to_string().contains("not found") {
+                eprintln!("Config file not found, using default values");
                 Params::default()
             } else {
                 eprintln!("Error loading config: {}", e);
@@ -67,14 +68,35 @@ fn main() {
     // Load config values
     let config = load_config();
 
-    if !args.stdout {
+    println!("config = {:#?},", config);
+
+    let params = Params {
+        // If CLI arg is at default value, treat it as None and use config
+        output_file: Some(args.output_file)
+            .filter(|v| v != &Params::default().output_file)
+            .unwrap_or(config.output_file),
+        model: Some(args.model)
+            .filter(|v| v != &Params::default().model)
+            .unwrap_or(config.model),
+        // For bools, if CLI flag not set, use config value
+        stdout: args.stdout || config.stdout,
+        clipboard: args.clipboard || config.clipboard,
+        line_numbers: args.lnumbers || config.line_numbers,
+        // For Options, chain with or()
+        token: args.token.or(config.token),
+        branch: args.branch.or(config.branch),
+    };
+
+    print!("params = {:#?},", params);
+
+    if !params.stdout {
         cli::show_header();
     }
 
     // Parse the tokenizer Model from the CLI argument. We will build the
     // tokenizer from this and also use it to display the model name in the
     // summary.
-    let model = match args.model.parse::<Model>() {
+    let model = match params.model.parse::<Model>() {
         Ok(model) => model,
         Err(e) => {
             eprintln!("{}", e);
@@ -95,9 +117,9 @@ fn main() {
     let temp_dir = tempdir().unwrap();
     let repo_folder = if let Some(ref repo_input) = args.repo {
         match repo::clone_repo(
-            &args,
+            &params,
             repo_input,
-            args.token.as_deref(),
+            params.token.as_deref(),
             temp_dir.path(),
         ) {
             Ok(repo_folder) => repo_folder,
@@ -106,7 +128,7 @@ fn main() {
                 exit(2);
             }
         }
-    } else if let Err(e) = repo::check_current_directory(&args) {
+    } else if let Err(e) = repo::check_current_directory(&params) {
         eprintln!("Error: {}", e);
         exit(3);
     } else {
@@ -118,22 +140,21 @@ fn main() {
     let file_tree = filelist::group_files_by_directory(file_list);
 
     // Output XML
-    // Output XML
     match xml_output::output_repo_as_xml(
-        &args,
+        &params,
         file_tree,
         &repo_folder,
         &tokenizer,
     ) {
         Ok((number_of_files, total_size, token_count)) => {
-            if !args.stdout {
+            if !params.stdout {
                 // Print the summary only if not using stdout
-                if args.clipboard {
+                if params.clipboard {
                     println!("-> Successfully copied XML to clipboard");
                 } else {
                     println!(
                         "-> Successfully wrote XML to {}",
-                        args.output_file
+                        params.output_file
                     );
                 }
                 println!("\nSummary:");

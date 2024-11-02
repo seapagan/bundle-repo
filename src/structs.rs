@@ -210,6 +210,7 @@ pub struct Params {
     pub clipboard: bool,
     pub line_numbers: bool,
     pub token: Option<String>,
+    pub branch: Option<String>,
 }
 
 impl Default for Params {
@@ -221,6 +222,7 @@ impl Default for Params {
             clipboard: false,
             line_numbers: false,
             token: None,
+            branch: None,
         }
     }
 }
@@ -237,7 +239,8 @@ impl From<Config> for Params {
             model,
             clipboard,
             line_numbers,
-            token
+            token,
+            branch
         );
 
         params
