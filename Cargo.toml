@@ -2,11 +2,11 @@
 name = "bundle_repo"
 version = "0.2.0"
 description = "Pack a local or remote Git Repository to XML for LLM Consumption."
-readme = "README.md"
+readme = "README-cratesio.md"
 edition = "2021"
 authors = ["Grant Ramsay <seapagan@gmail.com>"]
 license = "MIT"
-repository = "https://seapagan.github.io/bundle-repo/"
+repository = "https://github.com/seapagan/bundle-repo/"
 exclude = [".github/*", "docs/*"]
 categories = [
   "command-line-utilities",
