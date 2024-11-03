@@ -4,6 +4,9 @@ use std::process::exit;
 use clap::Parser;
 use config::{Config, File, FileFormat};
 use dirs_next::home_dir;
+use secret_scanner::{
+    scan_content, scan_content_with_config, scan_content_with_redaction,
+};
 use structs::Params;
 use tabled::{
     settings::{
@@ -18,6 +21,7 @@ use tokenizer::Model;
 mod cli;
 mod filelist;
 mod repo;
+mod secret_scanner;
 mod structs;
 mod tokenizer;
 mod xml_output;
