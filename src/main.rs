@@ -8,7 +8,7 @@ use structs::Params;
 use tabled::{
     settings::{
         object::{Columns, Rows},
-        Alignment, Disable, Modify, Style,
+        Alignment, Modify, Remove, Style,
     },
     Table, Tabled,
 };
@@ -178,7 +178,7 @@ fn main() {
 
                 // Build and print the table
                 let table = Table::new(summary_data)
-                    .with(Disable::row(Rows::first()))
+                    .with(Remove::row(Rows::first()))
                     .with(Style::empty())
                     .with(Modify::list(Columns::first(), Alignment::right()))
                     .to_string();
