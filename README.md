@@ -384,6 +384,7 @@ below) they will not be listed anywhere in the XML output:
 - Lockfiles - any file ending in `.lock`
 - `renovate.json`
 - `license` files (e.g. `LICENSE`, `LICENSE.md`, etc)
+- `.vscode` folder and it's contents
 
 This list is hard-coded (and to be honest is tuned to my current workflow) and
 cannot be changed at this time. However, that will be changed once the

@@ -26,6 +26,7 @@ pub fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
         // r"(?i)todo\..*",
         r"(?i)\.github",
         r"(?i)\.git",
+        r"(?i)\.vscode",
     ];
     let regex_list: Vec<Regex> = ignore_patterns
         .into_iter()
