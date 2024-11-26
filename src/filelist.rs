@@ -14,7 +14,10 @@ pub struct FileTree {
     pub file_paths: Vec<String>, // Add a list to track file paths for <repository_files>
 }
 
-pub fn list_files_in_repo(repo_path: &PathBuf, additional_patterns: Option<&[String]>) -> Vec<String> {
+pub fn list_files_in_repo(
+    repo_path: &PathBuf,
+    additional_patterns: Option<&[String]>,
+) -> Vec<String> {
     let mut file_list = Vec::new();
 
     // Base ignore patterns as String
@@ -45,7 +48,10 @@ pub fn list_files_in_repo(repo_path: &PathBuf, additional_patterns: Option<&[Str
         .iter()
         .map(|pattern| {
             Regex::new(pattern).unwrap_or_else(|e| {
-                eprintln!("Warning: Invalid regex pattern '{}': {}", pattern, e);
+                eprintln!(
+                    "Warning: Invalid regex pattern '{}': {}",
+                    pattern, e
+                );
                 Regex::new(r"^$").unwrap()
             })
         })

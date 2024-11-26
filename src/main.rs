@@ -145,10 +145,8 @@ fn main() {
     };
 
     // List and group files
-    let file_list = filelist::list_files_in_repo(
-        &repo_folder,
-        params.exclude.as_deref()
-    );
+    let file_list =
+        filelist::list_files_in_repo(&repo_folder, params.exclude.as_deref());
     let file_tree = filelist::group_files_by_directory(file_list);
 
     // Output XML

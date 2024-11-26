@@ -242,9 +242,33 @@ impl From<Config> for Params {
             clipboard,
             line_numbers,
             token,
-            branch
+            branch,
+            exclude
         );
 
         params
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use config::{Config, File, FileFormat};
+
+    #[test]
+    fn test_vec_string_loading() {
+        let config_str = r#"
+            exclude = ["target", "node_modules"]
+        "#;
+        let mut config = Config::default();
+        config
+            .merge(File::from_str(config_str, FileFormat::Toml))
+            .unwrap();
+
+        let params: Params = config.into();
+        assert_eq!(
+            params.exclude,
+            Some(vec!["target".to_string(), "node_modules".to_string()])
+        );
     }
 }

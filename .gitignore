@@ -5,3 +5,4 @@ local_notes
 repopack-output.xml
 .changelog_generator.toml
 .bundlerepo.toml
+.cursorrules
