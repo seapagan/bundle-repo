@@ -90,12 +90,12 @@ pub struct Flags {
     pub version: bool,
 
     #[arg(
-        long = "exclude",
+        long = "extend-exclude",
         short = 'e',
         help = "Additional file/directory patterns to exclude. Can be specified multiple times.",
         action = ArgAction::Append,
     )]
-    pub exclude: Option<Vec<String>>,
+    pub extend_exclude: Option<Vec<String>>,
 }
 
 pub fn version_info() -> String {
@@ -220,17 +220,17 @@ mod tests {
     }
 
     #[test]
-    fn test_exclude_patterns() {
+    fn test_extend_exclude_patterns() {
         let args = Flags::parse_from([
             "program",
             "user/repo",
-            "--exclude",
+            "--extend-exclude",
             "*.log",
-            "--exclude",
+            "--extend-exclude",
             "target/",
         ]);
         assert_eq!(
-            args.exclude,
+            args.extend_exclude,
             Some(vec!["*.log".to_string(), "target/".to_string()])
         );
     }

@@ -199,7 +199,7 @@ pub struct Params {
     pub line_numbers: bool,
     pub token: Option<String>,
     pub branch: Option<String>,
-    pub exclude: Option<Vec<String>>,
+    pub extend_exclude: Option<Vec<String>>,
 }
 
 impl Default for Params {
@@ -212,7 +212,7 @@ impl Default for Params {
             line_numbers: false,
             token: None,
             branch: None,
-            exclude: None,
+            extend_exclude: None,
         }
     }
 }
@@ -255,9 +255,9 @@ impl From<Config> for Params {
             params.branch = Some(val);
         }
         if let Some(val) =
-            TomlValue::load_from_config(&settings, "exclude").ok()
+            TomlValue::load_from_config(&settings, "extend_exclude").ok()
         {
-            params.exclude = val;
+            params.extend_exclude = val;
         }
 
         params
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn test_vec_string_loading() {
         let config_str = r#"
-            exclude = ["target", "node_modules"]
+            extend_exclude = ["target", "node_modules"]
         "#;
         let config = Config::builder()
             .add_source(File::from_str(config_str, FileFormat::Toml))
@@ -281,7 +281,7 @@ mod tests {
 
         let params: Params = config.into();
         assert_eq!(
-            params.exclude,
+            params.extend_exclude,
             Some(vec!["target".to_string(), "node_modules".to_string()])
         );
     }
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(params.line_numbers, false);
         assert_eq!(params.token, None);
         assert_eq!(params.branch, None);
-        assert_eq!(params.exclude, None);
+        assert_eq!(params.extend_exclude, None);
     }
 
     #[test]
@@ -391,7 +391,7 @@ mod tests {
             line_numbers = true
             token = "secret-token"
             branch = "main"
-            exclude = ["target", "node_modules"]
+            extend_exclude = ["target", "node_modules"]
         "#;
         let config = Config::builder()
             .add_source(File::from_str(config_str, FileFormat::Toml))
@@ -407,7 +407,7 @@ mod tests {
         assert_eq!(params.token, Some("secret-token".to_string()));
         assert_eq!(params.branch, Some("main".to_string()));
         assert_eq!(
-            params.exclude,
+            params.extend_exclude,
             Some(vec!["target".to_string(), "node_modules".to_string()])
         );
     }
@@ -513,6 +513,6 @@ mod tests {
         assert!(!params.clipboard);
         assert_eq!(params.token, None);
         assert_eq!(params.branch, None);
-        assert_eq!(params.exclude, None);
+        assert_eq!(params.extend_exclude, None);
     }
 }
