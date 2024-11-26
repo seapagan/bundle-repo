@@ -6,3 +6,4 @@ repopack-output.xml
 .changelog_generator.toml
 .bundlerepo.toml
 .cursorrules
+tarpaulin-report.html
