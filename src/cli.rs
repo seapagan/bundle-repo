@@ -1,7 +1,7 @@
 use clap::{ArgAction, Parser};
 
 use crate::structs::Params;
-
+    
 #[derive(Parser)]
 #[command(
     name = "Repopack Clone Tool",
@@ -83,6 +83,14 @@ pub struct Flags {
         global = true
     )]
     pub version: bool,
+
+    #[arg(
+        long = "exclude",
+        short = 'e',
+        help = "Additional file/directory patterns to exclude. Can be specified multiple times.",
+        action = ArgAction::Append,
+    )]
+    pub exclude: Option<Vec<String>>,
 }
 
 pub fn version_info() -> String {

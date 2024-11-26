@@ -87,6 +87,15 @@ fn main() {
         line_numbers: args.lnumbers || config.line_numbers,
         token: args.token.or(config.token),
         branch: args.branch.or(config.branch),
+        // Combine exclude patterns from both CLI and config
+        exclude: match (args.exclude, config.exclude) {
+            (Some(cli_excludes), Some(config_excludes)) => {
+                Some([cli_excludes, config_excludes].concat())
+            }
+            (Some(cli_excludes), None) => Some(cli_excludes),
+            (None, Some(config_excludes)) => Some(config_excludes),
+            (None, None) => None,
+        },
     };
 
     if !params.stdout {
@@ -136,7 +145,10 @@ fn main() {
     };
 
     // List and group files
-    let file_list = filelist::list_files_in_repo(&repo_folder);
+    let file_list = filelist::list_files_in_repo(
+        &repo_folder,
+        params.exclude.as_deref()
+    );
     let file_tree = filelist::group_files_by_directory(file_list);
 
     // Output XML

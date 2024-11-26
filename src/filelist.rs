@@ -14,10 +14,11 @@ pub struct FileTree {
     pub file_paths: Vec<String>, // Add a list to track file paths for <repository_files>
 }
 
-pub fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
+pub fn list_files_in_repo(repo_path: &PathBuf, additional_patterns: Option<&[String]>) -> Vec<String> {
     let mut file_list = Vec::new();
 
-    let ignore_patterns = vec![
+    // Base ignore patterns as String
+    let mut ignore_patterns: Vec<String> = vec![
         r"(?i)\.gitignore",
         r"(?i)renovate\.json",
         r"(?i)requirement.*\.txt",
@@ -27,10 +28,27 @@ pub fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
         r"(?i)\.github",
         r"(?i)\.git",
         r"(?i)\.vscode",
-    ];
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    // Add additional patterns if provided
+    if let Some(patterns) = additional_patterns {
+        ignore_patterns.extend(patterns.iter().map(|p| {
+            let escaped = regex::escape(p);
+            format!(r"(?i){}", escaped)
+        }));
+    }
+
     let regex_list: Vec<Regex> = ignore_patterns
-        .into_iter()
-        .map(|pattern| Regex::new(pattern).unwrap())
+        .iter()
+        .map(|pattern| {
+            Regex::new(pattern).unwrap_or_else(|e| {
+                eprintln!("Warning: Invalid regex pattern '{}': {}", pattern, e);
+                Regex::new(r"^$").unwrap()
+            })
+        })
         .collect();
 
     let walker = WalkBuilder::new(repo_path)
@@ -43,26 +61,22 @@ pub fn list_files_in_repo(repo_path: &PathBuf) -> Vec<String> {
     for result in walker {
         match result {
             Ok(entry) => {
-                let path = entry.path();
-                if let Ok(relative_path) = path.strip_prefix(repo_path) {
-                    let relative_path_str =
-                        relative_path.to_string_lossy().to_string();
-                    if regex_list
-                        .iter()
-                        .any(|re| re.is_match(&relative_path_str))
-                    {
-                        continue;
-                    }
+                if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+                    continue;
                 }
 
-                if entry.file_type().map_or(false, |ft| ft.is_file()) {
-                    file_list.push(
-                        path.strip_prefix(repo_path)
-                            .unwrap()
-                            .to_string_lossy()
-                            .to_string(),
-                    );
+                let path = entry.path();
+                let relative_path = match path.strip_prefix(repo_path) {
+                    Ok(p) => p.to_string_lossy().to_string(),
+                    Err(_) => continue,
+                };
+
+                // Skip if the file matches any of our patterns
+                if regex_list.iter().any(|re| re.is_match(&relative_path)) {
+                    continue;
                 }
+
+                file_list.push(relative_path);
             }
             Err(err) => eprintln!("Error: {}", err),
         }

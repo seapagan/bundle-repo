@@ -211,6 +211,7 @@ pub struct Params {
     pub line_numbers: bool,
     pub token: Option<String>,
     pub branch: Option<String>,
+    pub exclude: Option<Vec<String>>,
 }
 
 impl Default for Params {
@@ -223,6 +224,7 @@ impl Default for Params {
             line_numbers: false,
             token: None,
             branch: None,
+            exclude: None,
         }
     }
 }
