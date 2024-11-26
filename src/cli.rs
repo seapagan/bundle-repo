@@ -89,8 +89,9 @@ pub struct Flags {
     #[arg(
         long = "extend-exclude",
         short = 'e',
-        help = "Additional file/directory patterns to exclude. Can be specified multiple times.",
-        action = ArgAction::Append,
+        value_name = "PATTERN",
+        help = "Add file/directory pattern to exclude, can be specified multiple times.",
+        action = ArgAction::Append
     )]
     pub extend_exclude: Option<Vec<String>>,
 }
