@@ -40,3 +40,6 @@ dirs-next = "2.0.0"
 
 [features]
 default = []
+
+[profile.dev]
+incremental = true

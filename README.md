@@ -21,13 +21,13 @@ however future versions may include additional formats.
 
 > [!TIP]
 >
-> XML was chosen as the default output format since it is very well
-> structured and LLM models can easily parse it (better than a plain-text dump -
-> see this [link][why-xml] from Anthropic as to why XML is a superior format for
-> feeding context and instructions into an LLM).
+> XML was chosen as the default output format since it is very well structured
+> and LLM models can easily parse it (better than a plain-text dump - see this
+> [link][why-xml] from Anthropic as to why XML is a superior format for feeding
+> context and instructions into an LLM).
 
 ```pre
-BundleRepo Version 0.2.0, © 2024 Grant Ramsay <seapagan@gmail.com>
+BundleRepo Version 0.3.0, © 2024 Grant Ramsay <seapagan@gmail.com>
 
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
@@ -80,9 +80,9 @@ and 11 tested).
 > Any file listed in a `.gitignore` file will be excluded from the output and
 > metadata.
 >
-> Binary file content will always be excluded, though they will be listed in
-> the `<repository_structure>` node and a `<file>` node will be created in the
-> XML to show that the file was excluded and why.
+> Binary file content will always be excluded, though they will be listed in the
+> `<repository_structure>` node and a `<file>` node will be created in the XML
+> to show that the file was excluded and why.
 >
 > See [Ignored Files](#ignored-files) for a full list of excluded files.
 
@@ -97,8 +97,8 @@ and 11 tested).
 - **XML Output**: Generates an XML file (`packed-repo.xml`) that contains the
   entire repository structure and file details.
 - **Global and local configuration files**: Allows you to set default values
-  globally and override them on a per-project basis. All settings can be
-  further overridden by command line options.
+  globally and override them on a per-project basis. All settings can be further
+  overridden by command line options.
 
 This tool is currently under active development, and more features will be
 implemented quickly. Please **star** this repository to stay updated on new
@@ -117,17 +117,17 @@ Clone the project and install dependencies.
 
 - From [crates.io][crates-io-page]:
 
-   ```bash
-   cargo install bundle_repo
-   ```
+  ```bash
+  cargo install bundle_repo
+  ```
 
 - From source:
 
-   ```bash
-   git clone https://github.com/seapagan/bundle-repo.git
-   cd bundle-repo
-   cargo build --release
-   ```
+  ```bash
+  git clone https://github.com/seapagan/bundle-repo.git
+  cd bundle-repo
+  cargo build --release
+  ```
 
   Move the resulting binary to a directory in your `PATH`:
 
@@ -159,17 +159,16 @@ bundlerepo
 
 > [!IMPORTANT]
 >
-> Only the `https` protocol is supported at this time. The tool will not yet work
-> with `ssh` URLs (ie **not** `git@github.com:seapagan/bundle-repo.git`)
+> Only the `https` protocol is supported at this time. The tool will not yet
+> work with `ssh` URLs (ie **not** `git@github.com:seapagan/bundle-repo.git`)
 
 > [!NOTE]
 >
 > The tool will actually bundle **any** files in the current directory (unless
-> they are in the hard-coded ignore list).
-> This can probably be useful for bundling any related files that you wish to
-> feed to an AI. However, you may need to edit the `<purpose>` and
-> `<instructions>` nodes in the output XML. I may add a flag to make this easier
-> in the future (`--not-code` or something).
+> they are in the hard-coded ignore list). This can probably be useful for
+> bundling any related files that you wish to feed to an AI. However, you may
+> need to edit the `<purpose>` and `<instructions>` nodes in the output XML. I
+> may add a flag to make this easier in the future (`--not-code` or something).
 >
 > However, it still needs to be an actual git repository or the code will exit.
 > I may add a flag to allow non-git repositories in the future.
@@ -254,13 +253,13 @@ bundlerepo user_name/repo_name --lnumbers
 
 This will add line numbers physically to each line in the output, which can be
 useful for debugging or analysis. Note that this will increase the token count
-of the output, so be aware of that when using it. Extra info for the LLM will
-be added to the `<instructions>` node to explain the line numbers.
+of the output, so be aware of that when using it. Extra info for the LLM will be
+added to the `<instructions>` node to explain the line numbers.
 
 ### Choose Model for Token Count
 
-After generating the xml file, the tool gives a count of the number of tokens
-in the file, to give you an idea of context usage and costs. By default it
+After generating the xml file, the tool gives a count of the number of tokens in
+the file, to give you an idea of context usage and costs. By default it
 calculates the number of tokens for the GPT-4o model, but you can specify
 another model using the `--model` or `-m` flag:
 
@@ -317,8 +316,9 @@ Options:
   -s, --stdout              Output the XML directly to stdout without creating a file.
   -m, --model <MODEL>       Model to use for tokenization. Supported models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2' [default: gpt4o]
   -c, --clipboard           Copy the XML to the clipboard after creating it.
-  -l, --lnumbers           Add line numbers to each code file in the output.
+  -l, --lnumbers            Add line numbers to each code file in the output.
   -t, --token <TOKEN>       GitHub personal access token (required for private repos and to pass rate limits)
+  -e, --extend-exclude <PATTERN>  Additional file pattern to exclude (can be specified multiple times)
   -V, --version            Print version information and exit
   -h, --help               Print help
 ```
@@ -344,6 +344,7 @@ stdout = false
 clipboard = false
 line_numbers = true
 token = "your-github-token"
+extend_exclude = ["*.md", "*.txt", "docs/*"]  # Additional patterns to exclude
 ```
 
 All settings are optional. Settings are applied in the following order of
@@ -362,8 +363,29 @@ Available configuration options:
 - `clipboard`: Whether to copy to clipboard by default (default: false)
 - `line_numbers`: Whether to add line numbers by default (default: false)
 - `token`: Your GitHub personal access token (default: none)
+- `extend_exclude`: Additional file patterns to exclude (default: none)
+
+The `extend_exclude` option can be specified either by using multiple `-e` flags
+on the command line:
+
+```bash
+bundlerepo user/repo -e "*.md" -e "*.txt" -e "docs/*"
+```
+
+Or as an array in the TOML configuration file:
+
+```toml
+extend_exclude = ["*.md", "*.txt", "docs/*"]
+```
+
+These patterns will be **added** to the default ignore list.
 
 > [!TIP]
+>
+> The `extend_exclude` option is useful for excluding additional files that
+> aren't in the default ignore list but that you don't want to include in your
+> XML output. This can help reduce token usage and remove irrelevant files from
+> the LLM context.
 >
 > Storing your GitHub token in the configuration file can be more convenient
 > than passing it via command line, especially if you frequently work with
@@ -489,5 +511,6 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-[why-xml]: https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags
+[why-xml]:
+  https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags
 [crates-io-page]: https://crates.io/crates/bundle_repo
