@@ -94,6 +94,15 @@ pub struct Flags {
         action = ArgAction::Append
     )]
     pub extend_exclude: Option<Vec<String>>,
+
+    #[arg(
+        long = "exclude",
+        short = 'x',
+        value_name = "PATTERN",
+        help = "Replace the existing exclude patterns with the specified pattern(s). Can be specified multiple times.",
+        action = ArgAction::Append
+    )]
+    pub exclude: Option<Vec<String>>,
 }
 
 pub fn version_info() -> String {

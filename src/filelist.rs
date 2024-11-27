@@ -17,6 +17,7 @@ pub struct FileTree {
 pub fn list_files_in_repo(
     repo_path: &PathBuf,
     extend_exclude: Option<&[String]>,
+    exclude: Option<&[String]>,
 ) -> Vec<String> {
     let mut file_list = Vec::new();
 
@@ -27,7 +28,6 @@ pub fn list_files_in_repo(
         r"(?i)requirement.*\.txt",
         r"(?i)\.lock$",
         r"(?i)license(\..*)?",
-        // r"(?i)todo\..*",
         r"(?i)\.github",
         r"(?i)\.git",
         r"(?i)\.vscode",
@@ -39,6 +39,14 @@ pub fn list_files_in_repo(
     // Add additional patterns if provided
     if let Some(patterns) = extend_exclude {
         ignore_patterns.extend(patterns.iter().map(|p| {
+            let escaped = regex::escape(p);
+            format!(r"(?i){}", escaped)
+        }));
+    }
+
+    // Add exclude patterns if provided
+    if let Some(exclude_patterns) = exclude {
+        ignore_patterns.extend(exclude_patterns.iter().map(|p| {
             let escaped = regex::escape(p);
             format!(r"(?i){}", escaped)
         }));
