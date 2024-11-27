@@ -75,27 +75,7 @@ fn main() {
 
     // Load config values
     let config = load_config();
-
-    let params = Params {
-        output_file: args
-            .output_file
-            .or(config.output_file)
-            .or(Params::default().output_file),
-        model: args.model.or(config.model).or(Params::default().model),
-        stdout: args.stdout || config.stdout,
-        clipboard: args.clipboard || config.clipboard,
-        line_numbers: args.lnumbers || config.line_numbers,
-        token: args.token.or(config.token),
-        branch: args.branch.or(config.branch),
-        extend_exclude: match (args.extend_exclude, config.extend_exclude) {
-            (Some(cli_excludes), Some(config_excludes)) => {
-                Some([cli_excludes, config_excludes].concat())
-            }
-            (Some(cli_excludes), None) => Some(cli_excludes),
-            (None, Some(config_excludes)) => Some(config_excludes),
-            (None, None) => None,
-        },
-    };
+    let params = Params::from_args_and_config(&args, config);
 
     if !params.stdout {
         cli::show_header();
@@ -147,6 +127,7 @@ fn main() {
     let file_list = filelist::list_files_in_repo(
         &repo_folder,
         params.extend_exclude.as_deref(),
+        params.exclude.as_deref(),
     );
     let file_tree = filelist::group_files_by_directory(file_list);
 
@@ -201,5 +182,131 @@ fn main() {
             eprintln!("X  Failed to write XML: {}", e);
             exit(4);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::Flags;
+    use clap::Parser;
+
+    fn create_test_config(toml_content: &str) -> Params {
+        let config = Config::builder()
+            .add_source(config::File::from_str(
+                toml_content,
+                config::FileFormat::Toml,
+            ))
+            .build()
+            .unwrap();
+        config.into()
+    }
+
+    #[test]
+    fn test_exclude_takes_precedence_over_extend_exclude() {
+        // Setup CLI args with both exclude and extend-exclude
+        let args = Flags::parse_from([
+            "program",
+            "--exclude",
+            "*.txt",
+            "--extend-exclude",
+            "*.md",
+        ]);
+
+        // Create config with both exclude and extend-exclude
+        let config = create_test_config(
+            r#"
+            extend_exclude = ["*.rs"]
+            exclude = ["*.toml"]
+        "#,
+        );
+
+        let params = Params::from_args_and_config(&args, config);
+
+        // Verify that extend_exclude is None when exclude is set
+        assert!(params.extend_exclude.is_none());
+        // Verify that exclude contains only CLI patterns
+        assert_eq!(params.exclude, Some(vec!["*.txt".to_string()]));
+    }
+
+    #[test]
+    fn test_cli_exclude_overrides_config_exclude() {
+        let args = Flags::parse_from([
+            "program",
+            "--exclude",
+            "*.txt",
+            "--exclude",
+            "*.md",
+        ]);
+
+        let config = create_test_config(
+            r#"
+            exclude = ["*.toml", "*.rs"]
+        "#,
+        );
+
+        let params = Params::from_args_and_config(&args, config);
+
+        assert_eq!(
+            params.exclude,
+            Some(vec!["*.txt".to_string(), "*.md".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_extend_exclude_combines_cli_and_config() {
+        let args = Flags::parse_from([
+            "program",
+            "--extend-exclude",
+            "*.txt",
+            "--extend-exclude",
+            "*.md",
+        ]);
+
+        let config = create_test_config(
+            r#"
+            extend_exclude = ["*.toml", "*.rs"]
+        "#,
+        );
+
+        let params = Params::from_args_and_config(&args, config);
+
+        assert_eq!(
+            params.extend_exclude,
+            Some(vec![
+                "*.txt".to_string(),
+                "*.md".to_string(),
+                "*.toml".to_string(),
+                "*.rs".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn test_config_exclude_disables_extend_exclude() {
+        let args = Flags::parse_from(["program", "--extend-exclude", "*.txt"]);
+
+        let config = create_test_config(
+            r#"
+            exclude = ["*.toml"]
+            extend_exclude = ["*.rs"]
+        "#,
+        );
+
+        let params = Params::from_args_and_config(&args, config);
+
+        assert!(params.extend_exclude.is_none());
+        assert_eq!(params.exclude, Some(vec!["*.toml".to_string()]));
+    }
+
+    #[test]
+    fn test_no_exclude_patterns() {
+        let args = Flags::parse_from(["program"]);
+        let config = create_test_config("");
+
+        let params = Params::from_args_and_config(&args, config);
+
+        assert!(params.exclude.is_none());
+        assert!(params.extend_exclude.is_none());
     }
 }

@@ -306,6 +306,7 @@ Options:
   -l, --lnumbers            Add line numbers to each code file in the output.
   -t, --token <TOKEN>       GitHub personal access token (required for private repos and to pass rate limits)
   -e, --extend-exclude <PATTERN>  Additional file pattern to exclude (can be specified multiple times)
+  -x, --exclude <PATTERN>   File pattern to exclude, replacing the default ignore list (can be specified multiple times)
   -V, --version             Print version information and exit
   -h, --help                Print help
 ```
@@ -351,31 +352,41 @@ Available configuration options:
 - `line_numbers`: Whether to add line numbers by default (default: false)
 - `token`: Your GitHub personal access token (default: none)
 - `extend_exclude`: Additional file patterns to exclude (default: none)
+- `exclude`: File patterns to exclude, replacing the default ignore list
+  (default: none)
 
-The `extend_exclude` option can be specified either by using multiple `-e` flags
-on the command line:
+The `extend_exclude` and `exclude` options can be specified either by using
+multiple `-e` or `-x` flags on the command line:
 
 ```bash
 bundlerepo user/repo -e "*.md" -e "*.txt" -e "docs/*"
+bundlerepo user/repo -x "*.exe" -x "*.dll" -x "node_modules/*"
 ```
 
-Or as an array in the TOML configuration file:
+Or as arrays in the TOML configuration file:
 
 ```toml
 extend_exclude = ["*.md", "*.txt", "docs/*"]
+exclude = ["*.exe", "*.dll", "node_modules/*"]
 ```
 
-These patterns will be **added** to the default ignore list.
+The `extend_exclude` patterns will be **added** to the default ignore list,
+while the `exclude` patterns will **replace** the default ignore list entirely.
 
-> The `extend_exclude` option is useful for excluding additional files that
-> aren't in the default ignore list but that you don't want to include in your
-> XML output. This can help reduce token usage and remove irrelevant files from
-> the LLM context.
->
-> Storing your GitHub token in the configuration file can be more convenient
-> than passing it via command line, especially if you frequently work with
-> private repositories. Just be sure to keep your configuration file secure -
-> use the Global TOML file rather than the Local (in repo) TOML file.
+**Important**: When the `exclude` option is used (either via command line or
+config file), both the default ignore list and any `extend_exclude` patterns are
+completely ignored. The `exclude` patterns become the only ignore rules in
+effect.
+
+**Note**: The `extend_exclude` option is useful for excluding additional files
+that aren't in the default ignore list but that you don't want to include in
+your XML output. The `exclude` option gives you complete control over what files
+are ignored, replacing the built-in ignore list. Both options can help reduce
+token usage and remove irrelevant files from the LLM context.
+
+Storing your GitHub token in the configuration file can be more convenient than
+passing it via command line, especially if you frequently work with private
+repositories. Just be sure to keep your configuration file secure.
 
 ## Ignored Files
 

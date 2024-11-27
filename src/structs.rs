@@ -1,3 +1,4 @@
+use crate::cli;
 use config::Config;
 use serde::Deserialize;
 use std::fmt;
@@ -200,6 +201,7 @@ pub struct Params {
     pub token: Option<String>,
     pub branch: Option<String>,
     pub extend_exclude: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
 }
 
 impl Default for Params {
@@ -213,6 +215,7 @@ impl Default for Params {
             token: None,
             branch: None,
             extend_exclude: None,
+            exclude: None,
         }
     }
 }
@@ -259,8 +262,57 @@ impl From<Config> for Params {
         {
             params.extend_exclude = val;
         }
+        if let Some(val) =
+            TomlValue::load_from_config(&settings, "exclude").ok()
+        {
+            params.exclude = val;
+        }
 
         params
+    }
+}
+
+impl Params {
+    pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
+        Params {
+            output_file: args
+                .output_file
+                .clone()
+                .or(config.output_file)
+                .or(Params::default().output_file),
+            model: args
+                .model
+                .clone()
+                .or(config.model)
+                .or(Params::default().model),
+            stdout: args.stdout || config.stdout,
+            clipboard: args.clipboard || config.clipboard,
+            line_numbers: args.lnumbers || config.line_numbers,
+            token: args.token.clone().or(config.token),
+            branch: args.branch.clone().or(config.branch),
+            extend_exclude: if args.exclude.is_some()
+                || config.exclude.is_some()
+            {
+                None
+            } else {
+                match (&args.extend_exclude, config.extend_exclude) {
+                    (Some(cli_excludes), Some(config_excludes)) => {
+                        Some([cli_excludes.clone(), config_excludes].concat())
+                    }
+                    (Some(cli_excludes), None) => Some(cli_excludes.clone()),
+                    (None, Some(config_excludes)) => Some(config_excludes),
+                    (None, None) => None,
+                }
+            },
+            exclude: match (&args.exclude, config.exclude) {
+                (Some(cli_excludes), Some(_config_excludes)) => {
+                    Some(cli_excludes.clone())
+                }
+                (Some(cli_excludes), None) => Some(cli_excludes.clone()),
+                (None, Some(config_excludes)) => Some(config_excludes),
+                (None, None) => None,
+            },
+        }
     }
 }
 
@@ -379,6 +431,7 @@ mod tests {
         assert_eq!(params.token, None);
         assert_eq!(params.branch, None);
         assert_eq!(params.extend_exclude, None);
+        assert_eq!(params.exclude, None);
     }
 
     #[test]
@@ -392,6 +445,7 @@ mod tests {
             token = "secret-token"
             branch = "main"
             extend_exclude = ["target", "node_modules"]
+            exclude = ["custom.xml"]
         "#;
         let config = Config::builder()
             .add_source(File::from_str(config_str, FileFormat::Toml))
@@ -410,6 +464,7 @@ mod tests {
             params.extend_exclude,
             Some(vec!["target".to_string(), "node_modules".to_string()])
         );
+        assert_eq!(params.exclude, Some(vec!["custom.xml".to_string()]));
     }
 
     #[test]
@@ -514,5 +569,6 @@ mod tests {
         assert_eq!(params.token, None);
         assert_eq!(params.branch, None);
         assert_eq!(params.extend_exclude, None);
+        assert_eq!(params.exclude, None);
     }
 }
