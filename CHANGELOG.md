@@ -6,6 +6,24 @@ project since the first release, with the latest changes at the top.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.4.0](https://github.com/seapagan/bundle-repo/releases/tag/0.4.0) (November 27, 2024)
+
+**New Features**
+
+- Implement the 'exclude' option ([#28](https://github.com/seapagan/bundle-repo/pull/28)) by [seapagan](https://github.com/seapagan)
+- Implement the extend-exclude option ([#27](https://github.com/seapagan/bundle-repo/pull/27)) by [seapagan](https://github.com/seapagan)
+
+**Dependency Updates**
+
+- Update Rust crate tabled to 0.17.0 ([#25](https://github.com/seapagan/bundle-repo/pull/25)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate url to v2.5.4 ([#24](https://github.com/seapagan/bundle-repo/pull/24)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate clap to v4.5.21 ([#23](https://github.com/seapagan/bundle-repo/pull/23)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate serde to v1.0.215 ([#22](https://github.com/seapagan/bundle-repo/pull/22)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate tempfile to v3.14.0 ([#21](https://github.com/seapagan/bundle-repo/pull/21)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate url to v2.5.3 ([#20](https://github.com/seapagan/bundle-repo/pull/20)) by [renovate[bot]](https://github.com/apps/renovate)
+
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.3.0...0.4.0) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.3.0...0.4.0.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.3.0...0.4.0.patch)
+
 ## [0.3.0](https://github.com/seapagan/bundle-repo/releases/tag/0.3.0) (November 02, 2024)
 
 **New Features**
