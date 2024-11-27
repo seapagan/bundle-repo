@@ -1,3 +1,8 @@
-[tasks.cov]
+[tasks.test]
+# this needs the crates 'nextest' and 'cargo-llvm-cov' installed locally
 command = "cargo"
-args = ["tarpaulin", "--out", "html"]
+args = ["llvm-cov", "nextest"]
+
+[tasks.test-html]
+command = "cargo"
+args = ["llvm-cov", "nextest", "--html"]
