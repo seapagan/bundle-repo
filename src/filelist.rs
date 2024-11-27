@@ -21,36 +21,41 @@ pub fn list_files_in_repo(
 ) -> Vec<String> {
     let mut file_list = Vec::new();
 
-    // Base ignore patterns as String
-    let mut ignore_patterns: Vec<String> = vec![
-        r"(?i)\.gitignore",
-        r"(?i)renovate\.json",
-        r"(?i)requirement.*\.txt",
-        r"(?i)\.lock$",
-        r"(?i)license(\..*)?",
-        r"(?i)\.github",
-        r"(?i)\.git",
-        r"(?i)\.vscode",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
+    // Initialize ignore patterns based on whether exclude is set
+    let ignore_patterns: Vec<String> = if let Some(patterns) = exclude {
+        // If exclude is set, use only those patterns
+        patterns
+            .iter()
+            .map(|p| {
+                let escaped = regex::escape(p);
+                format!(r"(?i){}", escaped)
+            })
+            .collect()
+    } else {
+        // Otherwise use default patterns
+        let mut patterns: Vec<String> = vec![
+            r"(?i)\.gitignore",
+            r"(?i)renovate\.json",
+            r"(?i)requirement.*\.txt",
+            r"(?i)\.lock$",
+            r"(?i)license(\..*)?",
+            r"(?i)\.github",
+            r"(?i)\.git",
+            r"(?i)\.vscode",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
 
-    // Add additional patterns if provided
-    if let Some(patterns) = extend_exclude {
-        ignore_patterns.extend(patterns.iter().map(|p| {
-            let escaped = regex::escape(p);
-            format!(r"(?i){}", escaped)
-        }));
-    }
-
-    // Add exclude patterns if provided
-    if let Some(exclude_patterns) = exclude {
-        ignore_patterns.extend(exclude_patterns.iter().map(|p| {
-            let escaped = regex::escape(p);
-            format!(r"(?i){}", escaped)
-        }));
-    }
+        // Add additional patterns if provided
+        if let Some(extend_patterns) = extend_exclude {
+            patterns.extend(extend_patterns.iter().map(|p| {
+                let escaped = regex::escape(p);
+                format!(r"(?i){}", escaped)
+            }));
+        }
+        patterns
+    };
 
     let regex_list: Vec<Regex> = ignore_patterns
         .iter()
