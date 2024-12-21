@@ -375,3 +375,177 @@ fn add_line_numbers(file_content: &str) -> String {
 
     numbered_content
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_add_line_numbers() {
+        let content = "First line\nSecond line\nThird line";
+        let numbered = add_line_numbers(content);
+        assert!(numbered.contains("1  First line"));
+        assert!(numbered.contains("2  Second line"));
+        assert!(numbered.contains("3  Third line"));
+        assert!(numbered.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_is_binary_file() {
+        let temp_dir = tempdir().unwrap();
+        
+        // Create a text file
+        let text_path = temp_dir.path().join("test.txt");
+        fs::write(&text_path, "Hello, World!").unwrap();
+        assert!(!is_binary_file(&text_path).unwrap());
+
+        // Create a binary file
+        let binary_path = temp_dir.path().join("test.bin");
+        fs::write(&binary_path, &[0u8, 159u8, 146u8, 150u8]).unwrap();
+        assert!(is_binary_file(&binary_path).unwrap());
+    }
+
+    #[test]
+    fn test_output_repo_as_xml() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        
+        // Create a simple file structure
+        let test_file_path = temp_dir.path().join("test.txt");
+        fs::write(&test_file_path, "Test content").unwrap();
+
+        let file_tree = FileTree {
+            folder_node: FolderNode {
+                files: vec!["test.txt".to_string()],
+                subfolders: Default::default(),
+            },
+            file_paths: vec!["test.txt".to_string()],
+        };
+        
+        let params = Params {
+            output_file: Some(output_file.to_str().unwrap().to_string()),
+            stdout: false,
+            clipboard: false,
+            line_numbers: false,
+            ..Default::default()
+        };
+
+        let tokenizer = tiktoken_rs::get_bpe_from_model("gpt-4").unwrap();
+        
+        let result = output_repo_as_xml(&params, file_tree, temp_dir.path(), &tokenizer);
+        assert!(result.is_ok());
+        
+        let xml_content = fs::read_to_string(output_file).unwrap();
+        assert!(xml_content.contains("<?xml version=\"1.0\" encoding=\"utf-8\"?>"));
+        assert!(xml_content.contains("<repository>"));
+        assert!(xml_content.contains("<repository_structure>"));
+        assert!(xml_content.contains("<repository_files>"));
+        assert!(xml_content.contains("<file path=\"test.txt\""));
+        assert!(xml_content.contains("Test content"));
+    }
+
+    #[test]
+    fn test_output_repo_with_line_numbers() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        
+        // Create a test file with multiple lines
+        let test_file_path = temp_dir.path().join("test.txt");
+        fs::write(&test_file_path, "Line 1\nLine 2\nLine 3").unwrap();
+
+        let file_tree = FileTree {
+            folder_node: FolderNode {
+                files: vec!["test.txt".to_string()],
+                subfolders: Default::default(),
+            },
+            file_paths: vec!["test.txt".to_string()],
+        };
+        
+        let params = Params {
+            output_file: Some(output_file.to_str().unwrap().to_string()),
+            stdout: false,
+            clipboard: false,
+            line_numbers: true,
+            ..Default::default()
+        };
+
+        let tokenizer = tiktoken_rs::get_bpe_from_model("gpt-4").unwrap();
+        
+        let result = output_repo_as_xml(&params, file_tree, temp_dir.path(), &tokenizer);
+        assert!(result.is_ok());
+        
+        let xml_content = fs::read_to_string(output_file).unwrap();
+        assert!(xml_content.contains("1  Line 1"));
+        assert!(xml_content.contains("2  Line 2"));
+        assert!(xml_content.contains("3  Line 3"));
+    }
+
+    #[test]
+    fn test_binary_file_handling() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        
+        // Create a binary file
+        let binary_file_path = temp_dir.path().join("test.bin");
+        fs::write(&binary_file_path, &[0u8, 159u8, 146u8, 150u8]).unwrap();
+
+        let file_tree = FileTree {
+            folder_node: FolderNode {
+                files: vec!["test.bin".to_string()],
+                subfolders: Default::default(),
+            },
+            file_paths: vec!["test.bin".to_string()],
+        };
+        
+        let params = Params {
+            output_file: Some(output_file.to_str().unwrap().to_string()),
+            stdout: false,
+            clipboard: false,
+            line_numbers: false,
+            ..Default::default()
+        };
+
+        let tokenizer = tiktoken_rs::get_bpe_from_model("gpt-4").unwrap();
+        
+        let result = output_repo_as_xml(&params, file_tree, temp_dir.path(), &tokenizer);
+        assert!(result.is_ok());
+        
+        let xml_content = fs::read_to_string(output_file).unwrap();
+        assert!(xml_content.contains("<!-- This file is a binary file and not included -->"));
+    }
+
+    #[test]
+    fn test_stdout_output() {
+        let temp_dir = tempdir().unwrap();
+        
+        // Create a test file
+        let test_file_path = temp_dir.path().join("test.txt");
+        fs::write(&test_file_path, "Test content").unwrap();
+
+        let file_tree = FileTree {
+            folder_node: FolderNode {
+                files: vec!["test.txt".to_string()],
+                subfolders: Default::default(),
+            },
+            file_paths: vec!["test.txt".to_string()],
+        };
+        
+        let params = Params {
+            output_file: None,
+            stdout: true,
+            clipboard: false,
+            line_numbers: false,
+            ..Default::default()
+        };
+
+        let tokenizer = tiktoken_rs::get_bpe_from_model("gpt-4").unwrap();
+        
+        let result = output_repo_as_xml(&params, file_tree, temp_dir.path(), &tokenizer);
+        assert!(result.is_ok());
+        let (num_files, size, _) = result.unwrap();
+        assert_eq!(num_files, 1);
+        assert_eq!(size, 0); // Size is 0 for stdout output
+    }
+}

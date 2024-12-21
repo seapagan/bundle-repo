@@ -43,3 +43,7 @@ default = []
 
 [profile.dev]
 incremental = true
+
+[dev-dependencies]
+tempfile = "3.8"
+fs_extra = "1.3"

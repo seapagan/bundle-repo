@@ -57,7 +57,7 @@ fn load_config() -> Params {
     }
 
     match config_builder.build() {
-        Ok(config) => config.into(), // Convert Config into Params using the From trait
+        Ok(config) => config.into(),
         Err(e) => {
             eprintln!("Error loading config: {}", e);
             Params::default()
@@ -190,6 +190,7 @@ mod tests {
     use super::*;
     use crate::cli::Flags;
     use clap::Parser;
+    use std::str::FromStr;
 
     fn create_test_config(toml_content: &str) -> Params {
         let config = Config::builder()
@@ -308,5 +309,117 @@ mod tests {
 
         assert!(params.exclude.is_none());
         assert!(params.extend_exclude.is_none());
+    }
+
+    #[test]
+    fn test_load_config_default() {
+        // When no config files exist, should return default params
+        let params = load_config();
+        assert_eq!(params.exclude, Some(vec![".git".to_string()]));
+        assert_eq!(params.extend_exclude, Some(vec![]));
+        assert_eq!(params.model, Some("gpt4o".to_string()));
+        assert_eq!(params.output_file, Some("packed-repo.xml".to_string()));
+        assert_eq!(params.stdout, false);
+        assert_eq!(params.clipboard, false);
+        assert_eq!(params.line_numbers, false);
+        assert_eq!(params.token, None);
+        assert_eq!(params.branch, None);
+    }
+
+    #[test]
+    fn test_model_parsing() {
+        use std::str::FromStr;
+        
+        // Test valid model parsing
+        let model = Model::from_str("gpt2").unwrap();
+        assert!(matches!(model, Model::GPT2));
+        
+        // Test invalid model
+        let invalid = Model::from_str("invalid_model");
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn test_summary_table_formatting() {
+        let summary_data = vec![
+            SummaryTable {
+                metric: "Files:".to_string(),
+                value: "10".to_string(),
+            },
+            SummaryTable {
+                metric: "Size:".to_string(),
+                value: "1024".to_string(),
+            },
+        ];
+
+        let table = Table::new(summary_data)
+            .with(Remove::row(Rows::first()))
+            .with(Style::empty())
+            .with(Modify::list(Columns::first(), Alignment::right()))
+            .to_string();
+
+        // Check that the table is formatted correctly
+        assert!(table.contains("Files:"));
+        assert!(table.contains("10"));
+        assert!(table.contains("Size:"));
+        assert!(table.contains("1024"));
+    }
+
+    #[test]
+    fn test_version_flag() {
+        let args = Flags::parse_from(&["bundlerepo", "--version"]);
+        assert!(args.version);
+    }
+
+    #[test]
+    fn test_model_parsing_error() {
+        let result = Model::from_str("invalid_model");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        println!("Error: {}", err);
+        assert!(err.contains("Unsupported model"));
+    }
+
+    #[test]
+    fn test_repo_clone_error() {
+        let temp_dir = tempdir().unwrap();
+        let args = Flags::parse_from(&["bundlerepo", "invalid_repo"]);
+        let config = Params::default();
+        let params = Params::from_args_and_config(&args, config);
+        let result = repo::clone_repo(
+            &params,
+            "invalid_repo",
+            None,
+            temp_dir.path(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_current_directory_check() {
+        let temp_dir = tempdir().unwrap();
+        let params = Params::default();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+        let result = repo::check_current_directory(&params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Not a git repository"));
+    }
+
+    #[test]
+    fn test_xml_output_error() {
+        let temp_dir = tempdir().unwrap();
+        let mut params = Params::default();
+        // Set output_file to a path that doesn't exist
+        params.output_file = Some("/nonexistent/directory/output.xml".to_string());
+        let file_tree = filelist::group_files_by_directory(vec![]);
+        let model = Model::GPT4o;
+        let tokenizer = model.to_tokenizer().unwrap();
+        let result = xml_output::output_repo_as_xml(
+            &params,
+            file_tree,
+            &temp_dir.path(),
+            &tokenizer,
+        );
+        assert!(result.is_err());
     }
 }
