@@ -315,8 +315,8 @@ mod tests {
     fn test_load_config_default() {
         // When no config files exist, should return default params
         let params = load_config();
-        assert_eq!(params.exclude, Some(vec![".git".to_string()]));
-        assert_eq!(params.extend_exclude, Some(vec![]));
+        assert_eq!(params.exclude, None);
+        assert_eq!(params.extend_exclude, None);
         assert_eq!(params.model, Some("gpt4o".to_string()));
         assert_eq!(params.output_file, Some("packed-repo.xml".to_string()));
         assert_eq!(params.stdout, false);
@@ -329,11 +329,11 @@ mod tests {
     #[test]
     fn test_model_parsing() {
         use std::str::FromStr;
-        
+
         // Test valid model parsing
         let model = Model::from_str("gpt2").unwrap();
         assert!(matches!(model, Model::GPT2));
-        
+
         // Test invalid model
         let invalid = Model::from_str("invalid_model");
         assert!(invalid.is_err());
@@ -386,12 +386,8 @@ mod tests {
         let args = Flags::parse_from(&["bundlerepo", "invalid_repo"]);
         let config = Params::default();
         let params = Params::from_args_and_config(&args, config);
-        let result = repo::clone_repo(
-            &params,
-            "invalid_repo",
-            None,
-            temp_dir.path(),
-        );
+        let result =
+            repo::clone_repo(&params, "invalid_repo", None, temp_dir.path());
         assert!(result.is_err());
     }
 
@@ -402,7 +398,10 @@ mod tests {
         std::env::set_current_dir(temp_dir.path()).unwrap();
         let result = repo::check_current_directory(&params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Not a git repository"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Not a git repository"));
     }
 
     #[test]
@@ -410,7 +409,8 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let mut params = Params::default();
         // Set output_file to a path that doesn't exist
-        params.output_file = Some("/nonexistent/directory/output.xml".to_string());
+        params.output_file =
+            Some("/nonexistent/directory/output.xml".to_string());
         let file_tree = filelist::group_files_by_directory(vec![]);
         let model = Model::GPT4o;
         let tokenizer = model.to_tokenizer().unwrap();
