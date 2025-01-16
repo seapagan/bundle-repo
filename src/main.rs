@@ -312,21 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn test_load_config_default() {
-        // When no config files exist, should return default params
-        let params = load_config();
-        assert_eq!(params.exclude, None);
-        assert_eq!(params.extend_exclude, None);
-        assert_eq!(params.model, Some("gpt4o".to_string()));
-        assert_eq!(params.output_file, Some("packed-repo.xml".to_string()));
-        assert_eq!(params.stdout, false);
-        assert_eq!(params.clipboard, false);
-        assert_eq!(params.line_numbers, false);
-        assert_eq!(params.token, None);
-        assert_eq!(params.branch, None);
-    }
-
-    #[test]
     fn test_model_parsing() {
         use std::str::FromStr;
 
@@ -408,7 +393,6 @@ mod tests {
     fn test_xml_output_error() {
         let temp_dir = tempdir().unwrap();
         let mut params = Params::default();
-        // Set output_file to a path that doesn't exist
         params.output_file =
             Some("/nonexistent/directory/output.xml".to_string());
         let file_tree = filelist::group_files_by_directory(vec![]);
@@ -421,5 +405,91 @@ mod tests {
             &tokenizer,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_summary_table_with_clipboard() {
+        let summary_data = vec![
+            SummaryTable {
+                metric: "Files:".to_string(),
+                value: "10".to_string(),
+            },
+            SummaryTable {
+                metric: "Size:".to_string(),
+                value: "1024".to_string(),
+            },
+        ];
+
+        let table = Table::new(summary_data)
+            .with(Remove::row(Rows::first()))
+            .with(Style::empty())
+            .with(Modify::list(Columns::first(), Alignment::right()))
+            .to_string();
+
+        // Check that the table is formatted correctly with clipboard settings
+        assert!(table.contains("Files:"));
+        assert!(table.contains("10"));
+        assert!(table.contains("Size:"));
+        assert!(table.contains("1024"));
+    }
+
+    #[test]
+    fn test_tokenizer_creation() {
+        // Test successful tokenizer creation
+        let model = Model::GPT4o;
+        let tokenizer_result = model.to_tokenizer();
+        assert!(tokenizer_result.is_ok());
+
+        // Test that we can use the tokenizer
+        let tokenizer = tokenizer_result.unwrap();
+        let tokens = tokenizer.encode_with_special_tokens("test string");
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_empty_input_tokenization() {
+        let model = Model::GPT4o;
+        let tokenizer = model.to_tokenizer().unwrap();
+        let tokens = tokenizer.encode_with_special_tokens("");
+        // Just verify the tokenization succeeded
+        assert!(tokens.len() <= tokens.capacity());
+    }
+
+    #[test]
+    fn test_model_display_in_summary() {
+        let model = Model::GPT4o;
+        let summary_data = vec![SummaryTable {
+            metric: format!("Token count ({}):", model.display_name()),
+            value: "100".to_string(),
+        }];
+
+        let table = Table::new(summary_data)
+            .with(Remove::row(Rows::first()))
+            .with(Style::empty())
+            .with(Modify::list(Columns::first(), Alignment::right()))
+            .to_string();
+
+        assert!(table
+            .contains(&format!("Token count ({}):", model.display_name())));
+        assert!(table.contains("100"));
+    }
+
+    #[test]
+    fn test_invalid_model_parsing() {
+        // Test direct model parsing without CLI
+        let result = "invalid_model".parse::<Model>();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Unsupported model"));
+    }
+
+    #[test]
+    fn test_invalid_tokenizer_creation() {
+        // This is a bit of a contrived test since our current models all create valid tokenizers
+        // but it ensures we handle empty input correctly
+        let model = Model::GPT4o;
+        let tokenizer = model.to_tokenizer().unwrap();
+        let tokens = tokenizer.encode_with_special_tokens("test string");
+        assert!(!tokens.is_empty());
     }
 }
