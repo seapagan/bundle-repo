@@ -6,6 +6,27 @@ project since the first release, with the latest changes at the top.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.5.0](https://github.com/seapagan/bundle-repo/releases/tag/0.5.0) (January 25, 2025)
+
+**New Features**
+
+- Add the 'deepseek' model as an option for counting tokens ([#36](https://github.com/seapagan/bundle-repo/pull/36)) by [seapagan](https://github.com/seapagan)
+
+**Testing**
+
+- Add some more testing ([#35](https://github.com/seapagan/bundle-repo/pull/35)) by [seapagan](https://github.com/seapagan)
+
+**Dependency Updates**
+
+- Update Rust crate tokenizers to 0.21 ([#37](https://github.com/seapagan/bundle-repo/pull/37)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate git2 to 0.20 ([#34](https://github.com/seapagan/bundle-repo/pull/34)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate tempfile to v3.15.0 ([#33](https://github.com/seapagan/bundle-repo/pull/33)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate config to 0.15.0 ([#32](https://github.com/seapagan/bundle-repo/pull/32)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate serde to v1.0.217 ([#31](https://github.com/seapagan/bundle-repo/pull/31)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate clap to v4.5.27 ([#30](https://github.com/seapagan/bundle-repo/pull/30)) by [renovate[bot]](https://github.com/apps/renovate)
+
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.4.0...0.5.0) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.4.0...0.5.0.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.4.0...0.5.0.patch)
+
 ## [0.4.0](https://github.com/seapagan/bundle-repo/releases/tag/0.4.0) (November 27, 2024)
 
 **New Features**
