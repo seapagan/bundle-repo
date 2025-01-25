@@ -12,7 +12,6 @@ const VALID_MODELS: [&str; 6] =
     about = env!("CARGO_PKG_DESCRIPTION"),
     long_about = None,
 )]
-
 pub struct Flags {
     #[arg(
         help = "GitHub repository to clone (e.g. 'user/repo' or full GitHub \

@@ -81,7 +81,7 @@ pub fn list_files_in_repo(
     for result in walker {
         match result {
             Ok(entry) => {
-                if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                     continue;
                 }
 

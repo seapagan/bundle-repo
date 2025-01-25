@@ -6,15 +6,15 @@ use crate::embedded;
 
 // We can't derive Debug for TokenizerType because CoreBPE doesn't implement Debug
 pub enum TokenizerType {
-    GPT(CoreBPE),
-    DeepSeek(Tokenizer),
+    Gpt(CoreBPE),
+    DeepSeek(Box<Tokenizer>),
 }
 
 // Manually implement Debug for TokenizerType
 impl std::fmt::Debug for TokenizerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenizerType::GPT(_) => write!(f, "TokenizerType::GPT(...)"),
+            TokenizerType::Gpt(_) => write!(f, "TokenizerType::Gpt(...)"),
             TokenizerType::DeepSeek(_) => {
                 write!(f, "TokenizerType::DeepSeek(...)")
             }
@@ -25,7 +25,7 @@ impl std::fmt::Debug for TokenizerType {
 impl TokenizerType {
     pub fn count_tokens(&self, text: &str) -> Result<usize, String> {
         match self {
-            TokenizerType::GPT(tokenizer) => {
+            TokenizerType::Gpt(tokenizer) => {
                 Ok(tokenizer.encode_with_special_tokens(text).len())
             }
             TokenizerType::DeepSeek(tokenizer) => tokenizer
@@ -50,14 +50,14 @@ impl Model {
     /// Converts the `Model` enum to the corresponding tokenizer instance.
     pub fn to_tokenizer(&self) -> Result<TokenizerType, String> {
         match self {
-            Model::GPT4o => Ok(TokenizerType::GPT(
+            Model::GPT4o => Ok(TokenizerType::Gpt(
                 o200k_base().map_err(|e| e.to_string())?,
             )),
-            Model::GPT4 | Model::GPT3_5 => Ok(TokenizerType::GPT(
+            Model::GPT4 | Model::GPT3_5 => Ok(TokenizerType::Gpt(
                 cl100k_base().map_err(|e| e.to_string())?,
             )),
             Model::GPT3 | Model::GPT2 => {
-                Ok(TokenizerType::GPT(r50k_base().map_err(|e| e.to_string())?))
+                Ok(TokenizerType::Gpt(r50k_base().map_err(|e| e.to_string())?))
             }
             Model::DeepSeek => {
                 let json_data = embedded::get_tokenizer_json()?;
@@ -65,7 +65,7 @@ impl Model {
                     Tokenizer::from_bytes(&json_data).map_err(|e| {
                         format!("Failed to load DeepSeek tokenizer: {}", e)
                     })?;
-                Ok(TokenizerType::DeepSeek(tokenizer))
+                Ok(TokenizerType::DeepSeek(Box::new(tokenizer)))
             }
         }
     }
@@ -185,7 +185,7 @@ fn main() {
         let deepseek = Model::DeepSeek.to_tokenizer().unwrap();
 
         // Test Debug implementation
-        assert_eq!(format!("{:?}", gpt), "TokenizerType::GPT(...)");
+        assert_eq!(format!("{:?}", gpt), "TokenizerType::Gpt(...)");
         assert_eq!(format!("{:?}", deepseek), "TokenizerType::DeepSeek(...)");
     }
 
@@ -199,7 +199,7 @@ fn main() {
         let count = tokenizer.count_tokens(test_string).unwrap();
 
         // Get the tokens directly using both methods
-        if let TokenizerType::GPT(t) = &tokenizer {
+        if let TokenizerType::Gpt(t) = &tokenizer {
             let special_tokens = t.encode_with_special_tokens(test_string);
             let regular_tokens = t.encode_ordinary(test_string);
 

@@ -233,21 +233,16 @@ impl From<Config> for Params {
         if let Some(val) = update_if_present("output_file") {
             params.output_file = Some(val);
         }
-        if let Some(val) =
-            TomlValue::load_from_config(&settings, "stdout").ok()
-        {
+        if let Ok(val) = TomlValue::load_from_config(&settings, "stdout") {
             params.stdout = val;
         }
         if let Some(val) = update_if_present("model") {
             params.model = Some(val);
         }
-        if let Some(val) =
-            TomlValue::load_from_config(&settings, "clipboard").ok()
-        {
+        if let Ok(val) = TomlValue::load_from_config(&settings, "clipboard") {
             params.clipboard = val;
         }
-        if let Some(val) =
-            TomlValue::load_from_config(&settings, "line_numbers").ok()
+        if let Ok(val) = TomlValue::load_from_config(&settings, "line_numbers")
         {
             params.line_numbers = val;
         }
@@ -257,14 +252,12 @@ impl From<Config> for Params {
         if let Some(val) = update_if_present("branch") {
             params.branch = Some(val);
         }
-        if let Some(val) =
-            TomlValue::load_from_config(&settings, "extend_exclude").ok()
+        if let Ok(val) =
+            TomlValue::load_from_config(&settings, "extend_exclude")
         {
             params.extend_exclude = val;
         }
-        if let Some(val) =
-            TomlValue::load_from_config(&settings, "exclude").ok()
-        {
+        if let Ok(val) = TomlValue::load_from_config(&settings, "exclude") {
             params.exclude = val;
         }
 
