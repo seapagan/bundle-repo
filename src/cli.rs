@@ -2,7 +2,8 @@ use clap::{ArgAction, Parser};
 
 use crate::structs::Params;
 
-const VALID_MODELS: [&str; 5] = ["gpt4o", "gpt4", "gpt3.5", "gpt3", "gpt2"];
+const VALID_MODELS: [&str; 6] =
+    ["gpt4o", "gpt4", "gpt3.5", "gpt3", "gpt2", "deepseek"];
 
 #[derive(Parser, Debug)]
 #[command(
@@ -279,9 +280,9 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("invalid value 'invalid_model'"));
-        assert!(
-            err.contains("possible values: gpt4o, gpt4, gpt3.5, gpt3, gpt2")
-        );
+        assert!(err.contains(
+            "possible values: gpt4o, gpt4, gpt3.5, gpt3, gpt2, deepseek"
+        ));
     }
 
     #[test]

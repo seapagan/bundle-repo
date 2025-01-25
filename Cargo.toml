@@ -29,6 +29,8 @@ regex = "1"
 ignore = "0.4"
 xml = "0.8"
 tiktoken-rs = "0.6.0"
+tokenizers = "0.15"
+rust-embed = "8.2.0"
 tabled = "0.17.0"
 infer = "0.16.0"
 arboard = { version = "3.4.1", default-features = false, features = [
