@@ -39,7 +39,7 @@ pub fn list_files_in_repo(
             r"(?i)renovate\.json",
             r"(?i)requirement.*\.txt",
             r"(?i)\.lock$",
-            r"(?i)license(\..*)?",
+            r"(?i)licen[cs]e(\..*)?",
             r"(?i)\.github",
             r"(?i)\.git",
             r"(?i)\.vscode",
@@ -239,6 +239,11 @@ mod tests {
             "requirements.txt",
             "Cargo.lock",
             "LICENSE",
+            "LICENSE.txt",
+            "LICENCE",
+            "Licence.md",
+            "license.rst",
+            "licence",
             ".github/workflows/test.yml",
             ".vscode/settings.json",
         ];
@@ -250,6 +255,23 @@ mod tests {
         // Only file1.txt should remain, all others should be excluded by default patterns
         assert_eq!(files.len(), 1);
         assert!(files.contains(&"file1.txt".to_string()));
+
+        // Explicitly verify license/licence variations are excluded
+        let license_variations = [
+            "LICENSE",
+            "LICENSE.txt",
+            "LICENCE",
+            "Licence.md",
+            "license.rst",
+            "licence",
+        ];
+        for variant in license_variations {
+            assert!(
+                !files.contains(&variant.to_string()),
+                "Failed to exclude license variant: {}",
+                variant
+            );
+        }
     }
 
     #[test]
