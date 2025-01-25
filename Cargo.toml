@@ -35,7 +35,7 @@ arboard = { version = "3.4.1", default-features = false, features = [
   "windows-sys",
 ] }
 serde = { version = "1.0.214", features = ["derive"] }
-config = "0.14.1"
+config = "0.15.0"
 dirs-next = "2.0.0"
 
 [features]
