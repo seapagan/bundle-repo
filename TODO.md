@@ -3,8 +3,8 @@
 - add more output formats - Text, Markdown, maybe others.
 - add a test suite to ensure the tool works as expected in a variety of
   scenarios.
-- allow the user to add extra file exclusions, or allow files that are excluded
-  by default to be included.
+- allow individual files that are excluded by default to be included without
+  wiping the default exclude set as `exclude` currently does.
 - add the ability to check for updates and update the tool (or at least notify
   the user that an update is available and where to get).
 - actually remove comments from the generated XML file. Perhaps add a flag to
@@ -19,8 +19,7 @@
   all 3 at this current code state, but we need to develop a test suite and get
   the CI pipeline working to ensure that it continues to work on all 3.
 - allow to work with non-git repositories (local only obviously).
-- see if we can find a library to tokenize other models such as `Claude` or
-  `Gemini`
+- add support for additional tokenizers (Claude, Gemini) when/if their specifications are publicly released
 - change file encoding to UTF-8 for included files, this is to ensure that the
   XML file is valid and can be read by other tools and specifically LLM's who
   generally prefer UTF-8.

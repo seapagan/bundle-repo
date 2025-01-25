@@ -121,6 +121,9 @@ Clone the project and install dependencies.
   cargo install bundle_repo
   ```
 
+  > [!NOTE]
+  > The DeepSeek tokenizer file is embedded in the binary, so no additional setup is required.
+
 - From source:
 
   ```bash
@@ -267,18 +270,22 @@ another model using the `--model` or `-m` flag:
 bundlerepo user_name/repo_name --model gpt3.5
 ```
 
-Valid models are `gpt4o`, `gpt4`, `gpt3.5`, `gpt3` and `gpt2`. It is important
+Valid models are `gpt4o`, `gpt4`, `gpt3.5`, `gpt3`, `gpt2` and `deepseek`. It is important
 to use the correct model, as the token count is vastly different between the 3
 and 4 series models.
 
 > [!NOTE]
 >
-> Only OpenAI models are supported at this time, since the code uses the
-> `tiktoken` library from OpenAI to count the tokens. I may add support for
-> other models in the future, if I can find a decent library that supports them.
->
-> Currently, the count returned by this tool is identical to that returned by
+> The tool supports both OpenAI models (using the `tiktoken` library) and the DeepSeek model.
+> For OpenAI models, the count returned by this tool is identical to that returned by
 > their [web app](https://platform.openai.com/tokenizer).
+>
+> For the DeepSeek model, the tool uses the official DeepSeek tokenizer specs
+> from [here](https://api-docs.deepseek.com/quick_start/token_usage) to ensure accurate
+> token counts.
+>
+> Claude models are not currently supported as Anthropic has not released their tokenizer
+> specifications. Support may be added in the future if they release a public tokenizer.
 
 ### GitHub Token
 
@@ -314,9 +321,9 @@ Options:
   -b, --branch <BRANCH>     Specify a branch to checkout for remote repositories
   -f, --file <OUTPUT_FILE>  Filename to save the bundle as. [default: packed-repo.xml]
   -s, --stdout              Output the XML directly to stdout without creating a file.
-  -m, --model <MODEL>       Model to use for tokenization. Supported models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2' [default: gpt4o]
+  -m, --model <MODEL>       Model to use for tokenization. Supported models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2', 'deepseek' [default: gpt4o]
   -c, --clipboard           Copy the XML to the clipboard after creating it.
-  -l, --lnumbers            Add line numbers to each code file in the output.
+  -l, --lnumbers           Add line numbers to each code file in the output.
   -t, --token <TOKEN>       GitHub personal access token (required for private repos and to pass rate limits)
   -e, --extend-exclude <PATTERN>  Additional file pattern to exclude (can be specified multiple times)
   -x, --exclude <PATTERN>   File pattern to exclude, replacing the default ignore list (can be specified multiple times)

@@ -9,6 +9,7 @@ pub struct FolderNode {
     pub subfolders: HashMap<String, FolderNode>,
 }
 
+#[derive(Default)]
 pub struct FileTree {
     pub folder_node: FolderNode,
     pub file_paths: Vec<String>, // Add a list to track file paths for <repository_files>
@@ -243,7 +244,8 @@ mod tests {
         ];
         create_test_files(&temp_dir, &test_files);
 
-        let files = list_files_in_repo(&temp_dir.path().to_path_buf(), None, None);
+        let files =
+            list_files_in_repo(&temp_dir.path().to_path_buf(), None, None);
 
         // Only file1.txt should remain, all others should be excluded by default patterns
         assert_eq!(files.len(), 1);

@@ -16,6 +16,7 @@ use tempfile::tempdir;
 use tokenizer::Model;
 
 mod cli;
+mod embedded;
 mod filelist;
 mod repo;
 mod structs;
@@ -442,17 +443,17 @@ mod tests {
 
         // Test that we can use the tokenizer
         let tokenizer = tokenizer_result.unwrap();
-        let tokens = tokenizer.encode_with_special_tokens("test string");
-        assert!(!tokens.is_empty());
+        let count = tokenizer.count_tokens("test string").unwrap();
+        assert!(count > 0);
     }
 
     #[test]
     fn test_empty_input_tokenization() {
         let model = Model::GPT4o;
         let tokenizer = model.to_tokenizer().unwrap();
-        let tokens = tokenizer.encode_with_special_tokens("");
+        let count = tokenizer.count_tokens("").unwrap();
         // Just verify the tokenization succeeded
-        assert!(tokens.len() <= tokens.capacity());
+        assert_eq!(count, 0);
     }
 
     #[test]
@@ -489,7 +490,7 @@ mod tests {
         // but it ensures we handle empty input correctly
         let model = Model::GPT4o;
         let tokenizer = model.to_tokenizer().unwrap();
-        let tokens = tokenizer.encode_with_special_tokens("test string");
-        assert!(!tokens.is_empty());
+        let count = tokenizer.count_tokens("test string").unwrap();
+        assert!(count > 0);
     }
 }

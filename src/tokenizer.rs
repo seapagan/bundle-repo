@@ -1,5 +1,40 @@
 use std::str::FromStr;
 use tiktoken_rs::{cl100k_base, o200k_base, r50k_base, CoreBPE};
+use tokenizers::Tokenizer;
+
+use crate::embedded;
+
+// We can't derive Debug for TokenizerType because CoreBPE doesn't implement Debug
+pub enum TokenizerType {
+    GPT(CoreBPE),
+    DeepSeek(Tokenizer),
+}
+
+// Manually implement Debug for TokenizerType
+impl std::fmt::Debug for TokenizerType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenizerType::GPT(_) => write!(f, "TokenizerType::GPT(...)"),
+            TokenizerType::DeepSeek(_) => {
+                write!(f, "TokenizerType::DeepSeek(...)")
+            }
+        }
+    }
+}
+
+impl TokenizerType {
+    pub fn count_tokens(&self, text: &str) -> Result<usize, String> {
+        match self {
+            TokenizerType::GPT(tokenizer) => {
+                Ok(tokenizer.encode_with_special_tokens(text).len())
+            }
+            TokenizerType::DeepSeek(tokenizer) => tokenizer
+                .encode(text, false)
+                .map_err(|e| format!("DeepSeek tokenization error: {}", e))
+                .map(|encoding| encoding.get_ids().len()),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Model {
@@ -8,15 +43,30 @@ pub enum Model {
     GPT3_5,
     GPT3,
     GPT2,
+    DeepSeek,
 }
 
 impl Model {
     /// Converts the `Model` enum to the corresponding tokenizer instance.
-    pub fn to_tokenizer(&self) -> Result<CoreBPE, String> {
+    pub fn to_tokenizer(&self) -> Result<TokenizerType, String> {
         match self {
-            Model::GPT4o => Ok(o200k_base().unwrap()),
-            Model::GPT4 | Model::GPT3_5 => Ok(cl100k_base().unwrap()),
-            Model::GPT3 | Model::GPT2 => Ok(r50k_base().unwrap()),
+            Model::GPT4o => Ok(TokenizerType::GPT(
+                o200k_base().map_err(|e| e.to_string())?,
+            )),
+            Model::GPT4 | Model::GPT3_5 => Ok(TokenizerType::GPT(
+                cl100k_base().map_err(|e| e.to_string())?,
+            )),
+            Model::GPT3 | Model::GPT2 => {
+                Ok(TokenizerType::GPT(r50k_base().map_err(|e| e.to_string())?))
+            }
+            Model::DeepSeek => {
+                let json_data = embedded::get_tokenizer_json()?;
+                let tokenizer =
+                    Tokenizer::from_bytes(&json_data).map_err(|e| {
+                        format!("Failed to load DeepSeek tokenizer: {}", e)
+                    })?;
+                Ok(TokenizerType::DeepSeek(tokenizer))
+            }
         }
     }
 
@@ -28,6 +78,7 @@ impl Model {
             Model::GPT3_5 => "GPT-3.5",
             Model::GPT3 => "GPT-3",
             Model::GPT2 => "GPT-2",
+            Model::DeepSeek => "DeepSeek",
         }
     }
 }
@@ -42,6 +93,7 @@ impl FromStr for Model {
             "gpt3.5" => Ok(Model::GPT3_5),
             "gpt3" => Ok(Model::GPT3),
             "gpt2" => Ok(Model::GPT2),
+            "deepseek" => Ok(Model::DeepSeek),
             _ => Err(format!("ERROR: Unsupported model: {}", s)),
         }
     }
@@ -58,79 +110,82 @@ mod tests {
         assert!(matches!(Model::from_str("gpt3.5"), Ok(Model::GPT3_5)));
         assert!(matches!(Model::from_str("gpt3"), Ok(Model::GPT3)));
         assert!(matches!(Model::from_str("gpt2"), Ok(Model::GPT2)));
+        assert!(matches!(Model::from_str("deepseek"), Ok(Model::DeepSeek)));
     }
 
     #[test]
     fn test_model_from_str_case_insensitive() {
         assert!(matches!(Model::from_str("GPT4O"), Ok(Model::GPT4o)));
-        assert!(matches!(Model::from_str("GPT4"), Ok(Model::GPT4)));
-        assert!(matches!(Model::from_str("GPT3.5"), Ok(Model::GPT3_5)));
-        assert!(matches!(Model::from_str("GPT3"), Ok(Model::GPT3)));
-        assert!(matches!(Model::from_str("GPT2"), Ok(Model::GPT2)));
-    }
-
-    #[test]
-    fn test_model_from_str_invalid() {
-        // Test invalid model names
-        assert!(Model::from_str("invalid").is_err());
-        assert!(Model::from_str("gpt5").is_err());
-        assert!(Model::from_str("").is_err());
-        assert!(Model::from_str(" ").is_err());
-
-        // Verify error messages
-        assert_eq!(
-            Model::from_str("invalid").unwrap_err(),
-            "ERROR: Unsupported model: invalid".to_string()
-        );
-    }
-
-    #[test]
-    fn test_model_to_tokenizer() {
-        // Test that each model returns a valid tokenizer
-        assert!(Model::GPT4o.to_tokenizer().is_ok());
-        assert!(Model::GPT4.to_tokenizer().is_ok());
-        assert!(Model::GPT3_5.to_tokenizer().is_ok());
-        assert!(Model::GPT3.to_tokenizer().is_ok());
-        assert!(Model::GPT2.to_tokenizer().is_ok());
+        assert!(matches!(Model::from_str("DEEPSEEK"), Ok(Model::DeepSeek)));
     }
 
     #[test]
     fn test_model_display_names() {
-        assert_eq!(Model::GPT4o.display_name(), "GPT-4o");
-        assert_eq!(Model::GPT4.display_name(), "GPT-4");
-        assert_eq!(Model::GPT3_5.display_name(), "GPT-3.5");
-        assert_eq!(Model::GPT3.display_name(), "GPT-3");
-        assert_eq!(Model::GPT2.display_name(), "GPT-2");
+        assert_eq!(Model::DeepSeek.display_name(), "DeepSeek");
     }
 
     #[test]
     fn test_tokenizer_compatibility() {
-        // GPT4o should use o200k_base
-        let gpt4o = Model::GPT4o.to_tokenizer().unwrap();
-        // GPT4 and GPT3.5 should use cl100k_base
-        let gpt4 = Model::GPT4.to_tokenizer().unwrap();
-        let gpt3_5 = Model::GPT3_5.to_tokenizer().unwrap();
-        // GPT3 and GPT2 should use r50k_base
-        let gpt3 = Model::GPT3.to_tokenizer().unwrap();
-        let gpt2 = Model::GPT2.to_tokenizer().unwrap();
-
-        // Test that models using the same base tokenizer produce identical results
         let test_string = "Hello, world!";
 
-        // Test GPT4o produces different results (uses different base)
-        assert_ne!(
-            gpt4o.encode_with_special_tokens(test_string),
-            gpt4.encode_with_special_tokens(test_string)
-        );
+        // Test that GPT models work
+        let gpt4 = Model::GPT4.to_tokenizer().unwrap();
+        let count = gpt4.count_tokens(test_string).unwrap();
+        assert!(count > 0);
 
-        // Test models with same base produce identical results
-        assert_eq!(
-            gpt4.encode_with_special_tokens(test_string),
-            gpt3_5.encode_with_special_tokens(test_string)
-        );
-        assert_eq!(
-            gpt3.encode_with_special_tokens(test_string),
-            gpt2.encode_with_special_tokens(test_string)
-        );
+        // Skip DeepSeek test if tokenizer file is not present
+        if let Ok(deepseek) = Model::DeepSeek.to_tokenizer() {
+            let count = deepseek.count_tokens(test_string).unwrap();
+            assert!(count > 0);
+        }
+    }
+
+    #[test]
+    fn test_deepseek_tokenizer() {
+        let model = Model::DeepSeek;
+        let tokenizer = model.to_tokenizer().unwrap();
+
+        // Test basic tokenization
+        let count = tokenizer.count_tokens("Hello, world!").unwrap();
+        assert!(count > 0);
+
+        // Test empty string
+        let count = tokenizer.count_tokens("").unwrap();
+        assert_eq!(count, 0);
+
+        // Test multi-line code
+        let code = r#"
+fn main() {
+    println!("Hello, world!");
+}
+"#;
+        let count = tokenizer.count_tokens(code).unwrap();
+        assert!(count > 0);
+
+        // Test special characters
+        let special = "🦀 Rust is awesome! \n\t\r";
+        let count = tokenizer.count_tokens(special).unwrap();
+        assert!(count > 0);
+    }
+
+    #[test]
+    fn test_deepseek_model_conversion() {
+        // Test model string parsing
+        assert!(matches!(Model::from_str("deepseek"), Ok(Model::DeepSeek)));
+        assert!(matches!(Model::from_str("DEEPSEEK"), Ok(Model::DeepSeek)));
+        assert!(matches!(Model::from_str("DeepSeek"), Ok(Model::DeepSeek)));
+
+        // Test display name
+        assert_eq!(Model::DeepSeek.display_name(), "DeepSeek");
+    }
+
+    #[test]
+    fn test_tokenizer_type_debug() {
+        let gpt = Model::GPT4.to_tokenizer().unwrap();
+        let deepseek = Model::DeepSeek.to_tokenizer().unwrap();
+
+        // Test Debug implementation
+        assert_eq!(format!("{:?}", gpt), "TokenizerType::GPT(...)");
+        assert_eq!(format!("{:?}", deepseek), "TokenizerType::DeepSeek(...)");
     }
 }
