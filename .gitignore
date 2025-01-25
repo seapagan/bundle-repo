@@ -7,3 +7,4 @@ repopack-output.xml
 .bundlerepo.toml
 .cursorrules
 tarpaulin-report.html
+.cursor
