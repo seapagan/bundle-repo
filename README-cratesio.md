@@ -25,7 +25,7 @@ however future versions may include additional formats.
 > context and instructions into an LLM).
 
 ```pre
-BundleRepo Version 0.1.0, © 2024 Grant Ramsay <seapagan@gmail.com>
+BundleRepo Version 0.1.0, © 2024-2025 Grant Ramsay <seapagan@gmail.com>
 
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
@@ -257,16 +257,20 @@ another model using the `--model` or `-m` flag:
 bundlerepo user_name/repo_name --model gpt3.5
 ```
 
-Valid models are `gpt4o`, `gpt4`, `gpt3.5`, `gpt3` and `gpt2`. It is important
+Valid models are `gpt4o`, `gpt4`, `gpt3.5`, `gpt3`, `gpt2` and `deepseek`. It is important
 to use the correct model, as the token count is vastly different between the 3
 and 4 series models.
 
-Only OpenAI models are supported at this time, since the code uses the
-`tiktoken` library from OpenAI to count the tokens. I may add support for other
-models in the future, if I can find a decent library that supports them.
-
-Currently, the count returned by this tool is identical to that returned by
+The tool supports both OpenAI models (using the `tiktoken` library) and the DeepSeek model.
+For OpenAI models, the count returned by this tool is identical to that returned by
 their [web app](https://platform.openai.com/tokenizer).
+
+For the DeepSeek model, the tool uses the official DeepSeek tokenizer specs
+from [here](https://api-docs.deepseek.com/quick_start/token_usage) to ensure accurate
+token counts.
+
+Claude models are not currently supported as Anthropic has not released their tokenizer
+specifications. Support may be added in the future if they release a public tokenizer.
 
 ### GitHub Token
 
@@ -482,7 +486,7 @@ This project is licensed under the MIT License.
 
 ```pre
 The MIT License (MIT)
-Copyright (c) 2024 Grant Ramsay
+Copyright (c) 2024-2025 Grant Ramsay
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -27,7 +27,7 @@ however future versions may include additional formats.
 > context and instructions into an LLM).
 
 ```pre
-BundleRepo Version 0.3.0, © 2024 Grant Ramsay <seapagan@gmail.com>
+BundleRepo Version 0.3.0, © 2024-2025 Grant Ramsay <seapagan@gmail.com>
 
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
@@ -511,7 +511,7 @@ This project is licensed under the MIT License.
 
 ```pre
 The MIT License (MIT)
-Copyright (c) 2024 Grant Ramsay
+Copyright (c) 2024-2025 Grant Ramsay
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -133,7 +133,7 @@ pub fn version_info() -> String {
 
 pub fn show_header() {
     println!(
-        "\nBundleRepo Version {}, \u{00A9} 2024 {}",
+        "\nBundleRepo Version {}, \u{00A9} 2024-2025 {}",
         env!("CARGO_PKG_VERSION"),
         env!("CARGO_PKG_AUTHORS")
     );
