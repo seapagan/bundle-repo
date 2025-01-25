@@ -191,7 +191,7 @@ impl<T: TomlValue> TomlValue for Vec<T> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct Params {
     pub output_file: Option<String>,
     pub stdout: bool,
