@@ -188,4 +188,34 @@ fn main() {
         assert_eq!(format!("{:?}", gpt), "TokenizerType::GPT(...)");
         assert_eq!(format!("{:?}", deepseek), "TokenizerType::DeepSeek(...)");
     }
+
+    #[test]
+    fn test_tokenizer_encoding() {
+        let model = Model::GPT4;
+        let tokenizer = model.to_tokenizer().unwrap();
+        let test_string = "Hello, world!";
+
+        // Get the count using our count_tokens method
+        let count = tokenizer.count_tokens(test_string).unwrap();
+
+        // Get the tokens directly using both methods
+        if let TokenizerType::GPT(t) = &tokenizer {
+            let special_tokens = t.encode_with_special_tokens(test_string);
+            let regular_tokens = t.encode_ordinary(test_string);
+
+            // Verify both methods produce the same output
+            assert_eq!(special_tokens, regular_tokens,
+                "encode_with_special_tokens and encode_ordinary should produce the same output");
+
+            // Verify our count_tokens matches the direct token count
+            assert_eq!(count, special_tokens.len(),
+                "count_tokens should match the token count from direct encoding");
+
+            // Verify we get a non-zero count for non-empty input
+            assert!(
+                count > 0,
+                "Non-empty input should produce non-zero token count"
+            );
+        }
+    }
 }

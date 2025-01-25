@@ -103,15 +103,9 @@ pub fn output_repo_as_xml(
         let total_size = xml_content.len() as u64;
 
         // Calculate token count of the generated XML - maintain original behavior
-        let token_count = match tokenizer {
-            TokenizerType::GPT(tokenizer) => {
-                tokenizer.encode_ordinary(&xml_content).len()
-            }
-            TokenizerType::DeepSeek(tokenizer) => tokenizer
-                .encode(xml_content.as_str(), false)
-                .map(|encoding| encoding.get_ids().len())
-                .unwrap_or(0),
-        };
+        let token_count = tokenizer
+            .count_tokens(&xml_content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         Ok((number_of_files, total_size, token_count))
     }
