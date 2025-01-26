@@ -3,8 +3,7 @@ use crate::structs::Params;
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
 use std::fs::{metadata, File};
-use std::io::Cursor;
-use std::io::{self, Read, Write};
+use std::io::{self, BufReader, Cursor, Read, Write};
 use std::path::Path;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
@@ -140,6 +139,28 @@ fn write_folder_to_xml<W: Write>(
     Ok(())
 }
 
+/// Read a file with the specified encoding handling
+fn read_file_contents(path: &Path, force_utf8: bool) -> io::Result<String> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    let mut buffer = Vec::new();
+    reader.read_to_end(&mut buffer)?;
+
+    if force_utf8 {
+        // Try to decode as UTF-8
+        match String::from_utf8(buffer.clone()) {
+            Ok(content) => Ok(content),
+            Err(_) => {
+                // If UTF-8 decoding fails, try to convert to UTF-8
+                Ok(encoding_rs::UTF_8.decode(&buffer).0.into_owned())
+            }
+        }
+    } else {
+        // Default behavior - try to read as is
+        Ok(String::from_utf8_lossy(&buffer).into_owned())
+    }
+}
+
 /// Function to write the repository files with contents to XML without escaping
 fn write_repository_files_to_xml<W: Write>(
     writer: &mut W,
@@ -170,7 +191,7 @@ fn write_repository_files_to_xml<W: Write>(
         }
 
         // Try to read the file contents using the full path
-        match std::fs::read_to_string(&full_path) {
+        match read_file_contents(&full_path, flags.utf8) {
             Ok(mut contents) => {
                 // Apply line numbering if the lnumbers flag is set
                 if flags.line_numbers {
@@ -381,6 +402,7 @@ fn add_line_numbers(file_content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::filelist::FileTree;
     use crate::tokenizer::Model;
     use std::fs;
     use tempfile::tempdir;
@@ -534,5 +556,37 @@ mod tests {
         let (num_files, size, _) = result.unwrap();
         assert_eq!(num_files, 1);
         assert_eq!(size, 0); // Size is 0 for stdout output
+    }
+
+    #[test]
+    fn test_utf8_encoding() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+
+        // Create a test file with non-UTF8 content
+        let test_file = temp_dir.path().join("test.txt");
+        fs::write(&test_file, b"Hello \xFF World").unwrap(); // Invalid UTF-8 sequence
+
+        let mut params = Params::default();
+        params.output_file = Some(output_file.to_str().unwrap().to_string());
+        params.utf8 = true;
+
+        let mut file_tree = FileTree::default();
+        file_tree.file_paths.push("test.txt".to_string());
+
+        let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+
+        let result = output_repo_as_xml(
+            &params,
+            file_tree,
+            temp_dir.path(),
+            &tokenizer,
+        );
+        assert!(result.is_ok());
+
+        let xml_content = fs::read_to_string(output_file).unwrap();
+        assert!(xml_content.contains("<file path=\"test.txt\""));
+        // The content should be readable as UTF-8
+        assert!(String::from_utf8(xml_content.as_bytes().to_vec()).is_ok());
     }
 }

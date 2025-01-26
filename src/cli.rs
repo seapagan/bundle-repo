@@ -103,6 +103,14 @@ pub struct Flags {
         action = ArgAction::Append
     )]
     pub exclude: Option<Vec<String>>,
+
+    #[arg(
+        long = "utf8",
+        short = 'u',
+        action = ArgAction::SetTrue,
+        help = "Force UTF-8 encoding for all text files (default: false)"
+    )]
+    pub utf8: bool,
 }
 
 pub fn version_info() -> String {
