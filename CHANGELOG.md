@@ -5,6 +5,13 @@ project since the first release, with the latest changes at the top.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased](https://github.com/seapagan/bundle-repo/tree/HEAD)
+
+**New Features**
+
+- Implement converting files to utf-8 ([#38](https://github.com/seapagan/bundle-repo/pull/38)) by [seapagan](https://github.com/seapagan)
+
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.5.0...HEAD) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.5.0...HEAD.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.5.0...HEAD.patch)
 
 ## [0.5.0](https://github.com/seapagan/bundle-repo/releases/tag/0.5.0) (January 25, 2025)
 
