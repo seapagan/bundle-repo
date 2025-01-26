@@ -402,7 +402,8 @@ while the `exclude` patterns will **replace** the default ignore list entirely.
 >
 > When the `exclude` option is used (either via command line or config file),
 > both the default ignore list and any `extend_exclude` patterns are completely
-> ignored. The `exclude` patterns become the only ignore rules in effect.
+> ignored. The `exclude` patterns become the only ignore rules in effect
+> **EXCEPT that in either case, files in the `.gitignore` are ALWAYS ignored.**
 
 > [!TIP]
 >
@@ -441,9 +442,9 @@ below) they will not be listed anywhere in the XML output:
   alternate 'Licence' spelling.
 - `.vscode` folder and it's contents
 
-This list is hard-coded (and to be honest is tuned to my current workflow) and
-cannot be changed at this time. However, that will be changed once the
-configuration file functionality is added.
+This list is hard-coded (and to be honest is tuned to my current workflow)
+however it can be added to / replaced by the `extend_exclude` and `exclude`
+options above. **In ALL CASES, files in the `.gitignore` are ALWAYS ignored.**
 
 > [!TIP]
 >

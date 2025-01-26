@@ -387,7 +387,8 @@ while the `exclude` patterns will **replace** the default ignore list entirely.
 **Important**: When the `exclude` option is used (either via command line or
 config file), both the default ignore list and any `extend_exclude` patterns are
 completely ignored. The `exclude` patterns become the only ignore rules in
-effect.
+effect **EXCEPT that in either case, files in the `.gitignore` are ALWAYS
+ignored.**
 
 **Note**: The `extend_exclude` option is useful for excluding additional files
 that aren't in the default ignore list but that you don't want to include in
@@ -422,9 +423,9 @@ below) they will not be listed anywhere in the XML output:
   alternate 'Licence' spelling.
 - `.vscode` folder and it's contents
 
-This list is hard-coded (and to be honest is tuned to my current workflow) and
-cannot be changed at this time. However, that will be changed once the
-configuration file functionality is added.
+This list is hard-coded (and to be honest is tuned to my current workflow)
+however it can be added to / replaced by the `extend_exclude` and `exclude`
+options above.
 
 I'm very open to adding other files that should be ignored by default, If you
 have a suggestion, please open a PR or an Issue on GitHub. For example, tool
