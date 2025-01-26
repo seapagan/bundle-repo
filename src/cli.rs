@@ -108,9 +108,17 @@ pub struct Flags {
         long = "utf8",
         short = 'u',
         action = ArgAction::SetTrue,
-        help = "Force UTF-8 encoding for all text files (default: false)"
+        help = "Force UTF-8 encoding for all text files",
     )]
     pub utf8: bool,
+
+    #[arg(
+        long = "no-utf8",
+        action = ArgAction::SetTrue,
+        help = "Disable UTF-8 encoding for text files",
+        conflicts_with = "utf8",
+    )]
+    pub no_utf8: bool,
 }
 
 pub fn version_info() -> String {
@@ -325,5 +333,38 @@ mod tests {
         // We can't easily test the actual stdout output, but we can verify
         // the function doesn't panic
         show_header();
+    }
+
+    #[test]
+    fn test_utf8_flag_values() {
+        fn assert_bool<T: Into<bool>>(_: &T) {}
+
+        // Test --utf8 flag (sets to true)
+        let args = Flags::parse_from(["program", "--utf8"]);
+        assert!(args.utf8);
+        assert!(!args.no_utf8);
+        assert_bool(&args.utf8);
+
+        // Test --no-utf8 flag (sets to false)
+        let args = Flags::parse_from(["program", "--no-utf8"]);
+        assert!(!args.utf8);
+        assert!(args.no_utf8);
+        assert_bool(&args.utf8);
+
+        // Test default value (should be false)
+        let args = Flags::parse_from(["program"]);
+        assert!(!args.utf8);
+        assert!(!args.no_utf8);
+        assert_bool(&args.utf8);
+
+        // Test short flag
+        let args = Flags::parse_from(["program", "-u"]);
+        assert!(args.utf8);
+        assert!(!args.no_utf8);
+        assert_bool(&args.utf8);
+
+        // Test that --utf8 and --no-utf8 cannot be used together
+        let result = Flags::try_parse_from(["program", "--utf8", "--no-utf8"]);
+        assert!(result.is_err());
     }
 }
