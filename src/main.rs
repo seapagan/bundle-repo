@@ -132,6 +132,10 @@ fn main() {
     );
     let file_tree = filelist::group_files_by_directory(file_list);
 
+    if !params.stdout && params.utf8 {
+        println!("-> Converting all text files to UTF-8 encoding");
+    }
+
     // Output XML
     match xml_output::output_repo_as_xml(
         &params,
@@ -492,5 +496,49 @@ mod tests {
         let tokenizer = model.to_tokenizer().unwrap();
         let count = tokenizer.count_tokens("test string").unwrap();
         assert!(count > 0);
+    }
+
+    #[test]
+    fn test_utf8_flag_overrides_config_false() {
+        let config = create_test_config(
+            r#"
+            utf8 = false
+        "#,
+        );
+        let args = Flags::parse_from(["program", "--utf8"]);
+        let params = Params::from_args_and_config(&args, config);
+        assert!(params.utf8);
+    }
+
+    #[test]
+    fn test_no_utf8_flag_overrides_config_true() {
+        let config = create_test_config(
+            r#"
+            utf8 = true
+        "#,
+        );
+        let args = Flags::parse_from(["program", "--no-utf8"]);
+        let params = Params::from_args_and_config(&args, config);
+        assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_config_utf8_used_when_no_flags() {
+        let config = create_test_config(
+            r#"
+            utf8 = true
+        "#,
+        );
+        let args = Flags::parse_from(["program"]);
+        let params = Params::from_args_and_config(&args, config);
+        assert!(params.utf8);
+    }
+
+    #[test]
+    fn test_default_utf8_when_no_config_or_flags() {
+        let config = create_test_config("");
+        let args = Flags::parse_from(["program"]);
+        let params = Params::from_args_and_config(&args, config);
+        assert!(!params.utf8);
     }
 }

@@ -9,33 +9,33 @@ consumption, code analysis, and repository review.
 XML was chosen for the file output format since it is very well structured and
 LLM models can easily parse it (better than a plain-text dump).
 
-It is inspired by [Repopack](#acknowledgements) which is a great tool, but is
+It is inspired by [Repomix](#acknowledgements) which is a great tool, but is
 written in TypeScript and needs a Node.js environment to run. Eventually this
 project will produce binaries and not need Rust installed to run.
 
-The generated XML metadata and structure are inspired by the output of Repopack
+The generated XML metadata and structure are inspired by the output of Repomix
 (a lot of the header text was taken from there), with enhancements that include
 additional file attributes, instructions for the LLM and a more robust
 structure. At this time `xml` output is the only supported output format,
 however future versions may include additional formats.
 
-> XML was chosen as the default output format since it is very well structured
-> and LLM models can easily parse it (better than a plain-text dump - see this
-> [link][why-xml] from Anthropic as to why XML is a superior format for feeding
-> context and instructions into an LLM).
+XML was chosen as the default output format since it is very well structured
+and LLM models can easily parse it (better than a plain-text dump - see this
+[link][why-xml] from Anthropic as to why XML is a superior format for feeding
+context and instructions into an LLM).
 
 ```pre
-BundleRepo Version 0.1.0, © 2024-2025 Grant Ramsay <seapagan@gmail.com>
+BundleRepo Version 0.3.0, © 2024-2025 Grant Ramsay <seapagan@gmail.com>
 
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
--> Found a git repository in the current directory: '/home/seapagan/data/work/own/bundle-repo' (branch: main)
--> Successfully wrote XML to packed-repo.xml
+-> Found a git repository in the current directory: '/home/seapagan/data/work/own/bundle-repo' (branch: add-config-file)
+-> Successfully wrote XML to 'packed-repo.xml'
 
 Summary:
-     Total Files processed:  11
- Total output size (bytes):  47906
-      Token count (GPT-4o):  11344
+     Total Files processed:  13
+ Total output size (bytes):  79068
+      Token count (GPT-4o):  18766
 ```
 
 - [Compatibility](#compatibility)
@@ -109,29 +109,31 @@ build the project.
 
 ### Installation
 
-1. Clone the project and install dependencies.
+Clone the project and install dependencies.
 
-   - From [crates.io][crates-io-page]:
+- From [crates.io][crates-io-page]:
 
-     ```bash
-     cargo install bundle_repo
-     ```
+  ```bash
+  cargo install bundle_repo
+  ```
 
-   - From source:
+  The DeepSeek tokenizer file is embedded in the binary, so no additional setup is required.
 
-     ```bash
-     git clone https://github.com/seapagan/bundle-repo.git
-     cd bundle-repo
-     cargo build --release
-     ```
+- From source:
 
-     Move the binary to a directory in your `PATH`:
+  ```bash
+  git clone https://github.com/seapagan/bundle-repo.git
+  cd bundle-repo
+  cargo build --release
+  ```
 
-     eg for Linux or MacOS:
+  Move the binary to a directory in your `PATH`:
 
-     ```bash
-     sudo mv ./target/release/bundlerepo /usr/local/bin
-     ```
+  eg for Linux or MacOS:
+
+  ```bash
+  sudo mv ./target/release/bundlerepo /usr/local/bin
+  ```
 
 ### Running the Tool
 
@@ -311,6 +313,8 @@ Options:
   -t, --token <TOKEN>       GitHub personal access token (required for private repos and to pass rate limits)
   -e, --extend-exclude <PATTERN>  Additional file pattern to exclude (can be specified multiple times)
   -x, --exclude <PATTERN>   File pattern to exclude, replacing the default ignore list (can be specified multiple times)
+  -u, --utf8                Force UTF-8 encoding for all text files
+  -U, --no-utf8             Disable UTF-8 encoding for text files (overrides --utf8)
   -V, --version             Print version information and exit
   -h, --help                Print help
 ```
@@ -337,6 +341,8 @@ clipboard = false
 line_numbers = true
 token = "your-github-token"
 extend_exclude = ["*.md", "*.txt", "docs/*"]  # Additional patterns to exclude
+exclude = ["*.exe", "*.dll", "node_modules/*"]  # File patterns to exclude
+utf8 = true  # Force UTF-8 encoding for all text files
 ```
 
 All settings are optional. Settings are applied in the following order of
@@ -358,6 +364,7 @@ Available configuration options:
 - `extend_exclude`: Additional file patterns to exclude (default: none)
 - `exclude`: File patterns to exclude, replacing the default ignore list
   (default: none)
+- `utf8`: Whether to force UTF-8 encoding for all text files (default: false)
 
 The `extend_exclude` and `exclude` options can be specified either by using
 multiple `-e` or `-x` flags on the command line:
@@ -392,6 +399,11 @@ Storing your GitHub token in the configuration file can be more convenient than
 passing it via command line, especially if you frequently work with private
 repositories. Just be sure to keep your configuration file secure.
 
+The UTF-8 encoding feature (`--utf8` flag or `utf8 = true` in config) ensures all text files
+are encoded in UTF-8 before being included in the XML output. This is useful when working
+with files that may use different encodings, ensuring compatibility with LLMs and other tools.
+You can disable this with `--no-utf8` even if it's enabled in the config file.
+
 ## Ignored Files
 
 The tool will ignore the following files by default and (except for binary, see
@@ -406,7 +418,9 @@ below) they will not be listed anywhere in the XML output:
 - Python requirements files (`requirements.txt`, `requirements-dev.txt`, etc)
 - Lockfiles - any file ending in `.lock`
 - `renovate.json`
-- `license` files (e.g. `LICENSE`, `LICENSE.md`, etc)
+- `license` files (e.g. `LICENSE`, `LICENSE.md`, etc). Also matches the
+  alternate 'Licence' spelling.
+- `.vscode` folder and it's contents
 
 This list is hard-coded (and to be honest is tuned to my current workflow) and
 cannot be changed at this time. However, that will be changed once the
@@ -468,13 +482,13 @@ This tool is currently in **beta**. While the core functionality works, there
 may be edge cases or features yet to be fully refined. Feedback and
 contributions are welcome to improve and stabilize the tool.
 
-There is a pressing need for a test suite to ensure the tool works as expected
-in a variety of scenarios. This is a priority for the next release.
+There is a pressing need to improve the test suite to ensure the tool works as
+expected in a variety of scenarios. This is a priority for the next release.
 
 ## Acknowledgements
 
-**Bundle Repo** is a rewrite of the original
-[Repopack](https://github.com/yamadashy/repopack) project, though none of the
+**Bundle Repo** is a rewrite from scratch of the original [Repomix (formerly
+'repopack)](https://github.com/yamadashy/repomix) project, though none of the
 source code was used or even looked at (the output file header however was
 heavily borrowed from). The idea was to create a similar tool from scratch, with
 a few enhancements and improvements. It's also part of my journey to learn Rust

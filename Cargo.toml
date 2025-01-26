@@ -39,6 +39,7 @@ arboard = { version = "3.4.1", default-features = false, features = [
 serde = { version = "1.0.214", features = ["derive"] }
 config = "0.15.0"
 dirs-next = "2.0.0"
+encoding_rs = "0.8.33"
 
 [features]
 default = []

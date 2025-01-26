@@ -202,6 +202,7 @@ pub struct Params {
     pub branch: Option<String>,
     pub extend_exclude: Option<Vec<String>>,
     pub exclude: Option<Vec<String>>,
+    pub utf8: bool,
 }
 
 impl Default for Params {
@@ -216,6 +217,7 @@ impl Default for Params {
             branch: None,
             extend_exclude: None,
             exclude: None,
+            utf8: false,
         }
     }
 }
@@ -260,6 +262,9 @@ impl From<Config> for Params {
         if let Ok(val) = TomlValue::load_from_config(&settings, "exclude") {
             params.exclude = val;
         }
+        if let Ok(val) = TomlValue::load_from_config(&settings, "utf8") {
+            params.utf8 = val;
+        }
 
         params
     }
@@ -273,12 +278,12 @@ impl Params {
                 .clone()
                 .or(config.output_file)
                 .or(Params::default().output_file),
+            stdout: args.stdout || config.stdout,
             model: args
                 .model
                 .clone()
                 .or(config.model)
                 .or(Params::default().model),
-            stdout: args.stdout || config.stdout,
             clipboard: args.clipboard || config.clipboard,
             line_numbers: args.lnumbers || config.line_numbers,
             token: args.token.clone().or(config.token),
@@ -304,6 +309,13 @@ impl Params {
                 (Some(cli_excludes), None) => Some(cli_excludes.clone()),
                 (None, Some(config_excludes)) => Some(config_excludes),
                 (None, None) => None,
+            },
+            utf8: if args.no_utf8 {
+                false
+            } else if args.utf8 {
+                true
+            } else {
+                config.utf8
             },
         }
     }
@@ -425,6 +437,7 @@ mod tests {
         assert_eq!(params.branch, None);
         assert_eq!(params.extend_exclude, None);
         assert_eq!(params.exclude, None);
+        assert_eq!(params.utf8, false);
     }
 
     #[test]
@@ -458,6 +471,7 @@ mod tests {
             Some(vec!["target".to_string(), "node_modules".to_string()])
         );
         assert_eq!(params.exclude, Some(vec!["custom.xml".to_string()]));
+        assert_eq!(params.utf8, false);
     }
 
     #[test]
@@ -563,5 +577,58 @@ mod tests {
         assert_eq!(params.branch, None);
         assert_eq!(params.extend_exclude, None);
         assert_eq!(params.exclude, None);
+        assert_eq!(params.utf8, false);
+    }
+
+    #[test]
+    fn test_utf8_config_true() {
+        let config_str = r#"
+            utf8 = true
+        "#;
+        let config = Config::builder()
+            .add_source(File::from_str(config_str, FileFormat::Toml))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+        assert!(params.utf8);
+    }
+
+    #[test]
+    fn test_utf8_config_false() {
+        let config_str = r#"
+            utf8 = false
+        "#;
+        let config = Config::builder()
+            .add_source(File::from_str(config_str, FileFormat::Toml))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+        assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_utf8_config_default() {
+        let config_str = r#"
+            # no utf8 setting
+        "#;
+        let config = Config::builder()
+            .add_source(File::from_str(config_str, FileFormat::Toml))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+        assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_utf8_config_invalid_type() {
+        let config_str = r#"
+            utf8 = "not a bool"
+        "#;
+        let config = Config::builder()
+            .add_source(File::from_str(config_str, FileFormat::Toml))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+        assert!(!params.utf8);
     }
 }

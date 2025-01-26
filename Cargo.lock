@@ -208,6 +208,7 @@ dependencies = [
  "clap",
  "config",
  "dirs-next",
+ "encoding_rs",
  "fs_extra",
  "git2",
  "ignore",

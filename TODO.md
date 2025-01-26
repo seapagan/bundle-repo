@@ -1,7 +1,7 @@
 # Planned Improvements
 
 - add more output formats - Text, Markdown, maybe others.
-- add a test suite to ensure the tool works as expected in a variety of
+- improve the test suite to ensure the tool works as expected in a variety of
   scenarios.
 - allow individual files that are excluded by default to be included without
   wiping the default exclude set as `exclude` currently does.
@@ -19,13 +19,11 @@
   all 3 at this current code state, but we need to develop a test suite and get
   the CI pipeline working to ensure that it continues to work on all 3.
 - allow to work with non-git repositories (local only obviously).
-- add support for additional tokenizers (Claude, Gemini) when/if their specifications are publicly released
-- change file encoding to UTF-8 for included files, this is to ensure that the
-  XML file is valid and can be read by other tools and specifically LLM's who
-  generally prefer UTF-8.
+- add support for additional tokenizers (Claude, Gemini etc) when/if their
+  specifications are publicly released
 - allow user to add custom metadata to the XML file, this could be used to
   store information about the repository, such as the name, description, extra
-  instructions, etc. Would again be once the TOML file is implemented.
+  instructions, etc. Would use the TOML config file.
 - ignore `dotfiles` by default, but allow the user to include them if they want.
 - Add secret-checking to the tool, to ensure that no secrets are included in the
   output XML file. Hopefully this can be done with a library, but may need to
