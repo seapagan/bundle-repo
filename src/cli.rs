@@ -114,6 +114,7 @@ pub struct Flags {
 
     #[arg(
         long = "no-utf8",
+        short = 'U',
         action = ArgAction::SetTrue,
         help = "Disable UTF-8 encoding for text files",
         conflicts_with = "utf8",
@@ -351,6 +352,12 @@ mod tests {
         assert!(args.no_utf8);
         assert_bool(&args.utf8);
 
+        // Test -U short flag
+        let args = Flags::parse_from(["program", "-U"]);
+        assert!(!args.utf8);
+        assert!(args.no_utf8);
+        assert_bool(&args.utf8);
+
         // Test default value (should be false)
         let args = Flags::parse_from(["program"]);
         assert!(!args.utf8);
@@ -365,6 +372,10 @@ mod tests {
 
         // Test that --utf8 and --no-utf8 cannot be used together
         let result = Flags::try_parse_from(["program", "--utf8", "--no-utf8"]);
+        assert!(result.is_err());
+
+        // Test that -u and -U cannot be used together
+        let result = Flags::try_parse_from(["program", "-u", "-U"]);
         assert!(result.is_err());
     }
 }
