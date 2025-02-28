@@ -1,113 +1,92 @@
 name: Build and Release
 
 on:
-  release:
-    types: [created]
-  workflow_dispatch:
+  push:
+    tags:
+      - "*"
 
 jobs:
   build:
-    # disable the job
-    if: false
-    name: Build Binaries
-    runs-on: ${{ matrix.platform }}
-
+    name: Build ${{ matrix.binary_target }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        platform: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            binary_target: x86_64-unknown-linux-musl
+          - os: ubuntu-latest
+            binary_target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            binary_target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            binary_target: armv7-unknown-linux-gnueabihf
+          - os: windows-latest
+            binary_target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            binary_target: x86_64-apple-darwin
+          - os: macos-latest
+            binary_target: aarch64-apple-darwin
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
+      - name: Install musl tools
+        if: matrix.binary_target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get install -y musl-tools
 
-      - name: Build the project
-        run: cargo build --release
-
-      - name: Check release directory contents
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: Get-ChildItem -Path target/release
-
-      - name: Rename the binary to .exe (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
+      - name: Install ARM cross-compilation tools
+        if:
+          matrix.binary_target == 'aarch64-unknown-linux-gnu' ||
+          matrix.binary_target == 'armv7-unknown-linux-gnueabihf'
         run: |
-          Rename-Item -Path target/release/bundlerepo -NewName bundlerepo.exe
-          Get-ChildItem -Path target/release
+          sudo apt-get update
+          if [[ "${{ matrix.binary_target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          elif [[ "${{ matrix.binary_target }}" == "armv7-unknown-linux-gnueabihf" ]]; then
+            sudo apt-get install -y gcc-arm-linux-gnueabihf
+          fi
 
-      - name: Package the binary (Linux/macOS)
-        if: matrix.platform != 'windows-latest'
+      - name: Install target
+        run: rustup target add ${{ matrix.binary_target }}
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.binary_target }}
+
+      - name: Prepare binary (Unix)
+        if: matrix.os != 'windows-latest'
         run: |
+          cd target/${{ matrix.binary_target }}/release
           BINARY_NAME="bundlerepo"
-          mkdir -p binaries
-          tar -czvf binaries/${BINARY_NAME}-${{ matrix.platform }}.tar.gz -C target/release ${BINARY_NAME}
+          tar -czf ../../../bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.tar.gz $BINARY_NAME
+          cd -
 
-      - name: Package the binary (Windows)
-        if: matrix.platform == 'windows-latest'
+      - name: Prepare binary (Windows)
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
+          cd target/${{ matrix.binary_target }}/release
           $BINARY_NAME = "bundlerepo.exe"
-          New-Item -ItemType Directory -Path binaries -Force
-          Compress-Archive -Path target/release/$BINARY_NAME -DestinationPath binaries\$BINARY_NAME-window-latest.zip
+          Compress-Archive -Path $BINARY_NAME -DestinationPath ../../../bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.zip
+          cd -
 
-      - name: Upload Binaries
-        uses: actions/upload-artifact@v4
+      - name: Upload Release Asset (Unix)
+        if: matrix.os != 'windows-latest'
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: ${{ matrix.platform }}-binaries
-          path: binaries/
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file:
+            bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
 
-  release:
-    # disable the job
-    if: false
-    name: Release Artifacts
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download Binaries
-        uses: actions/download-artifact@v4
+      - name: Upload Release Asset (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: ubuntu-latest-binaries
-          path: ./dist
-
-      - name: Download macOS Binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-latest-binaries
-          path: ./dist
-
-      - name: Download Windows Binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-latest-binaries
-          path: ./dist
-
-      - name: Get latest release tag
-        id: get_release
-        run: |
-          latest_tag=$(gh release list -L 1 --json tagName -q '.[0].tagName')
-          echo "Latest release tag: $latest_tag"
-          echo "RELEASE_TAG=$latest_tag" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Assets to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/bundlerepo-ubuntu-latest.tar.gz
-            dist/bundlerepo-macos-latest.tar.gz
-            dist/bundlerepo.exe-window-latest.zip
-          tag_name:
-            ${{ steps.get_release.outputs.RELEASE_TAG ||
-            github.event.release.tag_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file:
+            bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.zip
+          tag: ${{ github.ref }}
+          overwrite: true
