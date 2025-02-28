@@ -117,8 +117,6 @@ Clone the project and install dependencies.
   cargo install bundle_repo
   ```
 
-  The DeepSeek tokenizer file is embedded in the binary, so no additional setup is required.
-
 - From source:
 
   ```bash
@@ -134,6 +132,12 @@ Clone the project and install dependencies.
   ```bash
   sudo mv ./target/release/bundlerepo /usr/local/bin
   ```
+
+- From a release binary
+
+  Download the binary from the latest
+  [releases](https://github.com/seapagan/bundle-repo/releases/latest), unzip it
+  and move it to a directory in your `PATH` as above.
 
 ### Running the Tool
 
