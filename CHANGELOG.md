@@ -5,13 +5,35 @@ project since the first release, with the latest changes at the top.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/seapagan/bundle-repo/tree/HEAD)
+
+## [0.6.0](https://github.com/seapagan/bundle-repo/releases/tag/0.6.0) (February 28, 2025)
+
+**Closed Issues**
+
+- .gitignore file is still parsed and files ignored, even when using `exclude` option. ([#29](https://github.com/seapagan/bundle-repo/issues/29)) by [seapagan](https://github.com/seapagan)
 
 **New Features**
 
+- Create a GitHub action to create binaries ([#50](https://github.com/seapagan/bundle-repo/pull/50)) by [seapagan](https://github.com/seapagan)
 - Implement converting files to utf-8 ([#38](https://github.com/seapagan/bundle-repo/pull/38)) by [seapagan](https://github.com/seapagan)
 
-[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.5.0...HEAD) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.5.0...HEAD.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.5.0...HEAD.patch)
+**Documentation**
+
+- Update docs to mention .gitignore files always ignored ([#39](https://github.com/seapagan/bundle-repo/pull/39)) by [seapagan](https://github.com/seapagan)
+
+**Dependency Updates**
+
+- Update Rust crate tabled to 0.18.0 ([#49](https://github.com/seapagan/bundle-repo/pull/49)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate rust-embed to v8.6.0 ([#48](https://github.com/seapagan/bundle-repo/pull/48)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate serde to v1.0.218 ([#47](https://github.com/seapagan/bundle-repo/pull/47)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate config to v0.15.8 ([#45](https://github.com/seapagan/bundle-repo/pull/45)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate tabled to 0.18.0 ([#44](https://github.com/seapagan/bundle-repo/pull/44)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate clap to v4.5.31 ([#43](https://github.com/seapagan/bundle-repo/pull/43)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate infer to 0.19.0 ([#42](https://github.com/seapagan/bundle-repo/pull/42)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate config to v0.15.7 ([#41](https://github.com/seapagan/bundle-repo/pull/41)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate tempfile to v3.16.0 ([#40](https://github.com/seapagan/bundle-repo/pull/40)) by [renovate[bot]](https://github.com/apps/renovate)
+
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.5.0...0.6.0) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.5.0...0.6.0.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.5.0...0.6.0.patch)
 
 ## [0.5.0](https://github.com/seapagan/bundle-repo/releases/tag/0.5.0) (January 25, 2025)
 
