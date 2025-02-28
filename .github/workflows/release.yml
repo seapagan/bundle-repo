@@ -10,7 +10,7 @@ jobs:
     name: Build ${{ matrix.binary_target }}
     runs-on: ${{ matrix.os }}
     env:
-      BINARY_NAME: bundle_repo
+      BINARY_NAME: bundlerepo
     strategy:
       fail-fast: false
       matrix:
