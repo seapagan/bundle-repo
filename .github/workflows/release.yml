@@ -9,6 +9,8 @@ jobs:
   build:
     name: Build ${{ matrix.binary_target }}
     runs-on: ${{ matrix.os }}
+    env:
+      BINARY_NAME: bundle_repo
     strategy:
       fail-fast: false
       matrix:
@@ -17,10 +19,6 @@ jobs:
             binary_target: x86_64-unknown-linux-musl
           - os: ubuntu-latest
             binary_target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
-            binary_target: aarch64-unknown-linux-gnu
-          - os: ubuntu-latest
-            binary_target: armv7-unknown-linux-gnueabihf
           - os: windows-latest
             binary_target: x86_64-pc-windows-msvc
           - os: macos-latest
@@ -36,30 +34,28 @@ jobs:
         if: matrix.binary_target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get install -y musl-tools
 
-      - name: Install ARM cross-compilation tools
-        if:
-          matrix.binary_target == 'aarch64-unknown-linux-gnu' ||
-          matrix.binary_target == 'armv7-unknown-linux-gnueabihf'
-        run: |
-          sudo apt-get update
-          if [[ "${{ matrix.binary_target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-          elif [[ "${{ matrix.binary_target }}" == "armv7-unknown-linux-gnueabihf" ]]; then
-            sudo apt-get install -y gcc-arm-linux-gnueabihf
-          fi
-
       - name: Install target
         run: rustup target add ${{ matrix.binary_target }}
 
       - name: Build binary
-        run: cargo build --release --target ${{ matrix.binary_target }}
+        run: |
+          cargo build --release --target ${{ matrix.binary_target }}
+
+      - name: Set archive name
+        id: archive
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            echo "archive_name=${{ env.BINARY_NAME }}-v${{ github.ref_name }}-${{ matrix.binary_target }}.zip" >> $GITHUB_OUTPUT
+          else
+            echo "archive_name=${{ env.BINARY_NAME }}-v${{ github.ref_name }}-${{ matrix.binary_target }}.tar.gz" >> $GITHUB_OUTPUT
+          fi
 
       - name: Prepare binary (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.binary_target }}/release
-          BINARY_NAME="bundlerepo"
-          tar -czf ../../../bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.tar.gz $BINARY_NAME
+          tar -czf ../../../${{ steps.archive.outputs.archive_name }} ${{ env.BINARY_NAME }}
           cd -
 
       - name: Prepare binary (Windows)
@@ -67,26 +63,15 @@ jobs:
         shell: pwsh
         run: |
           cd target/${{ matrix.binary_target }}/release
-          $BINARY_NAME = "bundlerepo.exe"
-          Compress-Archive -Path $BINARY_NAME -DestinationPath ../../../bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.zip
+          $BINARY_NAME = "${{ env.BINARY_NAME }}.exe"
+          Compress-Archive -Path $BINARY_NAME -DestinationPath ../../../${{ steps.archive.outputs.archive_name }}
           cd -
 
-      - name: Upload Release Asset (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Upload Release Asset
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file:
-            bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.tar.gz
-          tag: ${{ github.ref }}
-          overwrite: true
-
-      - name: Upload Release Asset (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file:
-            bundlerepo-${{ github.ref_name }}-${{ matrix.binary_target }}.zip
+          file: ${{ steps.archive.outputs.archive_name }}
+          asset_name: ${{ steps.archive.outputs.archive_name }}
           tag: ${{ github.ref }}
           overwrite: true
