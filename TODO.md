@@ -3,8 +3,9 @@
 - add more output formats - Text, Markdown, maybe others.
 - improve the test suite to ensure the tool works as expected in a variety of
   scenarios.
-- allow individual files that are excluded by default to be included without
-  wiping the default exclude set as `exclude` currently does.
+- allow individual default-excluded files or categories to be included without
+  replacing the default exclusion set; initially support licence files and
+  `.gitignore`, then consider lockfiles, `.github/`, and tool configuration.
 - add the ability to check for updates and update the tool (or at least notify
   the user that an update is available and where to get).
 - actually remove comments from the generated XML file. Perhaps add a flag to
@@ -19,8 +20,12 @@
   all 3 at this current code state, but we need to develop a test suite and get
   the CI pipeline working to ensure that it continues to work on all 3.
 - allow to work with non-git repositories (local only obviously).
-- add support for additional tokenizers (Claude, Gemini etc) when/if their
-  specifications are publicly released
+- modernise token counting with model-aware tokenizer backends for current
+  OpenAI, Claude, DeepSeek, GLM, Gemini, and other commonly used models.
+  Prefer official local tokenizers, optionally support provider token-counting
+  APIs, retain a clearly labelled conservative fallback estimate, and record
+  the tokenizer source, model profile, and exact-versus-estimated status in the
+  generated output.
 - allow user to add custom metadata to the XML file, this could be used to
   store information about the repository, such as the name, description, extra
   instructions, etc. Would use the TOML config file.

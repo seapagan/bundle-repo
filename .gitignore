@@ -1,6 +1,7 @@
 /target
 filelist.xml
 packed-repo.xml
+packed-repo.xml.gz
 local_notes
 repopack-output.xml
 .changelog_generator.toml
