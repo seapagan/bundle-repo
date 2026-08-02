@@ -312,7 +312,7 @@ fn write_repository_files_to_xml<W: Write>(
 
 /// Map XML writing errors to IO errors
 fn map_xml_error(err: xml::writer::Error) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, err)
+    std::io::Error::other(err)
 }
 
 /// Function to append the file summary section to the head of the XML output.
@@ -495,7 +495,7 @@ mod tests {
 
         // Create a binary file
         let binary_path = temp_dir.path().join("test.bin");
-        fs::write(&binary_path, &[0u8, 159u8, 146u8, 150u8]).unwrap();
+        fs::write(&binary_path, [0u8, 159u8, 146u8, 150u8]).unwrap();
         assert!(is_binary_file(&binary_path).unwrap());
     }
 
@@ -508,8 +508,10 @@ mod tests {
         let test_file = temp_dir.path().join("test.txt");
         fs::write(&test_file, "Test content").unwrap();
 
-        let mut params = Params::default();
-        params.output_file = Some(output_file.to_str().unwrap().to_string());
+        let params = Params {
+            output_file: Some(output_file.to_str().unwrap().to_string()),
+            ..Params::default()
+        };
 
         let mut file_tree = FileTree::default();
         file_tree.file_paths.push("test.txt".to_string());
@@ -544,9 +546,11 @@ mod tests {
         let test_file = temp_dir.path().join("test.txt");
         fs::write(&test_file, "Line 1\nLine 2\nLine 3").unwrap();
 
-        let mut params = Params::default();
-        params.output_file = Some(output_file.to_str().unwrap().to_string());
-        params.line_numbers = true;
+        let params = Params {
+            output_file: Some(output_file.to_str().unwrap().to_string()),
+            line_numbers: true,
+            ..Params::default()
+        };
 
         let mut file_tree = FileTree::default();
         file_tree.file_paths.push("test.txt".to_string());
@@ -574,10 +578,12 @@ mod tests {
 
         // Create a binary file
         let test_file = temp_dir.path().join("test.bin");
-        fs::write(&test_file, &[0u8, 159u8, 146u8, 150u8]).unwrap();
+        fs::write(&test_file, [0u8, 159u8, 146u8, 150u8]).unwrap();
 
-        let mut params = Params::default();
-        params.output_file = Some(output_file.to_str().unwrap().to_string());
+        let params = Params {
+            output_file: Some(output_file.to_str().unwrap().to_string()),
+            ..Params::default()
+        };
 
         let mut file_tree = FileTree::default();
         file_tree.file_paths.push("test.bin".to_string());
@@ -605,8 +611,10 @@ mod tests {
         let test_file = temp_dir.path().join("test.txt");
         fs::write(&test_file, "Test content").unwrap();
 
-        let mut params = Params::default();
-        params.stdout = true;
+        let params = Params {
+            stdout: true,
+            ..Params::default()
+        };
 
         let mut file_tree = FileTree::default();
         file_tree.file_paths.push("test.txt".to_string());
@@ -634,9 +642,11 @@ mod tests {
         let test_file = temp_dir.path().join("test.txt");
         fs::write(&test_file, b"Hello \xFF World").unwrap(); // Invalid UTF-8 sequence
 
-        let mut params = Params::default();
-        params.output_file = Some(output_file.to_str().unwrap().to_string());
-        params.utf8 = true;
+        let params = Params {
+            output_file: Some(output_file.to_str().unwrap().to_string()),
+            utf8: true,
+            ..Params::default()
+        };
 
         let mut file_tree = FileTree::default();
         file_tree.file_paths.push("test.txt".to_string());

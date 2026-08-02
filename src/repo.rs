@@ -54,7 +54,7 @@ pub fn clone_repo(
             if !flags.stdout {
                 println!(
                     "-> Successfully cloned repository '{}'{}",
-                    &repo_url.trim_end_matches(".git"),
+                    repo_url.trim_end_matches(".git"),
                     flags.branch.as_ref().map_or(String::new(), |b| format!(
                         " (branch: {})",
                         b
@@ -66,8 +66,8 @@ pub fn clone_repo(
         Err(e) => {
             let error_message = match (e.class(), e.code()) {
             (ErrorClass::Reference, ErrorCode::NotFound) => {
-                if flags.branch.is_some() {
-                    format!("The specified branch '{}' does not exist in the repository.", flags.branch.as_ref().unwrap())
+                if let Some(branch_name) = &flags.branch {
+                    format!("The specified branch '{branch_name}' does not exist in the repository.")
                 } else {
                     format!("Failed to clone: {}", e)
                 }

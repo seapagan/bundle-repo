@@ -198,7 +198,7 @@ mod tests {
         let args = Flags::parse_from(["program", "user/repo"]);
         assert_eq!(args.repo, Some("user/repo".to_string()));
         assert_eq!(args.branch, None);
-        assert_eq!(args.stdout, false);
+        assert!(!args.stdout);
     }
 
     #[test]
