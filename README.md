@@ -236,24 +236,26 @@ In this case, the `--file` flag is ignored and no file is written to disk.
 
 #### Compress with gzip
 
-Gzip compression is opt-in with `-z` or `--gzip`. A compression level from 1
-to 9 can be attached to the short option or passed as its next argument:
+Gzip compression is opt-in with `-z` or `--gzip`. To select a compression level
+from 1 to 9, use `=` with either option:
 
 ```bash
 bundlerepo user_name/repo_name -z
-bundlerepo user_name/repo_name -z9
-bundlerepo user_name/repo_name -z 9
-bundlerepo user_name/repo_name --gzip 9
+bundlerepo user_name/repo_name -z=9
+bundlerepo user_name/repo_name --gzip
+bundlerepo user_name/repo_name --gzip=9
 ```
 
 A bare `-z` uses `gzip_level` from configuration, or level 6 when it is unset.
-Because the level is optional, put the repository positional argument before a
-bare `-z`; `bundlerepo -z user/repo` tries to parse `user/repo` as the level.
+Because explicit levels require `=`, a bare `-z` does not consume the following
+argument and can be clustered with other short flags, such as `-zs`.
 
 For file output, `.gz` is appended to the selected filename unless it already
-ends with `.gz`. With `--stdout`, the program writes raw gzip bytes suitable for
-redirection or piping. Gzip output cannot be copied to the clipboard; use
+ends with `.gz` (case-insensitively). With `--stdout`, the program writes raw
+gzip bytes when stdout is redirected or piped, and refuses to write them to an
+interactive terminal. Clipboard output cannot be compressed; use
 `--no-gzip --clipboard` to override gzip configuration and copy plain XML.
+When `--stdout` and `--clipboard` are both enabled, stdout takes precedence.
 
 #### Copy to Clipboard
 
@@ -346,7 +348,7 @@ Options:
   -b, --branch <BRANCH>           Specify a branch to checkout for remote repositories
   -f, --file <OUTPUT_FILE>        Filename to save the bundle as. [default: packed-repo.xml]
   -s, --stdout                    Output the XML directly to stdout without creating a file.
-  -z, --gzip [<LEVEL>]            Compress output with gzip at an optional level from 1 to 9
+  -z, --gzip[=<LEVEL>]            Compress output with gzip at an optional level from 1 to 9 (use =LEVEL)
       --no-gzip                   Disable gzip output, overriding configuration
   -m, --model <MODEL>             Model to use for tokenization. Supported models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2', 'deepseek' [default: gpt4o]
   -c, --clipboard                 Copy the XML to the clipboard after creating it.
@@ -410,13 +412,13 @@ Available configuration options:
 - `utf8`: Whether to force UTF-8 encoding for all text files (default: false)
 - `gzip`: Whether to gzip output by default (default: false)
 - `gzip_level`: Gzip compression level from 1 to 9 (default: 6). Setting a
-  level does not enable gzip by itself.
+  level does not enable gzip by itself. Invalid values are ignored.
 
 Gzip resolution follows these rules: `--no-gzip` disables it; an explicit
-`-zN` or `-z N` enables level `N`; a bare `-z` enables the configured level;
-otherwise `gzip = true` enables the configured level. If none applies, output
-remains uncompressed. The local-over-global configuration precedence described
-above still applies to both gzip settings.
+`-z=N` or `--gzip=N` enables level `N`; a bare `-z` or `--gzip` enables the
+configured level; otherwise `gzip = true` enables the configured level. If none
+applies, output remains uncompressed. The local-over-global configuration
+precedence described above still applies to both gzip settings.
 
 The `extend_exclude` and `exclude` options can be specified either by using
 multiple `-e` or `-x` flags on the command line:
