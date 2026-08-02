@@ -78,6 +78,11 @@ fn main() {
     let config = load_config();
     let params = Params::from_args_and_config(&args, config);
 
+    if let Err(error) = xml_output::validate_output_options(&params) {
+        eprintln!("Error: {error}");
+        exit(1);
+    }
+
     if !params.stdout {
         cli::show_header();
     }
@@ -151,7 +156,7 @@ fn main() {
                 } else {
                     println!(
                         "-> Successfully wrote XML to '{}'",
-                        params.output_file.unwrap()
+                        xml_output::effective_output_file(&params)
                     );
                 }
                 println!("\nSummary:");
@@ -540,5 +545,53 @@ mod tests {
         let args = Flags::parse_from(["program"]);
         let params = Params::from_args_and_config(&args, config);
         assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_gzip_cli_and_config_precedence() {
+        let cases = [
+            ("", vec!["program"], false, 6),
+            ("gzip = false\ngzip_level = 9", vec!["program"], false, 9),
+            ("", vec!["program", "-z"], true, 6),
+            ("gzip = true", vec!["program"], true, 6),
+            ("gzip = true\ngzip_level = 8", vec!["program"], true, 8),
+            (
+                "gzip = false\ngzip_level = 9",
+                vec!["program", "-z"],
+                true,
+                9,
+            ),
+            (
+                "gzip = true\ngzip_level = 8",
+                vec!["program", "-z=3"],
+                true,
+                3,
+            ),
+            (
+                "gzip = true\ngzip_level = 8",
+                vec!["program", "--no-gzip"],
+                false,
+                8,
+            ),
+        ];
+
+        for (config, arguments, expected_gzip, expected_level) in cases {
+            let args = Flags::parse_from(arguments);
+            let params = Params::from_args_and_config(
+                &args,
+                create_test_config(config),
+            );
+            assert_eq!(params.gzip, expected_gzip);
+            assert_eq!(params.gzip_level, expected_level);
+        }
+    }
+
+    #[test]
+    fn test_no_gzip_allows_clipboard_override() {
+        let config = create_test_config("gzip = true\ngzip_level = 9");
+        let args = Flags::parse_from(["program", "--no-gzip", "--clipboard"]);
+        let params = Params::from_args_and_config(&args, config);
+        assert!(!params.gzip);
+        assert!(params.clipboard);
     }
 }

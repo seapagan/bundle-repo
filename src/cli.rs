@@ -1,9 +1,16 @@
 use clap::{ArgAction, Parser};
 
-use crate::structs::Params;
+use crate::structs::DEFAULT_OUTPUT_FILE;
 
 const VALID_MODELS: [&str; 6] =
     ["gpt4o", "gpt4", "gpt3.5", "gpt3", "gpt2", "deepseek"];
+
+fn parse_gzip_level(value: &str) -> Result<u32, String> {
+    match value.parse::<u32>() {
+        Ok(level @ 1..=9) => Ok(level),
+        _ => Err("gzip level must be an integer from 1 to 9".to_string()),
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -30,8 +37,7 @@ pub struct Flags {
     #[arg(
         long = "file",
         short = 'f',
-        help = &format!("Filename to save the bundle as. (Defaults to '{}')",
-            Params::default().output_file.unwrap_or_default())
+        help = &format!("Filename to save the bundle as. (Defaults to '{DEFAULT_OUTPUT_FILE}')")
     )]
     pub output_file: Option<String>,
 
@@ -42,6 +48,25 @@ pub struct Flags {
         help = "Output the XML directly to stdout without creating a file."
     )]
     pub stdout: bool,
+
+    #[arg(
+        long = "gzip",
+        short = 'z',
+        value_name = "LEVEL",
+        num_args = 0..=1,
+        require_equals = true,
+        value_parser = parse_gzip_level,
+        help = "Compress output with gzip at an optional level from 1 to 9 (use =LEVEL)"
+    )]
+    pub gzip: Option<Option<u32>>,
+
+    #[arg(
+        long = "no-gzip",
+        action = ArgAction::SetTrue,
+        conflicts_with = "gzip",
+        help = "Disable gzip output, overriding configuration"
+    )]
+    pub no_gzip: bool,
 
     #[arg(
         long = "model",
@@ -209,6 +234,71 @@ mod tests {
     fn test_stdout_flag() {
         let args = Flags::parse_from(["program", "user/repo", "--stdout"]);
         assert!(args.stdout);
+    }
+
+    #[test]
+    fn test_gzip_flag_forms() {
+        for input in [
+            vec!["program", "-z"],
+            vec!["program", "--gzip"],
+            vec!["program", "user/repo", "-z"],
+        ] {
+            let args = Flags::parse_from(input);
+            assert_eq!(args.gzip, Some(None));
+        }
+
+        for input in [vec!["program", "-z=9"], vec!["program", "--gzip=9"]] {
+            let args = Flags::parse_from(input);
+            assert_eq!(args.gzip, Some(Some(9)));
+        }
+    }
+
+    #[test]
+    fn test_gzip_boundary_levels() {
+        let level_one = Flags::parse_from(["program", "-z=1"]);
+        let level_nine = Flags::parse_from(["program", "--gzip=9"]);
+        assert_eq!(level_one.gzip, Some(Some(1)));
+        assert_eq!(level_nine.gzip, Some(Some(9)));
+    }
+
+    #[test]
+    fn test_invalid_gzip_levels() {
+        for level in ["0", "10", "fast"] {
+            let argument = format!("--gzip={level}");
+            let result = Flags::try_parse_from(["program", &argument]);
+            let error = result.unwrap_err().to_string();
+            assert!(
+                error.contains("gzip level must be an integer from 1 to 9")
+            );
+        }
+    }
+
+    #[test]
+    fn test_gzip_conflicts_with_no_gzip() {
+        let result = Flags::try_parse_from(["program", "-z", "--no-gzip"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bare_gzip_does_not_consume_following_arguments() {
+        let positional = Flags::parse_from(["program", "-z", "user/repo"]);
+        assert_eq!(positional.gzip, Some(None));
+        assert_eq!(positional.repo.as_deref(), Some("user/repo"));
+
+        let clustered = Flags::parse_from(["program", "-zs"]);
+        assert_eq!(clustered.gzip, Some(None));
+        assert!(clustered.stdout);
+    }
+
+    #[test]
+    fn test_gzip_level_requires_equals() {
+        assert!(Flags::try_parse_from(["program", "-z9"]).is_err());
+
+        for input in [["program", "-z", "9"], ["program", "--gzip", "9"]] {
+            let args = Flags::parse_from(input);
+            assert_eq!(args.gzip, Some(None));
+            assert_eq!(args.repo.as_deref(), Some("9"));
+        }
     }
 
     #[test]

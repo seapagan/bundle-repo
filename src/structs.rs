@@ -203,12 +203,16 @@ pub struct Params {
     pub extend_exclude: Option<Vec<String>>,
     pub exclude: Option<Vec<String>>,
     pub utf8: bool,
+    pub gzip: bool,
+    pub gzip_level: u32,
 }
+
+pub const DEFAULT_OUTPUT_FILE: &str = "packed-repo.xml";
 
 impl Default for Params {
     fn default() -> Self {
         Params {
-            output_file: Some("packed-repo.xml".to_string()),
+            output_file: Some(DEFAULT_OUTPUT_FILE.to_string()),
             stdout: false,
             model: Some("gpt4o".to_string()),
             clipboard: false,
@@ -218,6 +222,8 @@ impl Default for Params {
             extend_exclude: None,
             exclude: None,
             utf8: false,
+            gzip: false,
+            gzip_level: 6,
         }
     }
 }
@@ -265,13 +271,30 @@ impl From<Config> for Params {
         if let Ok(val) = TomlValue::load_from_config(&settings, "utf8") {
             params.utf8 = val;
         }
-
+        if let Ok(val) = TomlValue::load_from_config(&settings, "gzip") {
+            params.gzip = val;
+        }
+        if let Ok(level @ 1..=9) =
+            TomlValue::load_from_config(&settings, "gzip_level")
+        {
+            params.gzip_level = level as u32;
+        }
         params
     }
 }
 
 impl Params {
     pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
+        let (gzip, gzip_level) = if args.no_gzip {
+            (false, config.gzip_level)
+        } else {
+            match args.gzip {
+                Some(None) => (true, config.gzip_level),
+                Some(Some(level)) => (true, level),
+                None => (config.gzip, config.gzip_level),
+            }
+        };
+
         Params {
             output_file: args
                 .output_file
@@ -317,6 +340,8 @@ impl Params {
             } else {
                 config.utf8
             },
+            gzip,
+            gzip_level,
         }
     }
 }
@@ -438,6 +463,8 @@ mod tests {
         assert_eq!(params.extend_exclude, None);
         assert_eq!(params.exclude, None);
         assert_eq!(params.utf8, false);
+        assert!(!params.gzip);
+        assert_eq!(params.gzip_level, 6);
     }
 
     #[test]
@@ -630,5 +657,45 @@ mod tests {
             .unwrap();
         let params: Params = config.into();
         assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_gzip_config_values() {
+        let config = Config::builder()
+            .add_source(File::from_str(
+                "gzip = true\ngzip_level = 9",
+                FileFormat::Toml,
+            ))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+        assert!(params.gzip);
+        assert_eq!(params.gzip_level, 9);
+    }
+
+    #[test]
+    fn test_invalid_gzip_config_types_are_ignored() {
+        for config_str in ["gzip = [1]", "gzip_level = \"high\""] {
+            let config = Config::builder()
+                .add_source(File::from_str(config_str, FileFormat::Toml))
+                .build()
+                .unwrap();
+            let params: Params = config.into();
+            assert!(!params.gzip);
+            assert_eq!(params.gzip_level, 6);
+        }
+    }
+
+    #[test]
+    fn test_invalid_gzip_config_levels_are_ignored() {
+        for level in [0, 10] {
+            let config_str = format!("gzip_level = {level}");
+            let config = Config::builder()
+                .add_source(File::from_str(&config_str, FileFormat::Toml))
+                .build()
+                .unwrap();
+            let params: Params = config.into();
+            assert_eq!(params.gzip_level, 6);
+        }
     }
 }
