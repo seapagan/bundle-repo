@@ -2,11 +2,12 @@ use crate::filelist::{FileTree, FolderNode};
 use crate::structs::{Params, DEFAULT_OUTPUT_FILE};
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
+use dirs_next::home_dir;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs::{metadata, File};
 use std::io::{self, BufReader, Cursor, IsTerminal, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
 /// Function to output the repository structure and files list to XML
@@ -138,17 +139,35 @@ fn finish_output(
     Ok((number_of_files, total_size, token_count))
 }
 
-pub fn effective_output_file(flags: &Params) -> String {
-    let output_file = flags
-        .output_file
-        .clone()
-        .unwrap_or_else(|| DEFAULT_OUTPUT_FILE.to_string());
-    let has_gzip_suffix = Path::new(&output_file)
+pub fn effective_output_file(flags: &Params) -> PathBuf {
+    effective_output_file_with_home(flags, home_dir().as_deref())
+}
+
+fn effective_output_file_with_home(
+    flags: &Params,
+    home_directory: Option<&Path>,
+) -> PathBuf {
+    let output_file = PathBuf::from(
+        flags
+            .output_file
+            .clone()
+            .unwrap_or_else(|| DEFAULT_OUTPUT_FILE.to_string()),
+    );
+    let output_file = home_directory
+        .and_then(|home| {
+            let relative_path = output_file.strip_prefix("~").ok()?;
+            (!relative_path.as_os_str().is_empty())
+                .then(|| home.join(relative_path))
+        })
+        .unwrap_or(output_file);
+    let has_gzip_suffix = output_file
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("gz"));
     if flags.gzip && !has_gzip_suffix {
-        format!("{output_file}.gz")
+        let mut compressed_path = output_file.into_os_string();
+        compressed_path.push(".gz");
+        PathBuf::from(compressed_path)
     } else {
         output_file
     }
@@ -734,7 +753,7 @@ mod tests {
             gzip: true,
             ..Params::default()
         };
-        assert_eq!(effective_output_file(&params), "bundle.XML.GZ");
+        assert_eq!(effective_output_file(&params), Path::new("bundle.XML.GZ"));
 
         let default_name = Params {
             output_file: None,
@@ -743,7 +762,147 @@ mod tests {
         };
         assert_eq!(
             effective_output_file(&default_name),
-            format!("{DEFAULT_OUTPUT_FILE}.gz")
+            Path::new(&format!("{DEFAULT_OUTPUT_FILE}.gz"))
+        );
+    }
+
+    #[test]
+    fn test_config_home_relative_output_path_is_expanded() {
+        let home = tempdir().unwrap();
+        let config = config::Config::builder()
+            .set_override("output_file", "~/Documents/packed-repo.xml")
+            .unwrap()
+            .build()
+            .unwrap();
+        let params = Params::from(config);
+
+        assert_eq!(
+            effective_output_file_with_home(&params, Some(home.path())),
+            home.path().join("Documents/packed-repo.xml")
+        );
+    }
+
+    #[test]
+    fn test_cli_home_relative_output_path_is_expanded() {
+        let home = tempdir().unwrap();
+        let params = Params {
+            output_file: Some("~/quoted-output.xml".to_string()),
+            ..Params::default()
+        };
+
+        assert_eq!(
+            effective_output_file_with_home(&params, Some(home.path())),
+            home.path().join("quoted-output.xml")
+        );
+    }
+
+    #[test]
+    fn test_non_home_relative_output_paths_are_unchanged() {
+        let home = tempdir().unwrap();
+        let absolute_path = home.path().join("absolute.xml");
+
+        for output_file in [
+            PathBuf::from("relative/output.xml"),
+            absolute_path,
+            PathBuf::from("~other/output.xml"),
+        ] {
+            let params = Params {
+                output_file: Some(output_file.to_string_lossy().into_owned()),
+                ..Params::default()
+            };
+            assert_eq!(
+                effective_output_file_with_home(&params, Some(home.path())),
+                output_file
+            );
+        }
+    }
+
+    #[test]
+    fn test_gzip_suffix_is_applied_after_home_expansion() {
+        let home = tempdir().unwrap();
+        let params = Params {
+            output_file: Some("~/packed-repo.xml".to_string()),
+            gzip: true,
+            ..Params::default()
+        };
+        assert_eq!(
+            effective_output_file_with_home(&params, Some(home.path())),
+            home.path().join("packed-repo.xml.gz")
+        );
+
+        let existing_suffix = Params {
+            output_file: Some("~/packed-repo.XML.GZ".to_string()),
+            gzip: true,
+            ..Params::default()
+        };
+        assert_eq!(
+            effective_output_file_with_home(
+                &existing_suffix,
+                Some(home.path())
+            ),
+            home.path().join("packed-repo.XML.GZ")
+        );
+    }
+
+    #[test]
+    fn test_home_relative_output_path_is_unchanged_without_home() {
+        let params = Params {
+            output_file: Some("~/packed-repo.xml".to_string()),
+            ..Params::default()
+        };
+
+        assert_eq!(
+            effective_output_file_with_home(&params, None),
+            Path::new("~/packed-repo.xml")
+        );
+    }
+
+    #[test]
+    fn test_bare_home_component_is_not_expanded() {
+        let home = tempdir().unwrap();
+
+        for output_file in ["~", "~/"] {
+            let params = Params {
+                output_file: Some(output_file.to_string()),
+                ..Params::default()
+            };
+            assert_eq!(
+                effective_output_file_with_home(&params, Some(home.path()))
+                    .as_os_str(),
+                std::ffi::OsStr::new(output_file)
+            );
+        }
+    }
+
+    #[test]
+    fn test_gzip_bare_home_component_stays_relative() {
+        let home = tempdir().unwrap();
+
+        for (output_file, expected) in [("~", "~.gz"), ("~/", "~/.gz")] {
+            let params = Params {
+                output_file: Some(output_file.to_string()),
+                gzip: true,
+                ..Params::default()
+            };
+            assert_eq!(
+                effective_output_file_with_home(&params, Some(home.path())),
+                Path::new(expected)
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_windows_home_relative_output_path_is_expanded() {
+        let home = tempdir().unwrap();
+        let params = Params {
+            output_file: Some(r"~\Documents\packed-repo.xml".to_string()),
+            ..Params::default()
+        };
+
+        assert_eq!(
+            effective_output_file_with_home(&params, Some(home.path())),
+            home.path().join(r"Documents\packed-repo.xml")
         );
     }
 

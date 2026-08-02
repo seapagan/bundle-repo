@@ -212,6 +212,9 @@ specified:
 bundlerepo user_name/repo_name --file /path/to/output.xml
 ```
 
+A leading `~` path component is expanded to your home directory for output
+paths supplied on the command line or in a configuration file.
+
 #### Output to stdout
 
 You can output the XML to the terminal by using the `--stdout` or `-s` flag:
@@ -388,7 +391,8 @@ precedence (highest to lowest):
 
 Available configuration options:
 
-- `output_file`: Default output filename (default: "packed-repo.xml")
+- `output_file`: Default output filename (default: "packed-repo.xml"). A leading
+  `~` path component is expanded to your home directory.
 - `model`: Default model for token counting (default: "gpt4o")
 - `stdout`: Whether to output to stdout by default (default: false)
 - `clipboard`: Whether to copy to clipboard by default (default: false)
