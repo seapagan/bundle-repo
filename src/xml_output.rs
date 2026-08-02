@@ -1,11 +1,11 @@
 use crate::filelist::{FileTree, FolderNode};
-use crate::structs::Params;
+use crate::structs::{Params, DEFAULT_OUTPUT_FILE};
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs::{metadata, File};
-use std::io::{self, BufReader, Cursor, Read, Write};
+use std::io::{self, BufReader, Cursor, IsTerminal, Read, Write};
 use std::path::Path;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
@@ -16,12 +16,7 @@ pub fn output_repo_as_xml(
     base_path: &Path,
     tokenizer: &TokenizerType,
 ) -> Result<(usize, u64, usize), std::io::Error> {
-    if flags.gzip && flags.clipboard {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "gzip output cannot be copied to the clipboard; use --no-gzip --clipboard",
-        ));
-    }
+    validate_output_options(flags)?;
 
     // Use an in-memory buffer instead of a physical file
     let mut buffer = Cursor::new(Vec::new());
@@ -79,6 +74,31 @@ pub fn output_repo_as_xml(
     )
 }
 
+pub fn validate_output_options(flags: &Params) -> io::Result<()> {
+    validate_output_options_for(flags, io::stdout().is_terminal())
+}
+
+fn validate_output_options_for(
+    flags: &Params,
+    stdout_is_terminal: bool,
+) -> io::Result<()> {
+    if flags.gzip && flags.clipboard && !flags.stdout {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "gzip output cannot be copied to the clipboard; use --no-gzip --clipboard",
+        ));
+    }
+
+    if flags.gzip && flags.stdout && stdout_is_terminal {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "refusing to write gzip data to a terminal; redirect stdout or use --no-gzip",
+        ));
+    }
+
+    Ok(())
+}
+
 fn finish_output(
     flags: &Params,
     number_of_files: usize,
@@ -122,8 +142,12 @@ pub fn effective_output_file(flags: &Params) -> String {
     let output_file = flags
         .output_file
         .clone()
-        .unwrap_or_else(|| Params::default().output_file.unwrap());
-    if flags.gzip && !output_file.ends_with(".gz") {
+        .unwrap_or_else(|| DEFAULT_OUTPUT_FILE.to_string());
+    let has_gzip_suffix = Path::new(&output_file)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gz"));
+    if flags.gzip && !has_gzip_suffix {
         format!("{output_file}.gz")
     } else {
         output_file
@@ -696,11 +720,21 @@ mod tests {
     #[test]
     fn test_gzip_effective_filename_keeps_existing_suffix() {
         let params = Params {
-            output_file: Some("bundle.xml.gz".to_string()),
+            output_file: Some("bundle.XML.GZ".to_string()),
             gzip: true,
             ..Params::default()
         };
-        assert_eq!(effective_output_file(&params), "bundle.xml.gz");
+        assert_eq!(effective_output_file(&params), "bundle.XML.GZ");
+
+        let default_name = Params {
+            output_file: None,
+            gzip: true,
+            ..Params::default()
+        };
+        assert_eq!(
+            effective_output_file(&default_name),
+            format!("{DEFAULT_OUTPUT_FILE}.gz")
+        );
     }
 
     #[test]
@@ -734,6 +768,28 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("--no-gzip --clipboard"));
+    }
+
+    #[test]
+    fn test_gzip_stdout_takes_precedence_over_clipboard() {
+        let params = Params {
+            stdout: true,
+            clipboard: true,
+            gzip: true,
+            ..Params::default()
+        };
+        assert!(validate_output_options_for(&params, false).is_ok());
+    }
+
+    #[test]
+    fn test_gzip_stdout_rejects_terminal_output() {
+        let params = Params {
+            stdout: true,
+            gzip: true,
+            ..Params::default()
+        };
+        let error = validate_output_options_for(&params, true).unwrap_err();
+        assert!(error.to_string().contains("redirect stdout"));
     }
 
     #[test]

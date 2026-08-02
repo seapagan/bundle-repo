@@ -30,7 +30,7 @@ struct SummaryTable {
     value: String,
 }
 
-fn load_config() -> Result<Params, structs::ConfigError> {
+fn load_config() -> Params {
     let mut config_builder = Config::builder();
 
     // Get the home directory and construct the global config path
@@ -58,10 +58,10 @@ fn load_config() -> Result<Params, structs::ConfigError> {
     }
 
     match config_builder.build() {
-        Ok(config) => Params::try_from_config(config),
+        Ok(config) => config.into(),
         Err(e) => {
             eprintln!("Error loading config: {}", e);
-            Ok(Params::default())
+            Params::default()
         }
     }
 }
@@ -75,20 +75,11 @@ fn main() {
     }
 
     // Load config values
-    let config = match load_config() {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("Error loading config: {}", e);
-            exit(1);
-        }
-    };
+    let config = load_config();
     let params = Params::from_args_and_config(&args, config);
 
-    if params.gzip && params.clipboard {
-        eprintln!(
-            "Error: gzip output cannot be copied to the clipboard; use \
-             --no-gzip --clipboard"
-        );
+    if let Err(error) = xml_output::validate_output_options(&params) {
+        eprintln!("Error: {error}");
         exit(1);
     }
 
@@ -219,7 +210,7 @@ mod tests {
             ))
             .build()
             .unwrap();
-        Params::try_from_config(config).unwrap()
+        config.into()
     }
 
     #[test]
@@ -572,7 +563,7 @@ mod tests {
             ),
             (
                 "gzip = true\ngzip_level = 8",
-                vec!["program", "-z3"],
+                vec!["program", "-z=3"],
                 true,
                 3,
             ),
