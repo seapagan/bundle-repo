@@ -348,9 +348,9 @@ jobs:
             }
             END { exit !found || invalid || duplicate }
           ' coverage.lcov
-          shared_count="$(grep -c '^SF:src/app.rs$' coverage.lcov || true)"
+          shared_count="$(grep -c '^SF:src/main.rs$' coverage.lcov || true)"
           if [[ "$shared_count" -ne 1 ]]; then
-            echo "Expected src/app.rs once, found $shared_count." >&2
+            echo "Expected src/main.rs once, found $shared_count." >&2
             exit 1
           fi
 
@@ -358,7 +358,7 @@ jobs:
         run: >-
           genhtml coverage.lcov
           --output-directory coverage-html
-          --title "Gleg combined native coverage"
+          --title "Bundlerepo combined native coverage"
           --legend
 
       - name: Print combined coverage summary
