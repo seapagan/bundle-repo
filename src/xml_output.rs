@@ -2,6 +2,8 @@ use crate::filelist::{FileTree, FolderNode};
 use crate::structs::Params;
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use std::fs::{metadata, File};
 use std::io::{self, BufReader, Cursor, Read, Write};
 use std::path::Path;
@@ -14,6 +16,13 @@ pub fn output_repo_as_xml(
     base_path: &Path,
     tokenizer: &TokenizerType,
 ) -> Result<(usize, u64, usize), std::io::Error> {
+    if flags.gzip && flags.clipboard {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "gzip output cannot be copied to the clipboard; use --no-gzip --clipboard",
+        ));
+    }
+
     // Use an in-memory buffer instead of a physical file
     let mut buffer = Cursor::new(Vec::new());
 
@@ -62,51 +71,84 @@ pub fn output_repo_as_xml(
     buffer.write_all(b"</repository_files>\n")?;
     buffer.write_all(b"</repository>\n")?;
 
-    // Output handling based on CLI flag
+    finish_output(
+        flags,
+        file_tree.file_paths.len(),
+        buffer.into_inner(),
+        tokenizer,
+    )
+}
+
+fn finish_output(
+    flags: &Params,
+    number_of_files: usize,
+    xml_bytes: Vec<u8>,
+    tokenizer: &TokenizerType,
+) -> Result<(usize, u64, usize), io::Error> {
     if flags.stdout {
-        // Print XML directly to stdout
-        println!(
-            "{}",
-            String::from_utf8(buffer.into_inner()).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-            })?
-        );
+        let stdout = io::stdout();
+        let mut output = stdout.lock();
+        write_stdout(&mut output, &xml_bytes, flags.gzip, flags.gzip_level)?;
+        output.flush()?;
+        return Ok((number_of_files, 0, 0));
+    }
 
-        Ok((file_tree.file_paths.len(), 0, 0)) // Summary metrics not needed for stdout
+    let xml_content = String::from_utf8(xml_bytes)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let token_count = tokenizer
+        .count_tokens(&xml_content)
+        .map_err(io::Error::other)?;
+    let total_size = if flags.clipboard {
+        let mut clipboard = Clipboard::new().map_err(io::Error::other)?;
+        clipboard
+            .set_text(xml_content.clone())
+            .map_err(io::Error::other)?;
+        xml_content.len() as u64
     } else {
-        // Extract XML content from buffer
-        let xml_content =
-            String::from_utf8(buffer.into_inner()).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, e)
-            })?;
-
-        if flags.clipboard {
-            // Copy XML to clipboard
-            let mut clipboard = Clipboard::new().map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, e)
-            })?;
-            clipboard.set_text(xml_content.clone()).map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, e)
-            })?;
+        let output_bytes = if flags.gzip {
+            compress_gzip(xml_content.as_bytes(), flags.gzip_level)?
         } else {
-            // Write the XML to the specified output file
-            let output_path = flags.output_file.as_ref().unwrap();
-            let mut file = File::create(output_path)?;
-            file.write_all(xml_content.as_bytes())?;
-        }
+            xml_content.into_bytes()
+        };
+        let mut file = File::create(effective_output_file(flags))?;
+        file.write_all(&output_bytes)?;
+        output_bytes.len() as u64
+    };
 
-        // Number of files processed
-        let number_of_files = file_tree.file_paths.len();
+    Ok((number_of_files, total_size, token_count))
+}
 
-        // Total size of the XML content
-        let total_size = xml_content.len() as u64;
+pub fn effective_output_file(flags: &Params) -> String {
+    let output_file = flags
+        .output_file
+        .clone()
+        .unwrap_or_else(|| Params::default().output_file.unwrap());
+    if flags.gzip && !output_file.ends_with(".gz") {
+        format!("{output_file}.gz")
+    } else {
+        output_file
+    }
+}
 
-        // Calculate token count of the generated XML - maintain original behavior
-        let token_count = tokenizer
-            .count_tokens(&xml_content)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+fn compress_gzip(content: &[u8], level: u32) -> io::Result<Vec<u8>> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::new(level));
+    encoder.write_all(content)?;
+    encoder.finish()
+}
 
-        Ok((number_of_files, total_size, token_count))
+fn write_stdout<W: Write>(
+    output: &mut W,
+    content: &[u8],
+    gzip: bool,
+    level: u32,
+) -> io::Result<()> {
+    if gzip {
+        output.write_all(&compress_gzip(content, level)?)
+    } else {
+        String::from_utf8(content.to_vec())
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        output.write_all(content)?;
+        output.write_all(b"\n")
     }
 }
 
@@ -404,6 +446,7 @@ mod tests {
     use super::*;
     use crate::filelist::FileTree;
     use crate::tokenizer::Model;
+    use flate2::read::GzDecoder;
     use std::fs;
     use tempfile::tempdir;
 
@@ -588,5 +631,115 @@ mod tests {
         assert!(xml_content.contains("<file path=\"test.txt\""));
         // The content should be readable as UTF-8
         assert!(String::from_utf8(xml_content.as_bytes().to_vec()).is_ok());
+    }
+
+    #[test]
+    fn test_gzip_file_round_trip_and_metrics() {
+        let temp_dir = tempdir().unwrap();
+        fs::write(temp_dir.path().join("test.txt"), "Test content").unwrap();
+        let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+
+        let file_tree = || {
+            let mut tree = FileTree::default();
+            tree.file_paths.push("test.txt".to_string());
+            tree
+        };
+
+        let plain_path = temp_dir.path().join("plain.xml");
+        let plain = Params {
+            output_file: Some(plain_path.to_string_lossy().into_owned()),
+            ..Params::default()
+        };
+        let (_, plain_size, plain_tokens) = output_repo_as_xml(
+            &plain,
+            file_tree(),
+            temp_dir.path(),
+            &tokenizer,
+        )
+        .unwrap();
+        let expected_xml = fs::read(&plain_path).unwrap();
+        assert_eq!(plain_size, expected_xml.len() as u64);
+
+        for level in [1, 9] {
+            let requested_path =
+                temp_dir.path().join(format!("level-{level}.xml"));
+            let compressed = Params {
+                output_file: Some(
+                    requested_path.to_string_lossy().into_owned(),
+                ),
+                gzip: true,
+                gzip_level: level,
+                ..Params::default()
+            };
+
+            let (_, compressed_size, compressed_tokens) = output_repo_as_xml(
+                &compressed,
+                file_tree(),
+                temp_dir.path(),
+                &tokenizer,
+            )
+            .unwrap();
+            let effective_path = format!("{}.gz", requested_path.display());
+            let gzip_bytes = fs::read(&effective_path).unwrap();
+            assert_eq!(&gzip_bytes[..2], &[0x1f, 0x8b]);
+            assert_eq!(compressed_size, gzip_bytes.len() as u64);
+            assert_eq!(compressed_tokens, plain_tokens);
+
+            let mut decoded = Vec::new();
+            GzDecoder::new(gzip_bytes.as_slice())
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, expected_xml);
+        }
+    }
+
+    #[test]
+    fn test_gzip_effective_filename_keeps_existing_suffix() {
+        let params = Params {
+            output_file: Some("bundle.xml.gz".to_string()),
+            gzip: true,
+            ..Params::default()
+        };
+        assert_eq!(effective_output_file(&params), "bundle.xml.gz");
+    }
+
+    #[test]
+    fn test_gzip_stdout_bytes_round_trip() {
+        let xml = b"<repository />\n";
+        let mut output = Vec::new();
+        write_stdout(&mut output, xml, true, 6).unwrap();
+        assert_eq!(&output[..2], &[0x1f, 0x8b]);
+
+        let mut decoded = Vec::new();
+        GzDecoder::new(output.as_slice())
+            .read_to_end(&mut decoded)
+            .unwrap();
+        assert_eq!(decoded, xml);
+    }
+
+    #[test]
+    fn test_gzip_clipboard_is_rejected() {
+        let temp_dir = tempdir().unwrap();
+        let params = Params {
+            clipboard: true,
+            gzip: true,
+            ..Params::default()
+        };
+        let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+        let error = output_repo_as_xml(
+            &params,
+            FileTree::default(),
+            temp_dir.path(),
+            &tokenizer,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("--no-gzip --clipboard"));
+    }
+
+    #[test]
+    fn test_uncompressed_stdout_preserves_trailing_newline() {
+        let mut output = Vec::new();
+        write_stdout(&mut output, b"xml\n", false, 6).unwrap();
+        assert_eq!(output, b"xml\n\n");
     }
 }

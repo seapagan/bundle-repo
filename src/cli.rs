@@ -5,6 +5,13 @@ use crate::structs::Params;
 const VALID_MODELS: [&str; 6] =
     ["gpt4o", "gpt4", "gpt3.5", "gpt3", "gpt2", "deepseek"];
 
+fn parse_gzip_level(value: &str) -> Result<u32, String> {
+    match value.parse::<u32>() {
+        Ok(level @ 1..=9) => Ok(level),
+        _ => Err("gzip level must be an integer from 1 to 9".to_string()),
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "Repopack Clone Tool",
@@ -42,6 +49,24 @@ pub struct Flags {
         help = "Output the XML directly to stdout without creating a file."
     )]
     pub stdout: bool,
+
+    #[arg(
+        long = "gzip",
+        short = 'z',
+        value_name = "LEVEL",
+        num_args = 0..=1,
+        value_parser = parse_gzip_level,
+        help = "Compress output with gzip at an optional level from 1 to 9"
+    )]
+    pub gzip: Option<Option<u32>>,
+
+    #[arg(
+        long = "no-gzip",
+        action = ArgAction::SetTrue,
+        conflicts_with = "gzip",
+        help = "Disable gzip output, overriding configuration"
+    )]
+    pub no_gzip: bool,
 
     #[arg(
         long = "model",
@@ -209,6 +234,58 @@ mod tests {
     fn test_stdout_flag() {
         let args = Flags::parse_from(["program", "user/repo", "--stdout"]);
         assert!(args.stdout);
+    }
+
+    #[test]
+    fn test_gzip_flag_forms() {
+        for input in [
+            vec!["program", "-z"],
+            vec!["program", "--gzip"],
+            vec!["program", "user/repo", "-z"],
+        ] {
+            let args = Flags::parse_from(input);
+            assert_eq!(args.gzip, Some(None));
+        }
+
+        for input in [
+            vec!["program", "-z9"],
+            vec!["program", "-z", "9"],
+            vec!["program", "--gzip", "9"],
+        ] {
+            let args = Flags::parse_from(input);
+            assert_eq!(args.gzip, Some(Some(9)));
+        }
+    }
+
+    #[test]
+    fn test_gzip_boundary_levels() {
+        let level_one = Flags::parse_from(["program", "-z1"]);
+        let level_nine = Flags::parse_from(["program", "-z9"]);
+        assert_eq!(level_one.gzip, Some(Some(1)));
+        assert_eq!(level_nine.gzip, Some(Some(9)));
+    }
+
+    #[test]
+    fn test_invalid_gzip_levels() {
+        for level in ["0", "10", "fast"] {
+            let result = Flags::try_parse_from(["program", "--gzip", level]);
+            let error = result.unwrap_err().to_string();
+            assert!(
+                error.contains("gzip level must be an integer from 1 to 9")
+            );
+        }
+    }
+
+    #[test]
+    fn test_gzip_conflicts_with_no_gzip() {
+        let result = Flags::try_parse_from(["program", "-z", "--no-gzip"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bare_gzip_must_follow_repository() {
+        let result = Flags::try_parse_from(["program", "-z", "user/repo"]);
+        assert!(result.is_err());
     }
 
     #[test]

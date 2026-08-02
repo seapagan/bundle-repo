@@ -1,5 +1,5 @@
 use crate::cli;
-use config::Config;
+use config::{Config, ValueKind};
 use serde::Deserialize;
 use std::fmt;
 
@@ -203,6 +203,8 @@ pub struct Params {
     pub extend_exclude: Option<Vec<String>>,
     pub exclude: Option<Vec<String>>,
     pub utf8: bool,
+    pub gzip: bool,
+    pub gzip_level: u32,
 }
 
 impl Default for Params {
@@ -218,6 +220,8 @@ impl Default for Params {
             extend_exclude: None,
             exclude: None,
             utf8: false,
+            gzip: false,
+            gzip_level: 6,
         }
     }
 }
@@ -265,13 +269,46 @@ impl From<Config> for Params {
         if let Ok(val) = TomlValue::load_from_config(&settings, "utf8") {
             params.utf8 = val;
         }
-
         params
     }
 }
 
 impl Params {
+    pub fn try_from_config(settings: Config) -> Result<Self, ConfigError> {
+        let gzip = match raw_value(&settings, "gzip")? {
+            None => false,
+            Some(ValueKind::Boolean(value)) => value,
+            Some(_) => {
+                return Err(gzip_config_error("gzip", "must be a boolean"))
+            }
+        };
+        let gzip_level = match raw_value(&settings, "gzip_level")? {
+            None => 6,
+            Some(ValueKind::I64(level @ 1..=9)) => level as u32,
+            Some(_) => {
+                return Err(gzip_config_error(
+                    "gzip_level",
+                    "must be an integer from 1 to 9",
+                ));
+            }
+        };
+        let mut params: Params = settings.into();
+        params.gzip = gzip;
+        params.gzip_level = gzip_level;
+        Ok(params)
+    }
+
     pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
+        let (gzip, gzip_level) = if args.no_gzip {
+            (false, config.gzip_level)
+        } else {
+            match args.gzip {
+                Some(None) => (true, config.gzip_level),
+                Some(Some(level)) => (true, level),
+                None => (config.gzip, config.gzip_level),
+            }
+        };
+
         Params {
             output_file: args
                 .output_file
@@ -317,7 +354,29 @@ impl Params {
             } else {
                 config.utf8
             },
+            gzip,
+            gzip_level,
         }
+    }
+}
+
+fn raw_value(
+    settings: &Config,
+    key: &str,
+) -> Result<Option<ValueKind>, ConfigError> {
+    match settings.get::<config::Value>(key) {
+        Ok(value) => Ok(Some(value.kind)),
+        Err(error) => match ConfigError::from(error) {
+            ConfigError::Missing(_) => Ok(None),
+            other => Err(other),
+        },
+    }
+}
+
+fn gzip_config_error(key: &str, message: &str) -> ConfigError {
+    ConfigError::TypeError {
+        key: key.to_string(),
+        message: message.to_string(),
     }
 }
 
@@ -438,6 +497,8 @@ mod tests {
         assert_eq!(params.extend_exclude, None);
         assert_eq!(params.exclude, None);
         assert_eq!(params.utf8, false);
+        assert!(!params.gzip);
+        assert_eq!(params.gzip_level, 6);
     }
 
     #[test]
@@ -630,5 +691,50 @@ mod tests {
             .unwrap();
         let params: Params = config.into();
         assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_gzip_config_values() {
+        let config = Config::builder()
+            .add_source(File::from_str(
+                "gzip = true\ngzip_level = 9",
+                FileFormat::Toml,
+            ))
+            .build()
+            .unwrap();
+        let params = Params::try_from_config(config).unwrap();
+        assert!(params.gzip);
+        assert_eq!(params.gzip_level, 9);
+    }
+
+    #[test]
+    fn test_invalid_gzip_config_types() {
+        for (config_str, expected) in [
+            ("gzip = \"yes\"", "gzip"),
+            ("gzip_level = \"high\"", "integer from 1 to 9"),
+        ] {
+            let config = Config::builder()
+                .add_source(File::from_str(config_str, FileFormat::Toml))
+                .build()
+                .unwrap();
+            let error =
+                Params::try_from_config(config).unwrap_err().to_string();
+            assert!(error.contains(expected));
+        }
+    }
+
+    #[test]
+    fn test_invalid_gzip_config_levels() {
+        for level in [0, 10] {
+            let config_str = format!("gzip_level = {level}");
+            let config = Config::builder()
+                .add_source(File::from_str(&config_str, FileFormat::Toml))
+                .build()
+                .unwrap();
+            let error =
+                Params::try_from_config(config).unwrap_err().to_string();
+            assert!(error.contains("gzip_level"));
+            assert!(error.contains("integer from 1 to 9"));
+        }
     }
 }
