@@ -54,7 +54,7 @@ pub fn clone_repo(
             if !flags.stdout {
                 println!(
                     "-> Successfully cloned repository '{}'{}",
-                    &repo_url.trim_end_matches(".git"),
+                    repo_url.trim_end_matches(".git"),
                     flags.branch.as_ref().map_or(String::new(), |b| format!(
                         " (branch: {})",
                         b
@@ -66,8 +66,8 @@ pub fn clone_repo(
         Err(e) => {
             let error_message = match (e.class(), e.code()) {
             (ErrorClass::Reference, ErrorCode::NotFound) => {
-                if flags.branch.is_some() {
-                    format!("The specified branch '{}' does not exist in the repository.", flags.branch.as_ref().unwrap())
+                if let Some(branch_name) = &flags.branch {
+                    format!("The specified branch '{branch_name}' does not exist in the repository.")
                 } else {
                     format!("Failed to clone: {}", e)
                 }
@@ -113,10 +113,45 @@ pub fn check_current_directory(flags: &Params) -> Result<(), git2::Error> {
 }
 
 fn get_current_branch_name(repo: &Repository) -> Result<String, git2::Error> {
+    if repo.head_detached()? {
+        return Ok("detached HEAD".to_string());
+    }
+
     let head = repo.head()?;
-    if let Some(name) = head.shorthand() {
-        Ok(name.to_string())
-    } else {
-        Ok("detached HEAD".to_string())
+    Ok(head.shorthand()?.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::{Oid, Signature};
+    use tempfile::tempdir;
+
+    fn create_commit(repo: &Repository) -> Oid {
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let signature = Signature::now("Test", "test@example.com").unwrap();
+        repo.commit(Some("HEAD"), &signature, &signature, "test", &tree, &[])
+            .unwrap()
+    }
+
+    #[test]
+    fn test_current_branch_name() {
+        let temp_dir = tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        repo.set_head("refs/heads/test-branch").unwrap();
+        create_commit(&repo);
+
+        assert_eq!(get_current_branch_name(&repo).unwrap(), "test-branch");
+    }
+
+    #[test]
+    fn test_detached_head_name() {
+        let temp_dir = tempdir().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+        let commit_id = create_commit(&repo);
+        repo.set_head_detached(commit_id).unwrap();
+
+        assert_eq!(get_current_branch_name(&repo).unwrap(), "detached HEAD");
     }
 }

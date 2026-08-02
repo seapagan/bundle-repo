@@ -21,7 +21,7 @@ name = "bundlerepo"
 path = "src/main.rs"
 
 [dependencies]
-git2 = "0.20"
+git2 = { version = "0.21.0", features = ["https", "ssh"] }
 tempfile = "3.8"
 url = "2.2"
 clap = { version = "4.1", features = ["derive"] }

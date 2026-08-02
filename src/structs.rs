@@ -374,7 +374,7 @@ mod tests {
             string_val = "hello"
             bool_val = true
             int_val = 42
-            float_val = 3.14
+            float_val = 2.5
         "#;
         let config = Config::builder()
             .add_source(File::from_str(config_str, FileFormat::Toml))
@@ -385,9 +385,9 @@ mod tests {
             String::load_from_config(&config, "string_val").unwrap(),
             "hello"
         );
-        assert_eq!(bool::load_from_config(&config, "bool_val").unwrap(), true);
+        assert!(bool::load_from_config(&config, "bool_val").unwrap());
         assert_eq!(i64::load_from_config(&config, "int_val").unwrap(), 42);
-        assert_eq!(f64::load_from_config(&config, "float_val").unwrap(), 3.14);
+        assert_eq!(f64::load_from_config(&config, "float_val").unwrap(), 2.5);
     }
 
     #[test]
@@ -454,15 +454,15 @@ mod tests {
     fn test_params_default() {
         let params = Params::default();
         assert_eq!(params.output_file, Some("packed-repo.xml".to_string()));
-        assert_eq!(params.stdout, false);
+        assert!(!params.stdout);
         assert_eq!(params.model, Some("gpt4o".to_string()));
-        assert_eq!(params.clipboard, false);
-        assert_eq!(params.line_numbers, false);
+        assert!(!params.clipboard);
+        assert!(!params.line_numbers);
         assert_eq!(params.token, None);
         assert_eq!(params.branch, None);
         assert_eq!(params.extend_exclude, None);
         assert_eq!(params.exclude, None);
-        assert_eq!(params.utf8, false);
+        assert!(!params.utf8);
         assert!(!params.gzip);
         assert_eq!(params.gzip_level, 6);
     }
@@ -487,10 +487,10 @@ mod tests {
 
         let params: Params = config.into();
         assert_eq!(params.output_file, Some("custom.xml".to_string()));
-        assert_eq!(params.stdout, true);
+        assert!(params.stdout);
         assert_eq!(params.model, Some("different-model".to_string()));
-        assert_eq!(params.clipboard, true);
-        assert_eq!(params.line_numbers, true);
+        assert!(params.clipboard);
+        assert!(params.line_numbers);
         assert_eq!(params.token, Some("secret-token".to_string()));
         assert_eq!(params.branch, Some("main".to_string()));
         assert_eq!(
@@ -498,7 +498,7 @@ mod tests {
             Some(vec!["target".to_string(), "node_modules".to_string()])
         );
         assert_eq!(params.exclude, Some(vec!["custom.xml".to_string()]));
-        assert_eq!(params.utf8, false);
+        assert!(!params.utf8);
     }
 
     #[test]
@@ -604,7 +604,7 @@ mod tests {
         assert_eq!(params.branch, None);
         assert_eq!(params.extend_exclude, None);
         assert_eq!(params.exclude, None);
-        assert_eq!(params.utf8, false);
+        assert!(!params.utf8);
     }
 
     #[test]

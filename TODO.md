@@ -26,6 +26,9 @@
   APIs, retain a clearly labelled conservative fallback estimate, and record
   the tokenizer source, model profile, and exact-versus-estimated status in the
   generated output.
+- revisit the `cargo deny` duplicate-version warnings alongside the pending
+  dependency upgrades. Prefer compatible lockfile refreshes that collapse
+  transitive versions, and avoid forced or convoluted dependency unification.
 - allow user to add custom metadata to the XML file, this could be used to
   store information about the repository, such as the name, description, extra
   instructions, etc. Would use the TOML config file.

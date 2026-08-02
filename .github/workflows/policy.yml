@@ -1,0 +1,127 @@
+name: Policy
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.97.1
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
+          shared-key: policy-audit
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install audit tools
+        uses: taiki-e/install-action@3d7d7cd5ac7f994c1892ae0c06165095b9139094 # v2.85.1
+        with:
+          tool: cargo-make@0.37.24,cargo-audit@0.22.2
+
+      - name: Run dependency audit
+        run: cargo make audit
+
+  deny:
+    name: Dependency policy
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
+          shared-key: policy-deny
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install dependency-policy tools
+        uses: taiki-e/install-action@3d7d7cd5ac7f994c1892ae0c06165095b9139094 # v2.85.1
+        with:
+          tool: cargo-make@0.37.24,cargo-deny@0.20.2
+
+      - name: Run dependency policy
+        run: cargo make deny
+
+  actions-lint:
+    name: Workflow syntax
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install workflow task runner
+        uses: taiki-e/install-action@3d7d7cd5ac7f994c1892ae0c06165095b9139094 # v2.85.1
+        with:
+          tool: cargo-make@0.37.24
+
+      - name: Install actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="1.7.12"
+          archive="actionlint_${version}_linux_amd64.tar.gz"
+          install_dir="${RUNNER_TEMP:?}/actionlint-${version}"
+          url="https://github.com/rhysd/actionlint/releases/download/v${version}/${archive}"
+
+          mkdir -p "${install_dir}"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            --output "${RUNNER_TEMP:?}/${archive}" "${url}"
+          printf '%s  %s\n' \
+            "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8" \
+            "${RUNNER_TEMP:?}/${archive}" |
+            sha256sum --check -
+          tar -xzf "${RUNNER_TEMP:?}/${archive}" -C "${install_dir}"
+          echo "${install_dir}" >> "${GITHUB_PATH:?}"
+          "${install_dir}/actionlint" -version
+
+      - name: Validate workflow syntax
+        run: cargo make actions-lint

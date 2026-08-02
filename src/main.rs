@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn test_version_flag() {
-        let args = Flags::parse_from(&["bundlerepo", "--version"]);
+        let args = Flags::parse_from(["bundlerepo", "--version"]);
         assert!(args.version);
     }
 
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn test_repo_clone_error() {
         let temp_dir = tempdir().unwrap();
-        let args = Flags::parse_from(&["bundlerepo", "invalid_repo"]);
+        let args = Flags::parse_from(["bundlerepo", "invalid_repo"]);
         let config = Params::default();
         let params = Params::from_args_and_config(&args, config);
         let result =
@@ -402,16 +402,17 @@ mod tests {
     #[test]
     fn test_xml_output_error() {
         let temp_dir = tempdir().unwrap();
-        let mut params = Params::default();
-        params.output_file =
-            Some("/nonexistent/directory/output.xml".to_string());
+        let params = Params {
+            output_file: Some("/nonexistent/directory/output.xml".to_string()),
+            ..Params::default()
+        };
         let file_tree = filelist::group_files_by_directory(vec![]);
         let model = Model::GPT4o;
         let tokenizer = model.to_tokenizer().unwrap();
         let result = xml_output::output_repo_as_xml(
             &params,
             file_tree,
-            &temp_dir.path(),
+            temp_dir.path(),
             &tokenizer,
         );
         assert!(result.is_err());

@@ -14,7 +14,7 @@ fn parse_gzip_level(value: &str) -> Result<u32, String> {
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "Repopack Clone Tool",
+    name = "bundlerepo",
     author = env!("CARGO_PKG_AUTHORS"),
     about = env!("CARGO_PKG_DESCRIPTION"),
     long_about = None,
@@ -165,7 +165,7 @@ pub fn version_info() -> String {
     };
 
     format!(
-        "bundle_repo v{}\n\
+        "BundleRepo v{}\n\
         \n{}\n\
         \nReleased under the MIT license by {}\n",
         version, description, authors
@@ -174,7 +174,7 @@ pub fn version_info() -> String {
 
 pub fn show_header() {
     println!(
-        "\nBundleRepo Version {}, \u{00A9} 2024-2025 {}",
+        "\nBundleRepo Version {}, \u{00A9} 2024-2026 {}",
         env!("CARGO_PKG_VERSION"),
         env!("CARGO_PKG_AUTHORS")
     );
@@ -198,7 +198,7 @@ mod tests {
         let args = Flags::parse_from(["program", "user/repo"]);
         assert_eq!(args.repo, Some("user/repo".to_string()));
         assert_eq!(args.branch, None);
-        assert_eq!(args.stdout, false);
+        assert!(!args.stdout);
     }
 
     #[test]
