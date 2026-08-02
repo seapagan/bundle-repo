@@ -145,7 +145,7 @@ fn write_stdout<W: Write>(
     if gzip {
         output.write_all(&compress_gzip(content, level)?)
     } else {
-        String::from_utf8(content.to_vec())
+        std::str::from_utf8(content)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         output.write_all(content)?;
         output.write_all(b"\n")
