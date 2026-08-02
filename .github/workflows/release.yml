@@ -5,12 +5,20 @@ on:
     tags:
       - "*"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
 jobs:
   build:
     name: Build ${{ matrix.binary_target }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # Required to create releases and upload assets.
     env:
-      BINARY_NAME: bundlerepo
+      BINARY_NAME: lsp
     strategy:
       fail-fast: false
       matrix:
@@ -21,14 +29,16 @@ jobs:
             binary_target: x86_64-unknown-linux-gnu
           - os: windows-latest
             binary_target: x86_64-pc-windows-msvc
-          - os: macos-13
+          - os: macos-15-intel
             binary_target: x86_64-apple-darwin
           - os: macos-latest
             binary_target: aarch64-apple-darwin
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install musl tools and OpenSSL
         if: matrix.binary_target == 'x86_64-unknown-linux-musl'
@@ -57,43 +67,65 @@ jobs:
           echo 'export OPENSSL_DIR=$(brew --prefix openssl@3)' >> $GITHUB_ENV
 
       - name: Install target
-        run: rustup target add ${{ matrix.binary_target }}
+        shell: bash
+        env:
+          BINARY_TARGET: ${{ matrix.binary_target }}
+        run: rustup target add "$BINARY_TARGET"
 
       - name: Build binary
-        run: |
-          cargo build --release --target ${{ matrix.binary_target }}
+        shell: bash
+        env:
+          BINARY_TARGET: ${{ matrix.binary_target }}
+        run: cargo build --release --target "$BINARY_TARGET"
 
       - name: Set archive name
         id: archive
         shell: bash
+        env:
+          BINARY_TARGET: ${{ matrix.binary_target }}
+          MATRIX_OS: ${{ matrix.os }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            echo "archive_name=${{ env.BINARY_NAME }}-v${{ github.ref_name }}-${{ matrix.binary_target }}.zip" >> $GITHUB_OUTPUT
+          if [[ "$MATRIX_OS" == "windows-latest" ]]; then
+            archive_name="$BINARY_NAME-v$TAG_NAME-$BINARY_TARGET.zip"
           else
-            echo "archive_name=${{ env.BINARY_NAME }}-v${{ github.ref_name }}-${{ matrix.binary_target }}.tar.gz" >> $GITHUB_OUTPUT
+            archive_name="$BINARY_NAME-v$TAG_NAME-$BINARY_TARGET.tar.gz"
           fi
+          echo "archive_name=$archive_name" >> "$GITHUB_OUTPUT"
 
       - name: Prepare binary (Unix)
         if: matrix.os != 'windows-latest'
+        env:
+          ARCHIVE_NAME: ${{ steps.archive.outputs.archive_name }}
+          BINARY_TARGET: ${{ matrix.binary_target }}
         run: |
-          cd target/${{ matrix.binary_target }}/release
-          tar -czf ../../../${{ steps.archive.outputs.archive_name }} ${{ env.BINARY_NAME }}
+          cd "target/$BINARY_TARGET/release"
+          tar -czf "../../../$ARCHIVE_NAME" "$BINARY_NAME"
           cd -
 
       - name: Prepare binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
+        env:
+          ARCHIVE_NAME: ${{ steps.archive.outputs.archive_name }}
+          BINARY_TARGET: ${{ matrix.binary_target }}
         run: |
-          cd target/${{ matrix.binary_target }}/release
-          $BINARY_NAME = "${{ env.BINARY_NAME }}.exe"
-          Compress-Archive -Path $BINARY_NAME -DestinationPath ../../../${{ steps.archive.outputs.archive_name }}
+          cd "target/$env:BINARY_TARGET/release"
+          $BinaryPath = "$env:BINARY_NAME.exe"
+          Compress-Archive -Path $BinaryPath -DestinationPath "../../../$env:ARCHIVE_NAME"
           cd -
 
-      - name: Upload Release Asset
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ steps.archive.outputs.archive_name }}
-          asset_name: ${{ steps.archive.outputs.archive_name }}
-          tag: ${{ github.ref }}
-          overwrite: true
+      - name: Upload release asset
+        shell: bash
+        env:
+          ARCHIVE_NAME: ${{ steps.archive.outputs.archive_name }}
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --notes "" || gh release view "$TAG_NAME"
+          fi
+          gh release upload "$TAG_NAME" "$ARCHIVE_NAME" --clobber

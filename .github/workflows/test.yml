@@ -5,17 +5,371 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.97.1
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  unix:
+    name: Native Linux
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt clippy
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
+          shared-key: native-linux
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install Cargo tools
+        uses: taiki-e/install-action@3d7d7cd5ac7f994c1892ae0c06165095b9139094 # v2.85.1
+        with:
+          tool: >-
+            cargo-make@0.37.24,
+            cargo-nextest@0.9.140,
+            cargo-llvm-cov@0.8.7
+
+      - name: Install Zensical
+        run: |
+          pipx install zensical==0.0.51
+          zensical --version
+
+      - name: Install coverage infrastructure
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lcov=2.0-4ubuntu2
+          lcov --version
+          command -v awk
+          command -v grep
+          command -v sed
+
+      - name: Check formatting
+        run: cargo make format
+
+      - name: Check native Linux targets
+        run: cargo make unix-check
+
+      - name: Lint native Linux targets
+        run: cargo make unix-clippy
+
+      - name: Run native Linux tests with coverage
+        run: >-
+          cargo llvm-cov nextest
+          --all-targets
+          --all-features
+          --no-fail-fast
+          --remap-path-prefix
+          --lcov
+          --output-path=coverage-linux.lcov
+
+      - name: Build native Linux targets
+        run: cargo make unix-build
+
+      - name: Build Rust documentation
+        run: cargo doc --no-deps
+
+      - name: Build published documentation
+        run: cargo make docs
+
+      - name: Validate Linux coverage
+        shell: bash
+        run: |
+          test -s coverage-linux.lcov
+          awk '
+            /^SF:/ {
+              found = 1
+              if ($0 !~ /^SF:src\/[A-Za-z0-9_.\/-]+$/) {
+                print "Invalid LCOV source path: " $0 > "/dev/stderr"
+                invalid = 1
+              }
+              if (seen[$0]++) {
+                print "Duplicate LCOV source path: " $0 > "/dev/stderr"
+                duplicate = 1
+              }
+            }
+            END { exit !found || invalid || duplicate }
+          ' coverage-linux.lcov
+          lcov --summary coverage-linux.lcov
+
+      - name: Detect Linux coverage artifact
+        id: linux-coverage
+        if: always()
+        shell: bash
+        run: |
+          if [[ -s coverage-linux.lcov ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload Linux coverage
+        if: always() && steps.linux-coverage.outputs.exists == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-linux
+          path: coverage-linux.lcov
+          if-no-files-found: error
+          retention-days: 1
+
+  windows:
+    name: Native Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
+          shared-key: native-windows
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install Cargo tools
+        uses: taiki-e/install-action@3d7d7cd5ac7f994c1892ae0c06165095b9139094 # v2.85.1
+        with:
+          tool: >-
+            cargo-make@0.37.24,
+            cargo-nextest@0.9.140,
+            cargo-llvm-cov@0.8.7
+
+      - name: Verify PowerShell coverage infrastructure
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion
+          if ($PSVersionTable.PSVersion.Major -lt 7) {
+            throw "PowerShell 7 or newer is required."
+          }
+
+      - name: Check native Windows targets
+        run: cargo make windows-check
+
+      - name: Lint native Windows targets
+        run: cargo make windows-clippy
+
+      - name: Run native Windows tests with coverage
+        run: >-
+          cargo llvm-cov nextest
+          --all-targets
+          --all-features
+          --no-fail-fast
+          --remap-path-prefix
+          --lcov
+          --output-path=coverage-windows.lcov
+
+      - name: Build native Windows targets
+        run: cargo make windows-build
+
+      - name: Normalize Windows coverage paths
+        shell: pwsh
+        run: |
+          $coveragePath = (Resolve-Path coverage-windows.lcov).Path
+          $coverageLines = [System.IO.File]::ReadAllLines($coveragePath)
+          for ($index = 0; $index -lt $coverageLines.Length; $index++) {
+            if ($coverageLines[$index].StartsWith('SF:')) {
+              $coverageLines[$index] = $coverageLines[$index].Replace('\', '/')
+            }
+          }
+          $coverageText = [string]::Join("`n", $coverageLines) + "`n"
+          [System.IO.File]::WriteAllText(
+            $coveragePath,
+            $coverageText,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Validate Windows coverage
+        shell: pwsh
+        run: |
+          $coveragePath = (Resolve-Path coverage-windows.lcov).Path
+          if ((Get-Item $coveragePath).Length -eq 0) {
+            throw "The Windows coverage report is empty."
+          }
+          $sourcePaths = @(
+            Select-String -Path $coveragePath -Pattern '^SF:' |
+              ForEach-Object { $_.Line }
+          )
+          if ($sourcePaths.Count -eq 0) {
+            throw "The Windows coverage report contains no source paths."
+          }
+          $invalidPaths = @(
+            $sourcePaths |
+              Where-Object { $_ -notmatch '^SF:src/[A-Za-z0-9_./-]+$' }
+          )
+          if ($invalidPaths.Count -gt 0) {
+            $invalidPaths | ForEach-Object {
+              Write-Error "Invalid LCOV source path: $_"
+            }
+            throw "The Windows coverage report has invalid source paths."
+          }
+          $duplicatePaths = @(
+            $sourcePaths |
+              Group-Object |
+              Where-Object { $_.Count -gt 1 } |
+              ForEach-Object { $_.Name }
+          )
+          if ($duplicatePaths.Count -gt 0) {
+            $duplicatePaths | ForEach-Object {
+              Write-Error "Duplicate LCOV source path: $_"
+            }
+            throw "The Windows coverage report has duplicate source paths."
+          }
+          cargo llvm-cov report
+
+      - name: Detect Windows coverage artifact
+        id: windows-coverage
+        if: always()
+        shell: pwsh
+        run: |
+          if (
+            (Test-Path coverage-windows.lcov) -and
+            (Get-Item coverage-windows.lcov).Length -gt 0
+          ) {
+            "exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Upload Windows coverage
+        if: always() && steps.windows-coverage.outputs.exists == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-windows
+          path: coverage-windows.lcov
+          if-no-files-found: error
+          retention-days: 1
+
+  coverage:
+    name: Combined coverage
+    runs-on: ubuntu-24.04
+    needs: [unix, windows]
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download Linux coverage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-linux
+          path: coverage/linux
+
+      - name: Download Windows coverage
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage-windows
+          path: coverage/windows
+
+      - name: Install coverage infrastructure
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lcov=2.0-4ubuntu2
+          lcov --version
+          genhtml --version
+
+      - name: Validate native coverage inputs
+        shell: bash
+        run: |
+          for report in \
+            coverage/linux/coverage-linux.lcov \
+            coverage/windows/coverage-windows.lcov
+          do
+            test -s "$report"
+            grep -q '^SF:' "$report"
+            awk '
+              /^SF:/ {
+                if ($0 !~ /^SF:src\/[A-Za-z0-9_.\/-]+$/) {
+                  print "Invalid LCOV source path: " $0 > "/dev/stderr"
+                  invalid = 1
+                }
+                if (seen[$0]++) {
+                  print "Duplicate LCOV source path: " $0 > "/dev/stderr"
+                  duplicate = 1
+                }
+              }
+              END { exit invalid || duplicate }
+            ' "$report"
+          done
+
+      - name: Merge native coverage
+        run: |
+          lcov \
+            --add-tracefile coverage/linux/coverage-linux.lcov \
+            --add-tracefile coverage/windows/coverage-windows.lcov \
+            --output-file coverage.lcov
+
+      - name: Validate combined coverage
+        shell: bash
+        run: |
+          test -s coverage.lcov
+          awk '
+            /^SF:/ {
+              found = 1
+              if ($0 !~ /^SF:src\/[A-Za-z0-9_.\/-]+$/) {
+                print "Invalid LCOV source path: " $0 > "/dev/stderr"
+                invalid = 1
+              }
+              if (seen[$0]++) {
+                print "Duplicate LCOV source path: " $0 > "/dev/stderr"
+                duplicate = 1
+              }
+            }
+            END { exit !found || invalid || duplicate }
+          ' coverage.lcov
+          shared_count="$(grep -c '^SF:src/app.rs$' coverage.lcov || true)"
+          if [[ "$shared_count" -ne 1 ]]; then
+            echo "Expected src/app.rs once, found $shared_count." >&2
+            exit 1
+          fi
+
+      - name: Generate combined HTML coverage
+        run: >-
+          genhtml coverage.lcov
+          --output-directory coverage-html
+          --title "Gleg combined native coverage"
+          --legend
+
+      - name: Print combined coverage summary
+        run: lcov --summary coverage.lcov
+
+      - name: Upload combined coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-combined
+          path: |
+            coverage.lcov
+            coverage-html
+          if-no-files-found: error
+          retention-days: 14

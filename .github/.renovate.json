@@ -12,7 +12,19 @@
   "enabled": true,
   "enabledManagers": [
     "cargo",
-    "github-actions"
+    "github-actions",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github\\/workflows\\/.*\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) versioning=(?<versioning>\\S+)\\s+[A-Z][A-Z0-9_]*_VERSION:\\s+\\\"(?<currentValue>[^\\\"]+)\\\""
+      ]
+    }
   ],
   "ignoreDeps": []
 }

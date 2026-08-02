@@ -1,8 +1,222 @@
+[tasks.prepare-coverage]
+script_runner = "@duckscript"
+script = ["mkdir target/llvm-cov"]
+
 [tasks.test]
-# this needs the crates 'nextest' and 'cargo-llvm-cov' installed locally
+description = "Run native tests and write repository-relative LCOV coverage"
+# Requires cargo-nextest and cargo-llvm-cov.
+dependencies = ["prepare-coverage"]
 command = "cargo"
-args = ["llvm-cov", "nextest"]
+args = [
+  "llvm-cov",
+  "nextest",
+  "--all-targets",
+  "--all-features",
+  "--no-fail-fast",
+  "--remap-path-prefix",
+  "--lcov",
+  "--output-path=target/llvm-cov/coverage.lcov",
+]
 
 [tasks.test-html]
+description = "Run native tests and generate local HTML coverage"
 command = "cargo"
-args = ["llvm-cov", "nextest", "--html"]
+args = [
+  "llvm-cov",
+  "nextest",
+  "--all-targets",
+  "--all-features",
+  "--no-fail-fast",
+  "--remap-path-prefix",
+  "--html",
+]
+
+[tasks.audit]
+command = "cargo"
+args = ["audit"]
+
+[tasks.deny]
+command = "cargo"
+args = ["deny", "check"]
+
+[tasks.zizmor]
+description = "Audit GitHub Actions workflows with the pedantic persona"
+command = "zizmor"
+args = ["--persona=pedantic", "."]
+
+[tasks.actions-lint]
+description = "Validate GitHub Actions workflow syntax"
+command = "actionlint"
+
+[tasks.format]
+description = "Check Rust formatting"
+command = "cargo"
+args = ["fmt", "--check"]
+
+[tasks._require-host]
+private = true
+script_runner = "@duckscript"
+script = '''
+host_is_valid = set false
+if equals ${REQUIRED_HOST} unix
+    if not equals ${CARGO_MAKE_RUST_TARGET_OS} windows
+        host_is_valid = set true
+    end
+else
+    if equals ${CARGO_MAKE_RUST_TARGET_OS} ${REQUIRED_HOST}
+        host_is_valid = set true
+    end
+end
+
+if equals ${host_is_valid} false
+    echo "error: this task requires ${REQUIRED_HOST_DESCRIPTION}; current host is ${CARGO_MAKE_RUST_TARGET_OS}"
+    exit 1
+end
+'''
+
+[tasks._require-unix]
+extend = "_require-host"
+env = { "REQUIRED_HOST" = "unix", "REQUIRED_HOST_DESCRIPTION" = "a Unix host" }
+
+[tasks._require-windows]
+extend = "_require-host"
+env = { "REQUIRED_HOST" = "windows", "REQUIRED_HOST_DESCRIPTION" = "Windows" }
+
+[tasks._require-linux]
+extend = "_require-host"
+env = { "REQUIRED_HOST" = "linux", "REQUIRED_HOST_DESCRIPTION" = "Linux" }
+
+[tasks.unix-check]
+description = "Check all native Unix targets and features"
+dependencies = ["_require-unix"]
+command = "cargo"
+args = ["check", "--all-targets", "--all-features"]
+
+[tasks.unix-clippy]
+description = "Run Clippy for all native Unix targets and features"
+dependencies = ["_require-unix"]
+command = "cargo"
+args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.unix-test]
+description = "Run all native Unix tests"
+dependencies = ["_require-unix"]
+command = "cargo"
+args = ["test", "--all-targets", "--all-features"]
+
+[tasks.unix-build]
+description = "Build all native Unix targets and features"
+dependencies = ["_require-unix"]
+command = "cargo"
+args = ["build", "--all-targets", "--all-features"]
+
+[tasks.verify-unix]
+description = "Run all native Unix verification checks"
+dependencies = [
+  "_require-unix",
+  "format",
+  "unix-check",
+  "unix-clippy",
+  "unix-test",
+  "unix-build",
+]
+
+[tasks.windows-check]
+description = "Check all native Windows targets and features"
+dependencies = ["_require-windows"]
+command = "cargo"
+args = ["check", "--all-targets", "--all-features"]
+
+[tasks.windows-clippy]
+description = "Run Clippy for all native Windows targets and features"
+dependencies = ["_require-windows"]
+command = "cargo"
+args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.windows-test]
+description = "Run all native Windows tests"
+dependencies = ["_require-windows"]
+command = "cargo"
+args = ["test", "--all-targets", "--all-features"]
+
+[tasks.windows-build]
+description = "Build all native Windows targets and features"
+dependencies = ["_require-windows"]
+command = "cargo"
+args = ["build", "--all-targets", "--all-features"]
+
+[tasks.verify-windows]
+description = "Run all native Windows verification checks"
+dependencies = [
+  "_require-windows",
+  "format",
+  "windows-check",
+  "windows-clippy",
+  "windows-test",
+  "windows-build",
+]
+
+[tasks.xwin-check]
+description = "Cross-check the Windows MSVC target from Linux"
+dependencies = ["_require-linux"]
+command = "cargo"
+args = [
+  "xwin",
+  "check",
+  "--target",
+  "x86_64-pc-windows-msvc",
+  "--all-targets",
+  "--all-features",
+]
+
+[tasks.xwin-clippy]
+description = "Run Clippy for the Windows MSVC target from Linux"
+dependencies = ["_require-linux"]
+command = "cargo"
+args = [
+  "xwin",
+  "clippy",
+  "--target",
+  "x86_64-pc-windows-msvc",
+  "--all-targets",
+  "--all-features",
+  "--",
+  "-D",
+  "warnings",
+]
+
+[tasks.xwin-build]
+description = "Cross-build the Windows MSVC target from Linux"
+dependencies = ["_require-linux"]
+command = "cargo"
+args = [
+  "xwin",
+  "build",
+  "--target",
+  "x86_64-pc-windows-msvc",
+  "--all-targets",
+  "--all-features",
+]
+
+[tasks.verify-xwin]
+description = "Run all Linux-hosted Windows cross-target checks"
+dependencies = ["_require-linux", "xwin-check", "xwin-clippy", "xwin-build"]
+
+[tasks.verify]
+description = "Run all Linux-host native Unix and Windows cross-target checks"
+dependencies = ["_require-linux", "verify-unix", "verify-xwin"]
+
+[tasks.changelog]
+description = "Update CHANGELOG.md with the latest merged PR's and closed Issues"
+command = "github-changelog-md"
+args = ["${@}"]
+
+# [tasks.docs]
+# description = "Build and validate the Zensical documentation site"
+# command = "zensical"
+# args = ["build", "--clean", "--strict"]
+
+# [tasks.docs-serve]
+# description = "Serve the Zensical documentation site locally"
+# command = "zensical"
+# args = ["serve"]
