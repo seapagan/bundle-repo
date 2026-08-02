@@ -10,8 +10,9 @@ XML was chosen for the file output format since it is very well structured and
 LLM models can easily parse it (better than a plain-text dump).
 
 It is inspired by [Repomix](#acknowledgements) which is a great tool, but is
-written in TypeScript and needs a Node.js environment to run. Eventually this
-project will produce binaries and not need Rust installed to run.
+written in TypeScript and needs a Node.js environment to run. BundleRepo is
+available as a prebuilt binary, so Rust is only required when building from
+source.
 
 The generated XML metadata and structure are inspired by the output of Repomix
 (a lot of the header text was taken from there), with enhancements that include
@@ -27,7 +28,7 @@ however future versions may include additional formats.
 > context and instructions into an LLM).
 
 ```pre
-BundleRepo Version 0.3.0, © 2024-2025 Grant Ramsay <seapagan@gmail.com>
+BundleRepo Version 0.6.0, © 2024-2026 Grant Ramsay <seapagan@gmail.com>
 
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
@@ -107,10 +108,10 @@ releases and features.
 
 ## Usage
 
-This will be available as a binary download in the future, but for now, you can
-build it from source or install from `crates.io`. You will need to have
-[Rust](https://www.rust-lang.org/tools/install) installed on your system to
-build the project.
+You can install BundleRepo from `crates.io`, build it from source, or download a
+prebuilt release binary. You will need to have
+[Rust](https://www.rust-lang.org/tools/install) installed only when installing
+from `crates.io` or building the project from source.
 
 ### Installation
 
