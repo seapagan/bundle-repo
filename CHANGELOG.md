@@ -5,6 +5,39 @@ project since the first release, with the latest changes at the top.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased](https://github.com/seapagan/bundle-repo/tree/HEAD)
+
+**Closed Issues**
+
+- 'output_file' path not expanded in the config file ([#26](https://github.com/seapagan/bundle-repo/issues/26)) by [seapagan](https://github.com/seapagan)
+
+**Merged Pull Requests**
+
+- Add/Update cross platform quality gates ([#73](https://github.com/seapagan/bundle-repo/pull/73)) by [seapagan](https://github.com/seapagan)
+
+**New Features**
+
+- Feat: add configurable gzip output ([#67](https://github.com/seapagan/bundle-repo/pull/67)) by [seapagan](https://github.com/seapagan)
+
+**Bug Fixes**
+
+- Fix: expand home-relative output paths ([#80](https://github.com/seapagan/bundle-repo/pull/80)) by [seapagan](https://github.com/seapagan)
+
+**Dependency Updates**
+
+- Update Rust crate xml to v1 ([#79](https://github.com/seapagan/bundle-repo/pull/79)) by [renovate[bot]](https://github.com/apps/renovate)
+- Fix: support config 0.15.25 ([#78](https://github.com/seapagan/bundle-repo/pull/78)) by [seapagan](https://github.com/seapagan)
+- Update Rust crate tokenizers to 0.23 ([#77](https://github.com/seapagan/bundle-repo/pull/77)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update ghcr.io/zizmorcore/zizmor Docker tag to v1.29.0 ([#76](https://github.com/seapagan/bundle-repo/pull/76)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate infer to 0.22.0 ([#75](https://github.com/seapagan/bundle-repo/pull/75)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update zizmorcore/zizmor-action action to v0.6.2 ([#72](https://github.com/seapagan/bundle-repo/pull/72)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update taiki-e/install-action action to v2.85.7 ([#71](https://github.com/seapagan/bundle-repo/pull/71)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate url to v2.5.8 ([#70](https://github.com/seapagan/bundle-repo/pull/70)) by [renovate[bot]](https://github.com/apps/renovate)
+- Update Rust crate ignore to v0.4.31 ([#69](https://github.com/seapagan/bundle-repo/pull/69)) by [renovate[bot]](https://github.com/apps/renovate)
+- Bump hashbrown from 0.15.0 to 0.15.5 ([#68](https://github.com/seapagan/bundle-repo/pull/68)) by [dependabot[bot]](https://github.com/apps/dependabot)
+- *and 10 more dependency updates*
+
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.6.0...HEAD) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.6.0...HEAD.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.6.0...HEAD.patch)
 
 ## [0.6.0](https://github.com/seapagan/bundle-repo/releases/tag/0.6.0) (February 28, 2025)
 
