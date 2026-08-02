@@ -29,7 +29,7 @@ impl std::error::Error for ConfigError {}
 impl From<config::ConfigError> for ConfigError {
     fn from(error: config::ConfigError) -> Self {
         match error {
-            e if e.to_string().contains("not found") => {
+            e @ config::ConfigError::NotFound(_) => {
                 ConfigError::Missing(e.to_string())
             }
             e if e.to_string().contains("invalid type") => {
@@ -60,7 +60,7 @@ impl TomlValue for String {
         key: &str,
     ) -> Result<Self, ConfigError> {
         config.get_string(key).map_err(|e| {
-            if e.to_string().contains("not found") {
+            if matches!(e, config::ConfigError::NotFound(_)) {
                 ConfigError::Missing(key.to_string())
             } else {
                 ConfigError::TypeError {
@@ -83,7 +83,7 @@ impl TomlValue for bool {
         key: &str,
     ) -> Result<Self, ConfigError> {
         config.get_bool(key).map_err(|e| {
-            if e.to_string().contains("not found") {
+            if matches!(e, config::ConfigError::NotFound(_)) {
                 ConfigError::Missing(key.to_string())
             } else {
                 ConfigError::TypeError {
@@ -106,7 +106,7 @@ impl TomlValue for i64 {
         key: &str,
     ) -> Result<Self, ConfigError> {
         config.get_int(key).map_err(|e| {
-            if e.to_string().contains("not found") {
+            if matches!(e, config::ConfigError::NotFound(_)) {
                 ConfigError::Missing(key.to_string())
             } else {
                 ConfigError::TypeError {
@@ -129,7 +129,7 @@ impl TomlValue for f64 {
         key: &str,
     ) -> Result<Self, ConfigError> {
         config.get_float(key).map_err(|e| {
-            if e.to_string().contains("not found") {
+            if matches!(e, config::ConfigError::NotFound(_)) {
                 ConfigError::Missing(key.to_string())
             } else {
                 ConfigError::TypeError {
@@ -169,7 +169,7 @@ impl<T: TomlValue> TomlValue for Vec<T> {
         config
             .get_array(key)
             .map_err(|e| {
-                if e.to_string().contains("not found") {
+                if matches!(e, config::ConfigError::NotFound(_)) {
                     ConfigError::Missing(key.to_string())
                 } else {
                     ConfigError::TypeError {
