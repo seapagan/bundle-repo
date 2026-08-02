@@ -156,7 +156,7 @@ fn main() {
                 } else {
                     println!(
                         "-> Successfully wrote XML to '{}'",
-                        xml_output::effective_output_file(&params)
+                        xml_output::effective_output_file(&params).display()
                     );
                 }
                 println!("\nSummary:");

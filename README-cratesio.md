@@ -212,6 +212,9 @@ specified:
 bundlerepo user_name/repo_name --file /path/to/output.xml
 ```
 
+A leading `~` path component is expanded to your home directory for output
+paths supplied on the command line or in a configuration file.
+
 #### Output to stdout
 
 You can output the XML to the terminal by using the `--stdout` or `-s` flag:
