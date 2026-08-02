@@ -155,10 +155,9 @@ fn effective_output_file_with_home(
     );
     let output_file = home_directory
         .and_then(|home| {
-            output_file
-                .strip_prefix("~")
-                .ok()
-                .map(|relative_path| home.join(relative_path))
+            let relative_path = output_file.strip_prefix("~").ok()?;
+            (!relative_path.as_os_str().is_empty())
+                .then(|| home.join(relative_path))
         })
         .unwrap_or(output_file);
     let has_gzip_suffix = output_file
@@ -856,6 +855,39 @@ mod tests {
             effective_output_file_with_home(&params, None),
             Path::new("~/packed-repo.xml")
         );
+    }
+
+    #[test]
+    fn test_bare_home_component_is_not_expanded() {
+        let home = tempdir().unwrap();
+
+        for output_file in ["~", "~/"] {
+            let params = Params {
+                output_file: Some(output_file.to_string()),
+                ..Params::default()
+            };
+            assert_eq!(
+                effective_output_file_with_home(&params, Some(home.path())),
+                Path::new(output_file)
+            );
+        }
+    }
+
+    #[test]
+    fn test_gzip_bare_home_component_stays_relative() {
+        let home = tempdir().unwrap();
+
+        for (output_file, expected) in [("~", "~.gz"), ("~/", "~/.gz")] {
+            let params = Params {
+                output_file: Some(output_file.to_string()),
+                gzip: true,
+                ..Params::default()
+            };
+            assert_eq!(
+                effective_output_file_with_home(&params, Some(home.path())),
+                Path::new(expected)
+            );
+        }
     }
 
     #[cfg(windows)]
