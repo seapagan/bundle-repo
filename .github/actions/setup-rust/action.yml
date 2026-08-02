@@ -1,7 +1,10 @@
 name: Set up Rust
-description: Install the stable Rust toolchain and optional components
+description: Install the exact Rust toolchain and optional components
 
 inputs:
+  toolchain:
+    description: Exact Rust toolchain version
+    required: true
   components:
     description: Space-separated rustup components to install
     required: false
@@ -10,15 +13,17 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install stable toolchain
+    - name: Install exact Rust toolchain
       shell: bash
       env:
         COMPONENTS: ${{ inputs.components }}
+        TOOLCHAIN: ${{ inputs.toolchain }}
       run: |
-        rustup toolchain install stable --profile minimal
-        rustup default stable
+        rustup toolchain install "$TOOLCHAIN" --profile minimal
+        rustup default "$TOOLCHAIN"
 
-        if [[ -n "$COMPONENTS" ]]; then
-          read -ra components <<< "$COMPONENTS"
-          rustup component add --toolchain stable "${components[@]}"
+        components=()
+        read -ra components <<< "$COMPONENTS"
+        if (( ${#components[@]} > 0 )); then
+          rustup component add --toolchain "$TOOLCHAIN" "${components[@]}"
         fi

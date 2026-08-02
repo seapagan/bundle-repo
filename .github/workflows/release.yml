@@ -53,18 +53,18 @@ jobs:
           cd openssl-$OPENSSL_VERSION
           # Configure OpenSSL for MUSL
           CC="musl-gcc -fPIC" ./Configure no-shared no-async linux-x86_64
-          make -j$(nproc)
+          make -j"$(nproc)"
           sudo make install
           cd ..
           # Set OpenSSL env vars for the build
-          echo "OPENSSL_DIR=/usr/local" >> $GITHUB_ENV
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
+          echo "OPENSSL_DIR=/usr/local" >> "$GITHUB_ENV"
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
 
       - name: Install macOS dependencies (x86_64)
         if: matrix.binary_target == 'x86_64-apple-darwin'
         run: |
           brew install openssl@3
-          echo 'export OPENSSL_DIR=$(brew --prefix openssl@3)' >> $GITHUB_ENV
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
 
       - name: Install target
         shell: bash
