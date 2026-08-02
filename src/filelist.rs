@@ -1,7 +1,7 @@
 use ignore::WalkBuilder;
 use regex::Regex;
 use std::collections::HashMap;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Default)]
 pub struct FolderNode {
@@ -13,6 +13,22 @@ pub struct FolderNode {
 pub struct FileTree {
     pub folder_node: FolderNode,
     pub file_paths: Vec<String>, // Add a list to track file paths for <repository_files>
+}
+
+fn repository_path(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn literal_exclude_pattern(pattern: &str) -> String {
+    #[cfg(windows)]
+    let pattern = pattern.replace('\\', "/");
+    #[cfg(not(windows))]
+    let pattern = pattern.to_string();
+
+    format!(r"(?i){}", regex::escape(&pattern))
 }
 
 pub fn list_files_in_repo(
@@ -27,10 +43,7 @@ pub fn list_files_in_repo(
         // If exclude is set, use only those patterns
         patterns
             .iter()
-            .map(|p| {
-                let escaped = regex::escape(p);
-                format!(r"(?i){}", escaped)
-            })
+            .map(|pattern| literal_exclude_pattern(pattern))
             .collect()
     } else {
         // Otherwise use default patterns
@@ -50,10 +63,11 @@ pub fn list_files_in_repo(
 
         // Add additional patterns if provided
         if let Some(extend_patterns) = extend_exclude {
-            patterns.extend(extend_patterns.iter().map(|p| {
-                let escaped = regex::escape(p);
-                format!(r"(?i){}", escaped)
-            }));
+            patterns.extend(
+                extend_patterns
+                    .iter()
+                    .map(|pattern| literal_exclude_pattern(pattern)),
+            );
         }
         patterns
     };
@@ -87,7 +101,7 @@ pub fn list_files_in_repo(
 
                 let path = entry.path();
                 let relative_path = match path.strip_prefix(repo_path) {
-                    Ok(p) => p.to_string_lossy().to_string(),
+                    Ok(path) => repository_path(path),
                     Err(_) => continue,
                 };
 
@@ -226,6 +240,23 @@ mod tests {
         assert!(files.contains(&"src/file2.rs".to_string()));
         assert!(!files.contains(&"custom_exclude.txt".to_string()));
         assert!(!files.contains(&".gitignore".to_string()));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_windows_exclude_accepts_backslash_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_files = ["file1.txt", "src/file2.rs"];
+        create_test_files(&temp_dir, &test_files);
+
+        let exclude = vec![r"src\file2.rs".to_string()];
+        let files = list_files_in_repo(
+            &temp_dir.path().to_path_buf(),
+            None,
+            Some(&exclude),
+        );
+
+        assert_eq!(files, vec!["file1.txt"]);
     }
 
     #[test]
