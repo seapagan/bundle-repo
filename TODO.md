@@ -3,6 +3,9 @@
 - add more output formats - Text, Markdown, maybe others.
 - improve the test suite to ensure the tool works as expected in a variety of
   scenarios.
+- include the resolved output path in file-creation errors. Attach the context
+  at the `File::create` boundary so stdout, clipboard, and earlier XML-generation
+  failures remain accurately described.
 - make generated bundles well-formed XML without entity-escaping textual file
   contents. Implement this as a focused follow-up after the `xml` 1.x update:
   - write all structural markup through the XML writer rather than assembling

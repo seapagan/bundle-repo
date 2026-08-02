@@ -867,8 +867,9 @@ mod tests {
                 ..Params::default()
             };
             assert_eq!(
-                effective_output_file_with_home(&params, Some(home.path())),
-                Path::new(output_file)
+                effective_output_file_with_home(&params, Some(home.path()))
+                    .as_os_str(),
+                std::ffi::OsStr::new(output_file)
             );
         }
     }
