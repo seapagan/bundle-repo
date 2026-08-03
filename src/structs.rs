@@ -208,13 +208,14 @@ pub struct Params {
 }
 
 pub const DEFAULT_OUTPUT_FILE: &str = "packed-repo.xml";
+pub const DEFAULT_MODEL: &str = "gpt5";
 
 impl Default for Params {
     fn default() -> Self {
         Params {
             output_file: Some(DEFAULT_OUTPUT_FILE.to_string()),
             stdout: false,
-            model: Some("gpt4o".to_string()),
+            model: Some(DEFAULT_MODEL.to_string()),
             clipboard: false,
             line_numbers: false,
             token: None,
@@ -455,7 +456,7 @@ mod tests {
         let params = Params::default();
         assert_eq!(params.output_file, Some("packed-repo.xml".to_string()));
         assert!(!params.stdout);
-        assert_eq!(params.model, Some("gpt4o".to_string()));
+        assert_eq!(params.model, Some("gpt5".to_string()));
         assert!(!params.clipboard);
         assert!(!params.line_numbers);
         assert_eq!(params.token, None);
@@ -598,13 +599,93 @@ mod tests {
         assert_eq!(params.output_file, Some("custom.xml".to_string()));
 
         // These should be default values
-        assert_eq!(params.model, Some("gpt4o".to_string()));
+        assert_eq!(params.model, Some("gpt5".to_string()));
         assert!(!params.clipboard);
         assert_eq!(params.token, None);
         assert_eq!(params.branch, None);
         assert_eq!(params.extend_exclude, None);
         assert_eq!(params.exclude, None);
         assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_legacy_deepseek_config_selects_v3() {
+        use crate::tokenizer::Model;
+
+        let config = Config::builder()
+            .add_source(File::from_str(
+                "model = \"deepseek\"",
+                FileFormat::Toml,
+            ))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+
+        assert_eq!(
+            params.model.unwrap().parse::<Model>(),
+            Ok(Model::DeepSeekV3)
+        );
+    }
+
+    #[test]
+    fn test_model_config_is_case_insensitive() {
+        use crate::tokenizer::Model;
+
+        for (value, expected) in [
+            ("GPT5", Model::GPT5),
+            ("DeepSeek-V4", Model::DeepSeekV4),
+            ("GLM5.2", Model::Glm5_2),
+        ] {
+            let config = Config::builder()
+                .add_source(File::from_str(
+                    &format!("model = \"{value}\""),
+                    FileFormat::Toml,
+                ))
+                .build()
+                .unwrap();
+            let params: Params = config.into();
+
+            assert_eq!(params.model.unwrap().parse::<Model>(), Ok(expected));
+        }
+    }
+
+    #[test]
+    fn test_removed_model_configs_are_unsupported() {
+        use crate::tokenizer::Model;
+
+        for model in ["gpt2", "GPT2", "gpt3", "GPT3"] {
+            let config = Config::builder()
+                .add_source(File::from_str(
+                    &format!("model = \"{model}\""),
+                    FileFormat::Toml,
+                ))
+                .build()
+                .unwrap();
+            let params: Params = config.into();
+            let error = params.model.unwrap().parse::<Model>().unwrap_err();
+
+            assert!(error.contains("Unsupported model"));
+            assert!(error.contains(model));
+        }
+    }
+
+    #[test]
+    fn test_unknown_model_config_reports_supported_values() {
+        use crate::tokenizer::{Model, MODEL_VALUES};
+
+        let config = Config::builder()
+            .add_source(File::from_str(
+                "model = \"unknown\"",
+                FileFormat::Toml,
+            ))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+        let error = params.model.unwrap().parse::<Model>().unwrap_err();
+
+        for value in MODEL_VALUES {
+            assert!(error.contains(value), "error omitted {value}");
+        }
     }
 
     #[test]

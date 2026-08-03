@@ -54,12 +54,11 @@
   all 3 at this current code state, but we need to develop a test suite and get
   the CI pipeline working to ensure that it continues to work on all 3.
 - allow to work with non-git repositories (local only obviously).
-- modernise token counting with model-aware tokenizer backends for current
-  OpenAI, Claude, DeepSeek, GLM, Gemini, and other commonly used models.
-  Prefer official local tokenizers, optionally support provider token-counting
-  APIs, retain a clearly labelled conservative fallback estimate, and record
-  the tokenizer source, model profile, and exact-versus-estimated status in the
-  generated output.
+- extend the model-aware token counting backends beyond the current GPT,
+  DeepSeek, and GLM support. Future work includes official local tokenizers for
+  Gemini, Claude, Qwen, and other provider families where suitable tokenizer
+  assets exist. Provider token-counting APIs, fallback estimates, and generated
+  output metadata remain separate design work.
 - revisit the `cargo deny` duplicate-version warnings alongside the pending
   dependency upgrades. Prefer compatible lockfile refreshes that collapse
   transitive versions, and avoid forced or convoluted dependency unification.

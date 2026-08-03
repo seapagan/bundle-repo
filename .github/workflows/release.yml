@@ -99,9 +99,11 @@ jobs:
           ARCHIVE_NAME: ${{ steps.archive.outputs.archive_name }}
           BINARY_TARGET: ${{ matrix.binary_target }}
         run: |
-          cd "target/$BINARY_TARGET/release"
-          tar -czf "../../../$ARCHIVE_NAME" "$BINARY_NAME"
-          cd -
+          archive_root="${RUNNER_TEMP:?}/bundlerepo-release"
+          mkdir -p "$archive_root/licenses"
+          cp "target/$BINARY_TARGET/release/$BINARY_NAME" "$archive_root/"
+          cp resources/tokenizers/licenses/*.txt "$archive_root/licenses/"
+          tar -czf "$ARCHIVE_NAME" -C "$archive_root" .
 
       - name: Prepare binary (Windows)
         if: matrix.os == 'windows-latest'
@@ -110,10 +112,16 @@ jobs:
           ARCHIVE_NAME: ${{ steps.archive.outputs.archive_name }}
           BINARY_TARGET: ${{ matrix.binary_target }}
         run: |
-          cd "target/$env:BINARY_TARGET/release"
-          $BinaryPath = "$env:BINARY_NAME.exe"
-          Compress-Archive -Path $BinaryPath -DestinationPath "../../../$env:ARCHIVE_NAME"
-          cd -
+          $ArchiveRoot = Join-Path $env:RUNNER_TEMP "bundlerepo-release"
+          New-Item -ItemType Directory -Force `
+            -Path (Join-Path $ArchiveRoot "licenses") | Out-Null
+          Copy-Item `
+            "target/$env:BINARY_TARGET/release/$env:BINARY_NAME.exe" `
+            -Destination $ArchiveRoot
+          Copy-Item "resources/tokenizers/licenses/*.txt" `
+            -Destination (Join-Path $ArchiveRoot "licenses")
+          Compress-Archive -Path "$ArchiveRoot/*" `
+            -DestinationPath $env:ARCHIVE_NAME
 
       - name: Upload release asset
         shell: bash

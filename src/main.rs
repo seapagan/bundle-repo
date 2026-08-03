@@ -326,8 +326,8 @@ mod tests {
         use std::str::FromStr;
 
         // Test valid model parsing
-        let model = Model::from_str("gpt2").unwrap();
-        assert!(matches!(model, Model::GPT2));
+        let model = Model::from_str("gpt5").unwrap();
+        assert!(matches!(model, Model::GPT5));
 
         // Test invalid model
         let invalid = Model::from_str("invalid_model");
