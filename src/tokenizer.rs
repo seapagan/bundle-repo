@@ -199,6 +199,31 @@ mod tests {
     }
 
     #[test]
+    fn test_public_model_values_and_variants_stay_in_sync() {
+        let parsed_models = MODEL_VALUES.map(|value| {
+            value.parse::<Model>().unwrap_or_else(|error| {
+                panic!("CLI model value does not parse: {value}: {error}")
+            })
+        });
+
+        for model in [
+            Model::GPT5,
+            Model::GPT4o,
+            Model::GPT4,
+            Model::GPT3_5,
+            Model::DeepSeekV4,
+            Model::DeepSeekV3,
+            Model::DeepSeekR1,
+            Model::Glm5_2,
+        ] {
+            assert!(
+                parsed_models.contains(&model),
+                "Model variant has no public CLI value: {model:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_model_parsing_is_case_insensitive() {
         assert_eq!(Model::from_str("GPT5"), Ok(Model::GPT5));
         assert_eq!(Model::from_str("DeepSeek-V4"), Ok(Model::DeepSeekV4));

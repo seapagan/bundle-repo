@@ -12,7 +12,7 @@ locked Rust `tokenizers` crate before being installed here.
 ## `deepseek-v3.json`
 
 - Local path: `resources/tokenizers/deepseek-v3.json`
-- Model choices: `deepseek-v3` and the legacy `deepseek` alias
+- Model choice: `deepseek-v3`
 - Official repository:
   <https://huggingface.co/deepseek-ai/DeepSeek-V3>
 - Immutable revision: `e815299b0bcbac849fa540c768ef21845365c9eb`
@@ -33,8 +33,8 @@ locked Rust `tokenizers` crate before being installed here.
 ## `deepseek-r1.json`
 
 - Local path: `resources/tokenizers/deepseek-r1.json`
-- Model choice: `deepseek-r1`, for the full R1 release rather than a Qwen- or
-  Llama-based distill
+- Model choices: `deepseek-r1` and the legacy `deepseek` alias, for the full
+  R1-0528 release rather than a Qwen- or Llama-based distill
 - Official repository:
   <https://huggingface.co/deepseek-ai/DeepSeek-R1-0528>
 - Immutable revision: `4236a6af538feda4548eca9ab308586007567f52`

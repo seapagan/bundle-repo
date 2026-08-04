@@ -56,7 +56,15 @@ args = ["fmt", "--check"]
 [tasks.release-embedded-assets-test]
 description = "Verify release-embedded tokenizer asset hashes"
 command = "cargo"
-args = ["test", "--release", "test_tokenizer_resource_sha256_hashes"]
+args = [
+  "nextest",
+  "run",
+  "--release",
+  "-E",
+  "test(=embedded::tests::test_tokenizer_resource_sha256_hashes)",
+  "--no-tests",
+  "fail",
+]
 
 [tasks._require-host]
 private = true
