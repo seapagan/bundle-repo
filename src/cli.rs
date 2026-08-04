@@ -324,6 +324,16 @@ mod tests {
     }
 
     #[test]
+    fn test_legacy_deepseek_alias_selects_r1() {
+        use crate::tokenizer::Model;
+
+        for alias in ["deepseek", "DeepSeek"] {
+            let args = Flags::parse_from(["program", "--model", alias]);
+            assert_eq!(args.model.unwrap().parse(), Ok(Model::DeepSeekR1));
+        }
+    }
+
+    #[test]
     fn test_removed_model_values_are_rejected() {
         for model in ["gpt2", "GPT2", "gpt3", "GPT3"] {
             assert!(

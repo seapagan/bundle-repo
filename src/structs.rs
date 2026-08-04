@@ -609,22 +609,24 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_deepseek_config_selects_v3() {
+    fn test_legacy_deepseek_config_selects_r1() {
         use crate::tokenizer::Model;
 
-        let config = Config::builder()
-            .add_source(File::from_str(
-                "model = \"deepseek\"",
-                FileFormat::Toml,
-            ))
-            .build()
-            .unwrap();
-        let params: Params = config.into();
+        for alias in ["deepseek", "DeepSeek"] {
+            let config = Config::builder()
+                .add_source(File::from_str(
+                    &format!("model = \"{alias}\""),
+                    FileFormat::Toml,
+                ))
+                .build()
+                .unwrap();
+            let params: Params = config.into();
 
-        assert_eq!(
-            params.model.unwrap().parse::<Model>(),
-            Ok(Model::DeepSeekV3)
-        );
+            assert_eq!(
+                params.model.unwrap().parse::<Model>(),
+                Ok(Model::DeepSeekR1)
+            );
+        }
     }
 
     #[test]

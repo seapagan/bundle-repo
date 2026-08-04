@@ -53,6 +53,11 @@ description = "Check Rust formatting"
 command = "cargo"
 args = ["fmt", "--check"]
 
+[tasks.release-embedded-assets-test]
+description = "Verify release-embedded tokenizer asset hashes"
+command = "cargo"
+args = ["test", "--release", "test_tokenizer_resource_sha256_hashes"]
+
 [tasks._require-host]
 private = true
 script_runner = "@duckscript"
@@ -119,6 +124,7 @@ dependencies = [
   "unix-clippy",
   "unix-test",
   "unix-build",
+  "release-embedded-assets-test",
 ]
 
 [tasks.windows-check]
@@ -154,6 +160,7 @@ dependencies = [
   "windows-clippy",
   "windows-test",
   "windows-build",
+  "release-embedded-assets-test",
 ]
 
 [tasks.xwin-check]

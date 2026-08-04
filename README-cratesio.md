@@ -306,12 +306,20 @@ Supported model choices and tokenizer backends:
 | `deepseek-r1` | Pinned official full DeepSeek-R1-0528 tokenizer |
 | `glm5.2` | Pinned official Z.ai GLM-5.2 tokenizer |
 
-The legacy `deepseek` value remains an alias for `deepseek-v3`; it does not
-select a separate tokenizer family. The official V3 and full R1-0528 files
-share their base vocabulary and merges, but differ in their added reasoning
-tokens, so `deepseek-r1` uses its own pinned asset. It does not cover R1 distill
-models based on Qwen or Llama tokenizers. DeepSeek V4 and GLM-5.2 each use their
-own pinned official tokenizer.
+The legacy `deepseek` value remains an alias for `deepseek-r1`, preserving its
+historical full R1 tokenizer behaviour. New configurations should use the
+explicit `deepseek-v3` or `deepseek-r1` value. The official V3 and full R1-0528
+files share their base vocabulary and merges, but differ in their added
+reasoning tokens. Full R1 support does not cover distill models based on Qwen
+or Llama tokenizers. DeepSeek V4 and GLM-5.2 each use their own pinned official
+tokenizer.
+
+#### Migrating older OpenAI model settings
+
+`gpt2` and `gpt3` are no longer supported model values. Existing configuration
+files using either value now produce an unsupported-model error. For a current
+general OpenAI estimate, normally select `gpt5`; `gpt4` and `gpt3.5` remain
+available when their distinct tokenizer is required.
 
 BundleRepo counts the generated raw XML text with the selected tokenizer. The
 result indicates bundle size, but it does not predict complete provider request
@@ -406,7 +414,7 @@ Available configuration options:
   `~` path component is expanded to your home directory.
 - `model`: Default model for token counting (default: "gpt5"). See the model
   table above for supported values; `deepseek` is a legacy alias for
-  `deepseek-v3`.
+  `deepseek-r1`.
 - `stdout`: Whether to output to stdout by default (default: false)
 - `clipboard`: Whether to copy to clipboard by default (default: false)
 - `line_numbers`: Whether to add line numbers by default (default: false)

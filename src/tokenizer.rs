@@ -135,8 +135,8 @@ impl FromStr for Model {
             "gpt4" => Ok(Self::GPT4),
             "gpt3.5" => Ok(Self::GPT3_5),
             "deepseek-v4" => Ok(Self::DeepSeekV4),
-            "deepseek-v3" | "deepseek" => Ok(Self::DeepSeekV3),
-            "deepseek-r1" => Ok(Self::DeepSeekR1),
+            "deepseek-v3" => Ok(Self::DeepSeekV3),
+            "deepseek-r1" | "deepseek" => Ok(Self::DeepSeekR1),
             "glm5.2" => Ok(Self::Glm5_2),
             _ => Err(format!(
                 "ERROR: Unsupported model: {value}. Supported models: {}",
@@ -202,6 +202,7 @@ mod tests {
     fn test_model_parsing_is_case_insensitive() {
         assert_eq!(Model::from_str("GPT5"), Ok(Model::GPT5));
         assert_eq!(Model::from_str("DeepSeek-V4"), Ok(Model::DeepSeekV4));
+        assert_eq!(Model::from_str("DeepSeek"), Ok(Model::DeepSeekR1));
         assert_eq!(Model::from_str("GLM5.2"), Ok(Model::Glm5_2));
     }
 
@@ -225,8 +226,11 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_deepseek_alias_maps_to_v3() {
-        assert_eq!(Model::from_str("deepseek"), Ok(Model::DeepSeekV3));
+    fn test_legacy_deepseek_alias_maps_to_r1() {
+        let model = Model::from_str("deepseek").unwrap();
+
+        assert_eq!(model, Model::DeepSeekR1);
+        assert_eq!(model.display_name(), "DeepSeek R1");
     }
 
     #[test]
@@ -267,28 +271,33 @@ mod tests {
     }
 
     #[test]
-    fn test_deepseek_ordinary_counts_and_alias_remain_equivalent() {
-        let v3 = deepseek_v3();
+    fn test_deepseek_alias_and_r1_counts_remain_equivalent() {
         let r1 = deepseek_r1();
         let alias =
             Model::from_str("deepseek").unwrap().to_tokenizer().unwrap();
 
         for fixture in FIXTURES {
-            let expected = v3.count_tokens(fixture).unwrap();
-            assert_eq!(r1.count_tokens(fixture).unwrap(), expected);
-            assert_eq!(alias.count_tokens(fixture).unwrap(), expected);
+            assert_eq!(
+                alias.count_tokens(fixture).unwrap(),
+                r1.count_tokens(fixture).unwrap()
+            );
         }
     }
 
     #[test]
     fn test_deepseek_r1_reasoning_token_differs_from_v3() {
-        let fixture = "<think>";
+        let alias =
+            Model::from_str("deepseek").unwrap().to_tokenizer().unwrap();
 
-        assert_eq!(hugging_face_ids(deepseek_r1(), fixture), [128798]);
-        assert_ne!(
-            hugging_face_ids(deepseek_v3(), fixture),
-            hugging_face_ids(deepseek_r1(), fixture)
-        );
+        for (fixture, expected_id) in
+            [("<think>", 128798), ("</think>", 128799)]
+        {
+            let r1_ids = hugging_face_ids(deepseek_r1(), fixture);
+
+            assert_eq!(r1_ids, [expected_id]);
+            assert_eq!(hugging_face_ids(&alias, fixture), r1_ids);
+            assert_ne!(hugging_face_ids(deepseek_v3(), fixture), r1_ids);
+        }
     }
 
     #[test]

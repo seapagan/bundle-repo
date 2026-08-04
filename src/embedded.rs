@@ -2,6 +2,7 @@ use rust_embed::{EmbeddedFile, RustEmbed};
 
 #[derive(RustEmbed)]
 #[folder = "resources/"]
+#[include = "tokenizers/*.json"]
 pub struct Resources;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,6 +54,7 @@ fn get_resource(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
 
     const DEEPSEEK_V3_SHA256: [u8; 32] = [
         0x62, 0x1a, 0xc2, 0xe3, 0x2d, 0x0d, 0xba, 0x65, 0x84, 0x04, 0x41,
@@ -86,8 +88,28 @@ mod tests {
 
         for (family, expected) in cases {
             let file = get_tokenizer_json(family).unwrap();
+            let actual: [u8; 32] = Sha256::digest(file.data.as_ref()).into();
+
+            assert_eq!(actual, expected);
             assert_eq!(file.metadata.sha256_hash(), expected);
         }
+    }
+
+    #[test]
+    fn test_runtime_resources_include_only_tokenizer_json() {
+        for family in [
+            TokenizerFamily::DeepSeekV3,
+            TokenizerFamily::DeepSeekR1,
+            TokenizerFamily::DeepSeekV4,
+            TokenizerFamily::Glm5_2,
+        ] {
+            assert!(Resources::get(family.resource_path()).is_some());
+        }
+
+        assert!(Resources::get("tokenizers/SOURCES.md").is_none());
+        assert!(
+            Resources::get("tokenizers/licenses/DeepSeek-MIT.txt").is_none()
+        );
     }
 
     #[test]
