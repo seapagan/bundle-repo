@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: write # Required to create releases and upload assets.
     env:
-      BINARY_NAME: lsp
+      BINARY_NAME: bundlerepo
     strategy:
       fail-fast: false
       matrix:
