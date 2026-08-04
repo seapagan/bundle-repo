@@ -1,9 +1,7 @@
 use clap::{ArgAction, Parser};
 
-use crate::structs::DEFAULT_OUTPUT_FILE;
-
-const VALID_MODELS: [&str; 6] =
-    ["gpt4o", "gpt4", "gpt3.5", "gpt3", "gpt2", "deepseek"];
+use crate::structs::{DEFAULT_MODEL, DEFAULT_OUTPUT_FILE};
+use crate::tokenizer::MODEL_VALUES;
 
 fn parse_gzip_level(value: &str) -> Result<u32, String> {
     match value.parse::<u32>() {
@@ -72,9 +70,10 @@ pub struct Flags {
         long = "model",
         short = 'm',
         help = &format!(
-            "Model to use for tokenization count. "
+            "Model to use for tokenization count. (Defaults to '{DEFAULT_MODEL}')"
         ),
-        value_parser = VALID_MODELS
+        ignore_case = true,
+        value_parser = MODEL_VALUES
     )]
     pub model: Option<String>,
 
@@ -309,6 +308,54 @@ mod tests {
     }
 
     #[test]
+    fn test_all_supported_model_values() {
+        for model in MODEL_VALUES {
+            let args = Flags::parse_from(["program", "--model", model]);
+            assert_eq!(args.model.as_deref(), Some(model));
+        }
+    }
+
+    #[test]
+    fn test_model_values_are_case_insensitive() {
+        for model in ["GPT5", "gPt4O", "DeepSeek-V4", "GLM5.2", "DeepSeek"] {
+            let args = Flags::parse_from(["program", "--model", model]);
+            assert_eq!(args.model.as_deref(), Some(model));
+        }
+    }
+
+    #[test]
+    fn test_legacy_deepseek_alias_selects_r1() {
+        use crate::tokenizer::Model;
+
+        for alias in ["deepseek", "DeepSeek"] {
+            let args = Flags::parse_from(["program", "--model", alias]);
+            assert_eq!(args.model.unwrap().parse(), Ok(Model::DeepSeekR1));
+        }
+    }
+
+    #[test]
+    fn test_removed_model_values_are_rejected() {
+        for model in ["gpt2", "GPT2", "gpt3", "GPT3"] {
+            assert!(
+                Flags::try_parse_from(["program", "--model", model]).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn test_model_help_lists_modern_values_and_default() {
+        use clap::CommandFactory;
+
+        let help = Flags::command().render_long_help().to_string();
+        for model in MODEL_VALUES {
+            assert!(help.contains(model), "help omitted {model}");
+        }
+        assert!(help.contains("Defaults to 'gpt5'"));
+        assert!(!help.contains("gpt2"));
+        assert!(!help.contains("gpt3,"));
+    }
+
+    #[test]
     fn test_clipboard_flag() {
         let args = Flags::parse_from(["program", "user/repo", "--clipboard"]);
         assert!(args.clipboard);
@@ -386,9 +433,11 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("invalid value 'invalid_model'"));
-        assert!(err.contains(
-            "possible values: gpt4o, gpt4, gpt3.5, gpt3, gpt2, deepseek"
-        ));
+        assert!(err.contains("possible values: gpt5, gpt4o, gpt4, gpt3.5"));
+        assert!(err.contains("deepseek-v4, deepseek-v3, deepseek-r1"));
+        assert!(err.contains("glm5.2, deepseek"));
+        assert!(!err.contains("gpt2"));
+        assert!(!err.contains("gpt3,"));
     }
 
     #[test]

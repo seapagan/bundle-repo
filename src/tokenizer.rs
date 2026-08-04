@@ -1,23 +1,40 @@
 use std::str::FromStr;
-use tiktoken_rs::{cl100k_base, o200k_base, r50k_base, CoreBPE};
+
+use tiktoken_rs::{cl100k_base, o200k_base, CoreBPE};
 use tokenizers::Tokenizer;
 
-use crate::embedded;
+use crate::embedded::{self, TokenizerFamily};
 
-// We can't derive Debug for TokenizerType because CoreBPE doesn't implement Debug
+pub const MODEL_VALUES: [&str; 9] = [
+    "gpt5",
+    "gpt4o",
+    "gpt4",
+    "gpt3.5",
+    "deepseek-v4",
+    "deepseek-v3",
+    "deepseek-r1",
+    "glm5.2",
+    "deepseek",
+];
+
+// CoreBPE does not implement Debug, so this wrapper cannot derive it.
 pub enum TokenizerType {
-    Gpt(CoreBPE),
-    DeepSeek(Box<Tokenizer>),
+    Tiktoken(CoreBPE),
+    HuggingFace {
+        tokenizer: Box<Tokenizer>,
+        family: TokenizerFamily,
+    },
 }
 
-// Manually implement Debug for TokenizerType
 impl std::fmt::Debug for TokenizerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenizerType::Gpt(_) => write!(f, "TokenizerType::Gpt(...)"),
-            TokenizerType::DeepSeek(_) => {
-                write!(f, "TokenizerType::DeepSeek(...)")
-            }
+            Self::Tiktoken(_) => write!(f, "TokenizerType::Tiktoken(...)"),
+            Self::HuggingFace { family, .. } => write!(
+                f,
+                "TokenizerType::HuggingFace({}, ...)",
+                family.display_name()
+            ),
         }
     }
 }
@@ -25,197 +42,349 @@ impl std::fmt::Debug for TokenizerType {
 impl TokenizerType {
     pub fn count_tokens(&self, text: &str) -> Result<usize, String> {
         match self {
-            TokenizerType::Gpt(tokenizer) => {
+            Self::Tiktoken(tokenizer) => {
                 Ok(tokenizer.encode_with_special_tokens(text).len())
             }
-            TokenizerType::DeepSeek(tokenizer) => tokenizer
+            Self::HuggingFace { tokenizer, family } => tokenizer
                 .encode(text, false)
-                .map_err(|e| format!("DeepSeek tokenization error: {}", e))
+                .map_err(|error| {
+                    format!(
+                        "{} tokenization error: {error}",
+                        family.display_name()
+                    )
+                })
                 .map(|encoding| encoding.get_ids().len()),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Model {
+    GPT5,
     GPT4o,
     GPT4,
     GPT3_5,
-    GPT3,
-    GPT2,
-    DeepSeek,
+    DeepSeekV4,
+    DeepSeekV3,
+    DeepSeekR1,
+    Glm5_2,
 }
 
 impl Model {
-    /// Converts the `Model` enum to the corresponding tokenizer instance.
-    pub fn to_tokenizer(&self) -> Result<TokenizerType, String> {
+    /// Converts the model to its corresponding tokenizer instance.
+    pub fn to_tokenizer(self) -> Result<TokenizerType, String> {
         match self {
-            Model::GPT4o => Ok(TokenizerType::Gpt(
-                o200k_base().map_err(|e| e.to_string())?,
-            )),
-            Model::GPT4 | Model::GPT3_5 => Ok(TokenizerType::Gpt(
-                cl100k_base().map_err(|e| e.to_string())?,
-            )),
-            Model::GPT3 | Model::GPT2 => {
-                Ok(TokenizerType::Gpt(r50k_base().map_err(|e| e.to_string())?))
+            Self::GPT5 | Self::GPT4o => {
+                o200k_base().map(TokenizerType::Tiktoken).map_err(|error| {
+                    format!("Failed to load o200k_base tokenizer: {error}")
+                })
             }
-            Model::DeepSeek => {
-                let json_data = embedded::get_tokenizer_json()?;
-                let tokenizer =
-                    Tokenizer::from_bytes(&json_data).map_err(|e| {
-                        format!("Failed to load DeepSeek tokenizer: {}", e)
-                    })?;
-                Ok(TokenizerType::DeepSeek(Box::new(tokenizer)))
+            Self::GPT4 | Self::GPT3_5 => {
+                cl100k_base().map(TokenizerType::Tiktoken).map_err(|error| {
+                    format!("Failed to load cl100k_base tokenizer: {error}")
+                })
             }
+            Self::DeepSeekV4 => load_hugging_face(TokenizerFamily::DeepSeekV4),
+            Self::DeepSeekV3 => load_hugging_face(TokenizerFamily::DeepSeekV3),
+            Self::DeepSeekR1 => load_hugging_face(TokenizerFamily::DeepSeekR1),
+            Self::Glm5_2 => load_hugging_face(TokenizerFamily::Glm5_2),
         }
     }
 
     /// Returns a user-friendly name for the model.
-    pub fn display_name(&self) -> &'static str {
+    pub const fn display_name(self) -> &'static str {
         match self {
-            Model::GPT4o => "GPT-4o",
-            Model::GPT4 => "GPT-4",
-            Model::GPT3_5 => "GPT-3.5",
-            Model::GPT3 => "GPT-3",
-            Model::GPT2 => "GPT-2",
-            Model::DeepSeek => "DeepSeek",
+            Self::GPT5 => "GPT-5",
+            Self::GPT4o => "GPT-4o",
+            Self::GPT4 => "GPT-4",
+            Self::GPT3_5 => "GPT-3.5",
+            Self::DeepSeekV4 => "DeepSeek V4",
+            Self::DeepSeekV3 => "DeepSeek V3",
+            Self::DeepSeekR1 => "DeepSeek R1",
+            Self::Glm5_2 => "GLM-5.2",
         }
     }
+}
+
+fn load_hugging_face(
+    family: TokenizerFamily,
+) -> Result<TokenizerType, String> {
+    let file = embedded::get_tokenizer_json(family)?;
+    let tokenizer =
+        Tokenizer::from_bytes(file.data.as_ref()).map_err(|error| {
+            format!(
+                "Failed to load {} tokenizer from {}: {error}",
+                family.display_name(),
+                family.resource_path()
+            )
+        })?;
+
+    Ok(TokenizerType::HuggingFace {
+        tokenizer: Box::new(tokenizer),
+        family,
+    })
 }
 
 impl FromStr for Model {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "gpt4o" => Ok(Model::GPT4o),
-            "gpt4" => Ok(Model::GPT4),
-            "gpt3.5" => Ok(Model::GPT3_5),
-            "gpt3" => Ok(Model::GPT3),
-            "gpt2" => Ok(Model::GPT2),
-            "deepseek" => Ok(Model::DeepSeek),
-            _ => Err(format!("ERROR: Unsupported model: {}", s)),
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_lowercase().as_str() {
+            "gpt5" => Ok(Self::GPT5),
+            "gpt4o" => Ok(Self::GPT4o),
+            "gpt4" => Ok(Self::GPT4),
+            "gpt3.5" => Ok(Self::GPT3_5),
+            "deepseek-v4" => Ok(Self::DeepSeekV4),
+            "deepseek-v3" => Ok(Self::DeepSeekV3),
+            "deepseek-r1" | "deepseek" => Ok(Self::DeepSeekR1),
+            "glm5.2" => Ok(Self::Glm5_2),
+            _ => Err(format!(
+                "ERROR: Unsupported model: {value}. Supported models: {}",
+                MODEL_VALUES.join(", ")
+            )),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::OnceLock;
+
     use super::*;
 
-    #[test]
-    fn test_model_from_str_valid() {
-        assert!(matches!(Model::from_str("gpt4o"), Ok(Model::GPT4o)));
-        assert!(matches!(Model::from_str("gpt4"), Ok(Model::GPT4)));
-        assert!(matches!(Model::from_str("gpt3.5"), Ok(Model::GPT3_5)));
-        assert!(matches!(Model::from_str("gpt3"), Ok(Model::GPT3)));
-        assert!(matches!(Model::from_str("gpt2"), Ok(Model::GPT2)));
-        assert!(matches!(Model::from_str("deepseek"), Ok(Model::DeepSeek)));
+    const FIXTURES: [&str; 5] = [
+        "Hello, world! Bundle Repo counts tokens.",
+        "fn main() {\n    println!(\"Hello, world!\");\n}\n",
+        "line one\r\nline two\r\n",
+        "Bundle 仓库 トークン 테스트",
+        "🦀 Rust + emoji! @#$%^&*()",
+    ];
+
+    fn deepseek_v3() -> &'static TokenizerType {
+        static TOKENIZER: OnceLock<TokenizerType> = OnceLock::new();
+        TOKENIZER.get_or_init(|| Model::DeepSeekV3.to_tokenizer().unwrap())
+    }
+
+    fn deepseek_v4() -> &'static TokenizerType {
+        static TOKENIZER: OnceLock<TokenizerType> = OnceLock::new();
+        TOKENIZER.get_or_init(|| Model::DeepSeekV4.to_tokenizer().unwrap())
+    }
+
+    fn deepseek_r1() -> &'static TokenizerType {
+        static TOKENIZER: OnceLock<TokenizerType> = OnceLock::new();
+        TOKENIZER.get_or_init(|| Model::DeepSeekR1.to_tokenizer().unwrap())
+    }
+
+    fn glm5_2() -> &'static TokenizerType {
+        static TOKENIZER: OnceLock<TokenizerType> = OnceLock::new();
+        TOKENIZER.get_or_init(|| Model::Glm5_2.to_tokenizer().unwrap())
     }
 
     #[test]
-    fn test_model_from_str_case_insensitive() {
-        assert!(matches!(Model::from_str("GPT4O"), Ok(Model::GPT4o)));
-        assert!(matches!(Model::from_str("DEEPSEEK"), Ok(Model::DeepSeek)));
-    }
+    fn test_supported_models_parse() {
+        let cases = [
+            ("gpt5", Model::GPT5),
+            ("gpt4o", Model::GPT4o),
+            ("gpt4", Model::GPT4),
+            ("gpt3.5", Model::GPT3_5),
+            ("deepseek-v4", Model::DeepSeekV4),
+            ("deepseek-v3", Model::DeepSeekV3),
+            ("deepseek-r1", Model::DeepSeekR1),
+            ("glm5.2", Model::Glm5_2),
+        ];
 
-    #[test]
-    fn test_model_display_names() {
-        assert_eq!(Model::DeepSeek.display_name(), "DeepSeek");
-    }
-
-    #[test]
-    fn test_tokenizer_compatibility() {
-        let test_string = "Hello, world!";
-
-        // Test that GPT models work
-        let gpt4 = Model::GPT4.to_tokenizer().unwrap();
-        let count = gpt4.count_tokens(test_string).unwrap();
-        assert!(count > 0);
-
-        // Skip DeepSeek test if tokenizer file is not present
-        if let Ok(deepseek) = Model::DeepSeek.to_tokenizer() {
-            let count = deepseek.count_tokens(test_string).unwrap();
-            assert!(count > 0);
+        for (value, expected) in cases {
+            assert_eq!(Model::from_str(value), Ok(expected));
         }
     }
 
     #[test]
-    fn test_deepseek_tokenizer() {
-        let model = Model::DeepSeek;
-        let tokenizer = model.to_tokenizer().unwrap();
+    fn test_public_model_values_and_variants_stay_in_sync() {
+        let parsed_models = MODEL_VALUES.map(|value| {
+            value.parse::<Model>().unwrap_or_else(|error| {
+                panic!("CLI model value does not parse: {value}: {error}")
+            })
+        });
 
-        // Test basic tokenization
-        let count = tokenizer.count_tokens("Hello, world!").unwrap();
-        assert!(count > 0);
-
-        // Test empty string
-        let count = tokenizer.count_tokens("").unwrap();
-        assert_eq!(count, 0);
-
-        // Test multi-line code
-        let code = r#"
-fn main() {
-    println!("Hello, world!");
-}
-"#;
-        let count = tokenizer.count_tokens(code).unwrap();
-        assert!(count > 0);
-
-        // Test special characters
-        let special = "🦀 Rust is awesome! \n\t\r";
-        let count = tokenizer.count_tokens(special).unwrap();
-        assert!(count > 0);
-    }
-
-    #[test]
-    fn test_deepseek_model_conversion() {
-        // Test model string parsing
-        assert!(matches!(Model::from_str("deepseek"), Ok(Model::DeepSeek)));
-        assert!(matches!(Model::from_str("DEEPSEEK"), Ok(Model::DeepSeek)));
-        assert!(matches!(Model::from_str("DeepSeek"), Ok(Model::DeepSeek)));
-
-        // Test display name
-        assert_eq!(Model::DeepSeek.display_name(), "DeepSeek");
-    }
-
-    #[test]
-    fn test_tokenizer_type_debug() {
-        let gpt = Model::GPT4.to_tokenizer().unwrap();
-        let deepseek = Model::DeepSeek.to_tokenizer().unwrap();
-
-        // Test Debug implementation
-        assert_eq!(format!("{:?}", gpt), "TokenizerType::Gpt(...)");
-        assert_eq!(format!("{:?}", deepseek), "TokenizerType::DeepSeek(...)");
-    }
-
-    #[test]
-    fn test_tokenizer_encoding() {
-        let model = Model::GPT4;
-        let tokenizer = model.to_tokenizer().unwrap();
-        let test_string = "Hello, world!";
-
-        // Get the count using our count_tokens method
-        let count = tokenizer.count_tokens(test_string).unwrap();
-
-        // Get the tokens directly using both methods
-        if let TokenizerType::Gpt(t) = &tokenizer {
-            let special_tokens = t.encode_with_special_tokens(test_string);
-            let regular_tokens = t.encode_ordinary(test_string);
-
-            // Verify both methods produce the same output
-            assert_eq!(special_tokens, regular_tokens,
-                "encode_with_special_tokens and encode_ordinary should produce the same output");
-
-            // Verify our count_tokens matches the direct token count
-            assert_eq!(count, special_tokens.len(),
-                "count_tokens should match the token count from direct encoding");
-
-            // Verify we get a non-zero count for non-empty input
+        for model in [
+            Model::GPT5,
+            Model::GPT4o,
+            Model::GPT4,
+            Model::GPT3_5,
+            Model::DeepSeekV4,
+            Model::DeepSeekV3,
+            Model::DeepSeekR1,
+            Model::Glm5_2,
+        ] {
             assert!(
-                count > 0,
-                "Non-empty input should produce non-zero token count"
+                parsed_models.contains(&model),
+                "Model variant has no public CLI value: {model:?}"
             );
+        }
+    }
+
+    #[test]
+    fn test_model_parsing_is_case_insensitive() {
+        assert_eq!(Model::from_str("GPT5"), Ok(Model::GPT5));
+        assert_eq!(Model::from_str("DeepSeek-V4"), Ok(Model::DeepSeekV4));
+        assert_eq!(Model::from_str("DeepSeek"), Ok(Model::DeepSeekR1));
+        assert_eq!(Model::from_str("GLM5.2"), Ok(Model::Glm5_2));
+    }
+
+    #[test]
+    fn test_removed_models_are_rejected() {
+        for value in ["gpt2", "GPT2", "gpt3", "GPT3"] {
+            let error = Model::from_str(value).unwrap_err();
+            assert!(error.contains("Unsupported model"));
+            assert!(error.contains(value));
+        }
+    }
+
+    #[test]
+    fn test_unknown_model_error_lists_supported_values() {
+        let error = Model::from_str("unknown").unwrap_err();
+
+        assert!(error.contains("Unsupported model: unknown"));
+        for value in MODEL_VALUES {
+            assert!(error.contains(value), "error omitted {value}");
+        }
+    }
+
+    #[test]
+    fn test_legacy_deepseek_alias_maps_to_r1() {
+        let model = Model::from_str("deepseek").unwrap();
+
+        assert_eq!(model, Model::DeepSeekR1);
+        assert_eq!(model.display_name(), "DeepSeek R1");
+    }
+
+    #[test]
+    fn test_model_display_names() {
+        let cases = [
+            (Model::GPT5, "GPT-5"),
+            (Model::GPT4o, "GPT-4o"),
+            (Model::GPT4, "GPT-4"),
+            (Model::GPT3_5, "GPT-3.5"),
+            (Model::DeepSeekV4, "DeepSeek V4"),
+            (Model::DeepSeekV3, "DeepSeek V3"),
+            (Model::DeepSeekR1, "DeepSeek R1"),
+            (Model::Glm5_2, "GLM-5.2"),
+        ];
+
+        for (model, expected) in cases {
+            assert_eq!(model.display_name(), expected);
+        }
+    }
+
+    #[test]
+    fn test_tiktoken_model_pairs_have_equivalent_counts() {
+        let gpt5 = Model::GPT5.to_tokenizer().unwrap();
+        let gpt4o = Model::GPT4o.to_tokenizer().unwrap();
+        let gpt4 = Model::GPT4.to_tokenizer().unwrap();
+        let gpt3_5 = Model::GPT3_5.to_tokenizer().unwrap();
+
+        for fixture in FIXTURES {
+            assert_eq!(
+                gpt5.count_tokens(fixture).unwrap(),
+                gpt4o.count_tokens(fixture).unwrap()
+            );
+            assert_eq!(
+                gpt4.count_tokens(fixture).unwrap(),
+                gpt3_5.count_tokens(fixture).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn test_deepseek_alias_and_r1_counts_remain_equivalent() {
+        let r1 = deepseek_r1();
+        let alias =
+            Model::from_str("deepseek").unwrap().to_tokenizer().unwrap();
+
+        for fixture in FIXTURES {
+            assert_eq!(
+                alias.count_tokens(fixture).unwrap(),
+                r1.count_tokens(fixture).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn test_deepseek_r1_reasoning_token_differs_from_v3() {
+        let alias =
+            Model::from_str("deepseek").unwrap().to_tokenizer().unwrap();
+
+        for (fixture, expected_id) in
+            [("<think>", 128798), ("</think>", 128799)]
+        {
+            let r1_ids = hugging_face_ids(deepseek_r1(), fixture);
+
+            assert_eq!(r1_ids, [expected_id]);
+            assert_eq!(hugging_face_ids(&alias, fixture), r1_ids);
+            assert_ne!(hugging_face_ids(deepseek_v3(), fixture), r1_ids);
+        }
+    }
+
+    #[test]
+    fn test_deepseek_v4_specific_added_token_differs_from_v3_and_r1() {
+        let fixture = "<｜begin▁of▁repo▁name｜>";
+        let v4_ids = hugging_face_ids(deepseek_v4(), fixture);
+
+        assert_eq!(v4_ids, [128815]);
+        assert_ne!(v4_ids, hugging_face_ids(deepseek_v3(), fixture));
+        assert_ne!(v4_ids, hugging_face_ids(deepseek_r1(), fixture));
+    }
+
+    #[test]
+    fn test_all_backends_tokenize_fixtures_and_empty_input() {
+        let tokenizers = [
+            (gpt5(), [9, 12, 6, 8, 13]),
+            (gpt4(), [9, 12, 6, 13, 13]),
+            (deepseek_v3(), [10, 12, 8, 9, 15]),
+            (deepseek_r1(), [10, 12, 8, 9, 15]),
+            (deepseek_v4(), [10, 12, 8, 9, 15]),
+            (glm5_2(), [9, 12, 6, 10, 13]),
+        ];
+
+        for (tokenizer, expected_counts) in tokenizers {
+            assert_eq!(tokenizer.count_tokens("").unwrap(), 0);
+            for (fixture, expected) in
+                FIXTURES.into_iter().zip(expected_counts)
+            {
+                let count = tokenizer.count_tokens(fixture).unwrap();
+                assert_eq!(count, expected, "{tokenizer:?} changed count");
+            }
+        }
+    }
+
+    #[test]
+    fn test_tokenizer_type_debug_includes_backend_context() {
+        let tiktoken = Model::GPT5.to_tokenizer().unwrap();
+        assert_eq!(format!("{tiktoken:?}"), "TokenizerType::Tiktoken(...)");
+        assert_eq!(
+            format!("{:?}", deepseek_v4()),
+            "TokenizerType::HuggingFace(DeepSeek V4, ...)"
+        );
+    }
+
+    fn gpt5() -> &'static TokenizerType {
+        static TOKENIZER: OnceLock<TokenizerType> = OnceLock::new();
+        TOKENIZER.get_or_init(|| Model::GPT5.to_tokenizer().unwrap())
+    }
+
+    fn gpt4() -> &'static TokenizerType {
+        static TOKENIZER: OnceLock<TokenizerType> = OnceLock::new();
+        TOKENIZER.get_or_init(|| Model::GPT4.to_tokenizer().unwrap())
+    }
+
+    fn hugging_face_ids(tokenizer: &TokenizerType, text: &str) -> Vec<u32> {
+        match tokenizer {
+            TokenizerType::HuggingFace { tokenizer, .. } => {
+                tokenizer.encode(text, false).unwrap().get_ids().to_vec()
+            }
+            TokenizerType::Tiktoken(_) => {
+                panic!("expected Hugging Face backend")
+            }
         }
     }
 }

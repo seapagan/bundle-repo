@@ -30,7 +30,10 @@ ignore = "0.4"
 xml = "1.0"
 tiktoken-rs = "0.12.0"
 tokenizers = "0.23"
-rust-embed = "8.2.0"
+rust-embed = { version = "8.12.0", features = [
+  "compression",
+  "include-exclude",
+] }
 tabled = "0.21.0"
 infer = "0.22.0"
 arboard = { version = "3.4.1", default-features = false, features = [
@@ -50,4 +53,5 @@ incremental = true
 
 [dev-dependencies]
 fs_extra = "1.3"
+sha2 = "0.10"
 temp-env = "0.3.6"

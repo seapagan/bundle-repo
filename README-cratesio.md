@@ -36,7 +36,7 @@ Pack a local or remote Git Repository to XML for LLM Consumption.
 Summary:
      Total Files processed:  13
  Total output size (bytes):  79068
-      Token count (GPT-4o):  18766
+       Token count (GPT-5):  18766
 ```
 
 - [Compatibility](#compatibility)
@@ -89,9 +89,10 @@ and 11 tested).
   - `size`: file size in bytes
   - `lines`: number of lines in the file
   - Raw file content (not escaped)
-- **Token Count**: Calculates the number of tokens in the final XML file, based
-  on the specified model (default is GPT-4o). Only OpenAI models are supported
-  at this time, though I may add support for others in the future.
+- **Token Count**: Estimates the final XML size in model tokens. BundleRepo uses
+  local `tiktoken` backends for GPT models and embedded official tokenizers for
+  DeepSeek and GLM, so counting remains offline in one binary. The default is
+  GPT-5.
 - **XML Output**: Generates an XML file (`packed-repo.xml`) that contains the
   entire repository structure and file details.
 - **Global and local configuration files**: Allows you to set default values
@@ -282,29 +283,47 @@ added to the `<instructions>` node to explain the line numbers.
 
 ### Choose Model for Token Count
 
-After generating the xml file, the tool gives a count of the number of tokens in
-the file, to give you an idea of context usage and costs. By default it
-calculates the number of tokens for the GPT-4o model, but you can specify
-another model using the `--model` or `-m` flag:
+After generating the XML file, BundleRepo reports an indicative token count for
+the selected model. The count helps you judge the approximate bundle size in
+LLM terms. It does not include provider chat templates, tool definitions,
+message formatting or other request overhead. The default model is GPT-5; use
+`--model` or `-m` to select another model:
 
 ```bash
-bundlerepo user_name/repo_name --model gpt3.5
+bundlerepo user_name/repo_name --model deepseek-v4
 ```
 
-Valid models are `gpt4o`, `gpt4`, `gpt3.5`, `gpt3`, `gpt2` and `deepseek`. It is important
-to use the correct model, as the token count is vastly different between the 3
-and 4 series models.
+Supported model choices and tokenizer backends:
 
-The tool supports both OpenAI models (using the `tiktoken` library) and the DeepSeek model.
-For OpenAI models, the count returned by this tool is identical to that returned by
-their [web app](https://platform.openai.com/tokenizer).
+| Model choice | Tokenizer |
+| --- | --- |
+| `gpt5` | `o200k_base` for the GPT-5.x tokenizer family |
+| `gpt4o` | `o200k_base` |
+| `gpt4` | `cl100k_base` |
+| `gpt3.5` | `cl100k_base` |
+| `deepseek-v4` | Pinned official DeepSeek V4 tokenizer |
+| `deepseek-v3` | Pinned official DeepSeek V3 tokenizer |
+| `deepseek-r1` | Pinned official full DeepSeek-R1-0528 tokenizer |
+| `glm5.2` | Pinned official Z.ai GLM-5.2 tokenizer |
 
-For the DeepSeek model, the tool uses the official DeepSeek tokenizer specs
-from [here](https://api-docs.deepseek.com/quick_start/token_usage) to ensure accurate
-token counts.
+The legacy `deepseek` value remains an alias for `deepseek-r1`, preserving its
+historical full R1 tokenizer behaviour. New configurations should use the
+explicit `deepseek-v3` or `deepseek-r1` value. The official V3 and full R1-0528
+files share their base vocabulary and merges, but differ in their added
+reasoning tokens. Full R1 support does not cover distill models based on Qwen
+or Llama tokenizers. DeepSeek V4 and GLM-5.2 each use their own pinned official
+tokenizer.
 
-Claude models are not currently supported as Anthropic has not released their tokenizer
-specifications. Support may be added in the future if they release a public tokenizer.
+#### Migrating older OpenAI model settings
+
+`gpt2` and `gpt3` are no longer supported model values. Existing configuration
+files using either value now produce an unsupported-model error. For a current
+general OpenAI estimate, normally select `gpt5`; `gpt4` and `gpt3.5` remain
+available when their distinct tokenizer is required.
+
+BundleRepo counts the generated raw XML text with the selected tokenizer. The
+result indicates bundle size, but it does not predict complete provider request
+usage or billing.
 
 ### GitHub Token
 
@@ -336,21 +355,21 @@ Arguments:
   [REPO]  GitHub repository to clone (e.g. 'user/repo' or full GitHub URL). If not provided, the current directory will be searched for a Git repository.
 
 Options:
-  -b, --branch <BRANCH>     Specify a branch to checkout for remote repositories
-  -f, --file <OUTPUT_FILE>  Filename to save the bundle as. [default: packed-repo.xml]
-  -s, --stdout              Output the XML directly to stdout without creating a file.
-  -z, --gzip[=<LEVEL>]      Compress output with gzip at an optional level from 1 to 9 (use =LEVEL)
-      --no-gzip             Disable gzip output, overriding configuration
-  -m, --model <MODEL>       Model to use for tokenization. Supported models: 'gpt4o', 'gpt4', 'gpt3.5', 'gpt3', 'gpt2' [default: gpt4o]
-  -c, --clipboard           Copy the XML to the clipboard after creating it.
-  -l, --lnumbers            Add line numbers to each code file in the output.
-  -t, --token <TOKEN>       GitHub personal access token (required for private repos and to pass rate limits)
-  -e, --extend-exclude <PATTERN>  Additional file pattern to exclude (can be specified multiple times)
-  -x, --exclude <PATTERN>   File pattern to exclude, replacing the default ignore list (can be specified multiple times)
-  -u, --utf8                Force UTF-8 encoding for all text files
-  -U, --no-utf8             Disable UTF-8 encoding for text files (overrides --utf8)
-  -V, --version             Print version information and exit
-  -h, --help                Print help
+  -b, --branch <BRANCH>           Specify a branch to checkout for remote repositories
+  -f, --file <OUTPUT_FILE>        Filename to save the bundle as. (Defaults to 'packed-repo.xml')
+  -s, --stdout                    Output the XML directly to stdout without creating a file.
+  -z, --gzip[=<LEVEL>]            Compress output with gzip at an optional level from 1 to 9 (use =LEVEL)
+      --no-gzip                   Disable gzip output, overriding configuration
+  -m, --model <MODEL>             Model to use for tokenization count. (Defaults to 'gpt5') [possible values: gpt5, gpt4o, gpt4, gpt3.5, deepseek-v4, deepseek-v3, deepseek-r1, glm5.2, deepseek]
+  -c, --clipboard                 Copy the XML to the clipboard after creating it.
+  -l, --lnumbers                  Add line numbers to each code file in the output.
+  -t, --token <TOKEN>             GitHub personal access token (required for private repos and to pass rate limits)
+  -V, --version                   Print version information and exit
+  -e, --extend-exclude <PATTERN>  Add file/directory pattern to exclude, can be specified multiple times.
+  -x, --exclude <PATTERN>         Replace the existing exclude patterns with the specified pattern(s). Can be specified multiple times.
+  -u, --utf8                      Force UTF-8 encoding for all text files
+  -U, --no-utf8                   Disable UTF-8 encoding for text files
+  -h, --help                      Print help
 ```
 
 ## Configuration File
@@ -369,7 +388,7 @@ The configuration files use TOML format. Here's an example configuration:
 ```toml
 # ~/.config/bundlerepo/config.toml or .bundlerepo.toml
 output_file = "my-default-output.xml"
-model = "gpt3.5"
+model = "gpt5"
 stdout = false
 clipboard = false
 line_numbers = true
@@ -393,7 +412,9 @@ Available configuration options:
 
 - `output_file`: Default output filename (default: "packed-repo.xml"). A leading
   `~` path component is expanded to your home directory.
-- `model`: Default model for token counting (default: "gpt4o")
+- `model`: Default model for token counting (default: "gpt5"). See the model
+  table above for supported values; `deepseek` is a legacy alias for
+  `deepseek-r1`.
 - `stdout`: Whether to output to stdout by default (default: false)
 - `clipboard`: Whether to copy to clipboard by default (default: false)
 - `line_numbers`: Whether to add line numbers by default (default: false)

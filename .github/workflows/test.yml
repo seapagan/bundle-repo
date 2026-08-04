@@ -83,6 +83,9 @@ jobs:
           --lcov
           --output-path=coverage-linux.lcov
 
+      - name: Verify release-embedded tokenizer assets
+        run: cargo make release-embedded-assets-test
+
       - name: Build native Linux targets
         run: cargo make unix-build
 
@@ -186,6 +189,9 @@ jobs:
           --remap-path-prefix
           --lcov
           --output-path=coverage-windows.lcov
+
+      - name: Verify release-embedded tokenizer assets
+        run: cargo make release-embedded-assets-test
 
       - name: Build native Windows targets
         run: cargo make windows-build

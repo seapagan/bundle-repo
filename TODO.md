@@ -54,12 +54,36 @@
   all 3 at this current code state, but we need to develop a test suite and get
   the CI pipeline working to ensure that it continues to work on all 3.
 - allow to work with non-git repositories (local only obviously).
-- modernise token counting with model-aware tokenizer backends for current
-  OpenAI, Claude, DeepSeek, GLM, Gemini, and other commonly used models.
-  Prefer official local tokenizers, optionally support provider token-counting
-  APIs, retain a clearly labelled conservative fallback estimate, and record
-  the tokenizer source, model profile, and exact-versus-estimated status in the
-  generated output.
+- extend the model-aware token counting backends beyond the current GPT,
+  DeepSeek, and GLM support. Future work includes official local tokenizers for
+  Gemini, Claude, Qwen, and other provider families where suitable tokenizer
+  assets exist. Provider token-counting APIs, fallback estimates, and generated
+  output metadata remain separate design work.
+- choose a tokenizer asset distribution and package-capacity strategy. The
+  generated `.crate` is approximately 8.76 MB against crates.io's normal
+  10 MiB compressed package limit, leaving approximately 1.7 MB of headroom.
+  All embedded tokenizer source assets are included in the published crate,
+  and the release binary contains the compressed form of every tokenizer
+  family even though each invocation uses only one. GLM expands to roughly
+  20 MB and is JSON-parsed when selected.
+
+  **Do not add another embedded tokenizer family until a package-size and
+  tokenizer-distribution strategy has been selected.** Future investigation
+  should consider, without choosing an approach here:
+  - requesting a crates.io package-size limit increase;
+  - storing assets in a more efficiently precompressed representation and
+    decompressing them in memory;
+  - moving non-default tokenizer families into optional or downloaded
+    tokenizer packs;
+  - splitting tokenizer assets into a separate crate or family-specific
+    crates;
+  - providing Cargo features for smaller custom binaries, while recognising
+    that features alone do not reduce the published `.crate` unless unused
+    assets are excluded or separated;
+  - adding PR CI that builds and verifies the `.crate`, checks required
+    contents, and enforces an agreed package-size ceiling; and
+  - reconsidering third-party-notice and archive presentation during the
+    future release and packaging workflow cleanup.
 - revisit the `cargo deny` duplicate-version warnings alongside the pending
   dependency upgrades. Prefer compatible lockfile refreshes that collapse
   transitive versions, and avoid forced or convoluted dependency unification.
