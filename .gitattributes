@@ -1,1 +1,3 @@
 resources/tokenizers/*.json binary
+tests/fixtures/encodings/*.txt binary
+tests/fixtures/encodings/README.md text eol=lf
