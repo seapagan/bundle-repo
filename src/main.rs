@@ -19,8 +19,10 @@ use tokenizer::Model;
 mod cli;
 mod embedded;
 mod filelist;
+mod progress;
 mod repo;
 mod structs;
+mod text_processing;
 mod timings;
 mod tokenizer;
 mod xml_output;
@@ -91,23 +93,34 @@ fn main() {
         cli::show_header();
     }
 
+    let mut reporter = progress::ProgressReporter::new(
+        std::io::stdout(),
+        std::io::stderr(),
+        params.stdout,
+    );
+
     // Parse the tokenizer Model from the CLI argument. We will build the
     // tokenizer from this and also use it to display the model name in the
     // summary.
     let model = match params.model.clone().unwrap().parse::<Model>() {
         Ok(model) => model,
         Err(e) => {
-            eprintln!("{}", e);
+            reporter.error(&e).unwrap();
             exit(1);
         }
     };
 
     // Create the tokenizer from the parsed model
+    reporter
+        .phase(&format!("Loading tokenizer for {}", model.display_name()))
+        .unwrap();
     let tokenizer_start = Instant::now();
     let tokenizer = match model.to_tokenizer() {
         Ok(tokenizer) => tokenizer,
         Err(e) => {
-            eprintln!("Error: Failed to create tokenizer: {}", e);
+            reporter
+                .error(&format!("Error: Failed to create tokenizer: {e}"))
+                .unwrap();
             exit(1);
         }
     };
@@ -143,30 +156,33 @@ fn main() {
     );
     let file_tree = filelist::group_files_by_directory(file_list);
 
-    if !params.stdout && params.utf8 {
-        println!("-> Converting all text files to UTF-8 encoding");
-    }
-
     // Output XML
+    reporter.phase("Reading files and generating XML").unwrap();
     match xml_output::output_repo_as_xml_with_timings(
         &params,
         file_tree,
         &repo_folder,
         &tokenizer,
+        model.display_name(),
+        &mut reporter,
         &mut timings,
     ) {
         Ok((number_of_files, total_size, token_count)) => {
             if !params.stdout {
                 // Print the summary only if not using stdout
                 if params.clipboard {
-                    println!("-> Successfully copied XML to clipboard");
+                    reporter
+                        .normal_line("-> Successfully copied XML to clipboard")
+                        .unwrap();
                 } else {
-                    println!(
-                        "-> Successfully wrote XML to '{}'",
-                        xml_output::effective_output_file(&params).display()
-                    );
+                    reporter
+                        .normal_line(&format!(
+                            "-> Successfully wrote XML to '{}'",
+                            xml_output::effective_output_file(&params)
+                                .display()
+                        ))
+                        .unwrap();
                 }
-                println!("\nSummary:");
                 let summary_data = vec![
                     SummaryTable {
                         metric: "Total Files processed:".to_string(),
@@ -192,14 +208,18 @@ fn main() {
                     .with(Modify::list(Columns::first(), Alignment::right()))
                     .to_string();
 
-                println!("{}\n", table);
+                reporter
+                    .normal_text(&format!("\nSummary:\n{table}\n\n"))
+                    .unwrap();
             }
             if timing_enabled {
                 let _ = timings.write_records(&mut std::io::stderr().lock());
             }
         }
         Err(e) => {
-            eprintln!("X  Failed to write XML: {}", e);
+            reporter
+                .error(&format!("X  Failed to write XML: {e}"))
+                .unwrap();
             exit(4);
         }
     }
@@ -209,7 +229,11 @@ fn main() {
 mod tests {
     use super::*;
     use crate::cli::Flags;
+    use crate::text_processing::{
+        read_classify_and_decode, BinaryReason, ProcessedFile,
+    };
     use clap::Parser;
+    use std::fs;
     use std::str::FromStr;
 
     fn create_test_config(toml_content: &str) -> Params {
@@ -556,6 +580,62 @@ mod tests {
         let args = Flags::parse_from(["program"]);
         let params = Params::from_args_and_config(&args, config);
         assert!(!params.utf8);
+    }
+
+    #[test]
+    fn test_utf8_precedence_controls_utf16_conversion() {
+        let temp_dir = tempdir().unwrap();
+        let fixture_path = temp_dir.path().join("utf-16le.txt");
+        fs::write(
+            &fixture_path,
+            include_bytes!("../tests/fixtures/encodings/utf-16le.txt"),
+        )
+        .unwrap();
+        let cases: [(&str, &[&str], bool); 6] = [
+            ("utf8 = false", &["program"], false),
+            ("utf8 = false", &["program", "--utf8"], true),
+            ("utf8 = false", &["program", "--no-utf8"], false),
+            ("utf8 = true", &["program"], true),
+            ("utf8 = true", &["program", "--utf8"], true),
+            ("utf8 = true", &["program", "--no-utf8"], false),
+        ];
+
+        for (config, arguments, expected_utf8) in cases {
+            let args = Flags::parse_from(arguments);
+            let params = Params::from_args_and_config(
+                &args,
+                create_test_config(config),
+            );
+            assert_eq!(params.utf8, expected_utf8);
+
+            let mut timings = timings::ProcessingTimings::default();
+            let processed = read_classify_and_decode(
+                &fixture_path,
+                params.utf8,
+                &mut timings,
+            )
+            .unwrap();
+            if expected_utf8 {
+                match processed {
+                    ProcessedFile::Text(decoded) => {
+                        assert!(decoded.text.starts_with("UTF-16 text"));
+                        assert_eq!(timings.transcoded_files, 1);
+                    }
+                    ProcessedFile::Binary(reason) => {
+                        panic!("expected decoded UTF-16, got {reason:?}")
+                    }
+                }
+            } else {
+                assert_eq!(
+                    processed,
+                    ProcessedFile::Binary(
+                        BinaryReason::Utf16ConversionDisabled("UTF-16LE")
+                    )
+                );
+                assert_eq!(timings.transcoded_files, 0);
+                assert!(timings.transcode_time.is_zero());
+            }
+        }
     }
 
     #[test]

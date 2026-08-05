@@ -367,8 +367,8 @@ Options:
   -V, --version                   Print version information and exit
   -e, --extend-exclude <PATTERN>  Add file/directory pattern to exclude, can be specified multiple times.
   -x, --exclude <PATTERN>         Replace the existing exclude patterns with the specified pattern(s). Can be specified multiple times.
-  -u, --utf8                      Force UTF-8 encoding for all text files
-  -U, --no-utf8                   Disable UTF-8 encoding for text files
+  -u, --utf8                      Detect and convert legacy text encodings to UTF-8
+  -U, --no-utf8                   Disable legacy text conversion to UTF-8
   -h, --help                      Print help
 ```
 
@@ -395,7 +395,7 @@ line_numbers = true
 token = "your-github-token"
 extend_exclude = ["*.md", "*.txt", "docs/*"]  # Additional patterns to exclude
 exclude = ["*.exe", "*.dll", "node_modules/*"]  # File patterns to exclude
-utf8 = true  # Force UTF-8 encoding for all text files
+utf8 = true  # Detect and convert legacy text encodings to UTF-8
 gzip = false  # Set true to gzip file or stdout output by default
 gzip_level = 6  # Compression level from 1 to 9; does not enable gzip by itself
 ```
@@ -422,7 +422,8 @@ Available configuration options:
 - `extend_exclude`: Additional file patterns to exclude (default: none)
 - `exclude`: File patterns to exclude, replacing the default ignore list
   (default: none)
-- `utf8`: Whether to force UTF-8 encoding for all text files (default: false)
+- `utf8`: Whether to detect and convert legacy text encodings to UTF-8
+  (default: false)
 - `gzip`: Whether to gzip output by default (default: false)
 - `gzip_level`: Gzip compression level from 1 to 9 (default: 6). Setting a
   level does not enable gzip by itself. Invalid values are ignored.
@@ -467,10 +468,20 @@ Storing your GitHub token in the configuration file can be more convenient than
 passing it via command line, especially if you frequently work with private
 repositories. Just be sure to keep your configuration file secure.
 
-The UTF-8 encoding feature (`--utf8` flag or `utf8 = true` in config) ensures all text files
-are encoded in UTF-8 before being included in the XML output. This is useful when working
-with files that may use different encodings, ensuring compatibility with LLMs and other tools.
-You can disable this with `--no-utf8` even if it's enabled in the config file.
+The UTF-8 conversion feature (`--utf8` or `utf8 = true`) detects and converts
+supported legacy text encodings before XML output. Already-valid UTF-8 and
+ASCII are retained without conversion. BOM-less detection is heuristic:
+malformed or ambiguous input can be decoded as a different encoding, and
+reports name the decoder actually selected. A loss warning is emitted only
+when that decoder inserts replacement characters. Explicit per-file or
+pattern-based source encodings are not yet supported. Use `--no-utf8` to
+disable conversion even when configuration enables it.
+
+BOM-confirmed UTF-16LE and UTF-16BE are converted only when this feature is
+enabled. Without it, they use the normal excluded-file placeholder. Binary
+classification recognizes known file signatures, NUL bytes, and a high
+density of disallowed controls; non-ASCII bytes alone do not make text binary.
+Conversion cannot make arbitrary bytes meaningful text.
 
 ## Ignored Files
 

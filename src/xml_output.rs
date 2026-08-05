@@ -1,5 +1,7 @@
 use crate::filelist::{FileTree, FolderNode};
+use crate::progress::ProgressReporter;
 use crate::structs::{Params, DEFAULT_OUTPUT_FILE};
+use crate::text_processing::{read_classify_and_decode, ProcessedFile};
 use crate::timings::ProcessingTimings;
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
@@ -7,7 +9,7 @@ use dirs_next::home_dir;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs::{metadata, File};
-use std::io::{self, BufReader, Cursor, IsTerminal, Read, Write};
+use std::io::{self, Cursor, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
@@ -20,20 +22,26 @@ pub fn output_repo_as_xml(
     base_path: &Path,
     tokenizer: &TokenizerType,
 ) -> Result<(usize, u64, usize), std::io::Error> {
+    let mut reporter =
+        ProgressReporter::new(io::sink(), io::sink(), flags.stdout);
     output_repo_as_xml_with_timings(
         flags,
         file_tree,
         base_path,
         tokenizer,
+        "GPT-4",
+        &mut reporter,
         &mut ProcessingTimings::default(),
     )
 }
 
-pub fn output_repo_as_xml_with_timings(
+pub fn output_repo_as_xml_with_timings<N: Write, D: Write>(
     flags: &Params,
     file_tree: FileTree,
     base_path: &Path,
     tokenizer: &TokenizerType,
+    model_name: &str,
+    reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> Result<(usize, u64, usize), std::io::Error> {
     validate_output_options(flags)?;
@@ -83,6 +91,7 @@ pub fn output_repo_as_xml_with_timings(
         &file_tree.file_paths,
         base_path,
         flags,
+        reporter,
         timings,
     )?;
     buffer.write_all(b"</repository_files>\n")?;
@@ -100,6 +109,8 @@ pub fn output_repo_as_xml_with_timings(
         file_tree.file_paths.len(),
         buffer.into_inner(),
         tokenizer,
+        model_name,
+        reporter,
         timings,
     )
 }
@@ -129,11 +140,13 @@ fn validate_output_options_for(
     Ok(())
 }
 
-fn finish_output(
+fn finish_output<N: Write, D: Write>(
     flags: &Params,
     number_of_files: usize,
     xml_bytes: Vec<u8>,
     tokenizer: &TokenizerType,
+    model_name: &str,
+    reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> Result<(usize, u64, usize), io::Error> {
     if flags.stdout {
@@ -160,12 +173,14 @@ fn finish_output(
 
     let xml_content = String::from_utf8(xml_bytes)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    reporter.phase(&format!("Counting tokens with {model_name}"))?;
     let token_start = Instant::now();
     let token_count = tokenizer
         .count_tokens(&xml_content)
         .map_err(io::Error::other)?;
     timings.token_count += token_start.elapsed();
     let total_size = if flags.clipboard {
+        reporter.phase(&destination_phase(flags))?;
         let write_start = Instant::now();
         let mut clipboard = Clipboard::new().map_err(io::Error::other)?;
         clipboard
@@ -174,6 +189,8 @@ fn finish_output(
         timings.output_write_or_copy += write_start.elapsed();
         xml_content.len() as u64
     } else {
+        let output_path = effective_output_file(flags);
+        reporter.phase(&destination_phase(flags))?;
         let output_bytes = if flags.gzip {
             let compression_start = Instant::now();
             let compressed =
@@ -184,13 +201,29 @@ fn finish_output(
             xml_content.into_bytes()
         };
         let write_start = Instant::now();
-        let mut file = File::create(effective_output_file(flags))?;
+        let mut file = File::create(output_path)?;
         file.write_all(&output_bytes)?;
         timings.output_write_or_copy += write_start.elapsed();
         output_bytes.len() as u64
     };
 
     Ok((number_of_files, total_size, token_count))
+}
+
+fn destination_phase(flags: &Params) -> String {
+    if flags.clipboard {
+        "Copying result to clipboard".to_string()
+    } else if flags.gzip {
+        format!(
+            "Compressing and writing result to '{}'",
+            effective_output_file(flags).display()
+        )
+    } else {
+        format!(
+            "Writing result to '{}'",
+            effective_output_file(flags).display()
+        )
+    }
 }
 
 pub fn effective_output_file(flags: &Params) -> PathBuf {
@@ -279,46 +312,13 @@ fn write_folder_to_xml<W: Write>(
     Ok(())
 }
 
-fn read_file_contents_with_timings(
-    path: &Path,
-    force_utf8: bool,
-    timings: &mut ProcessingTimings,
-) -> io::Result<String> {
-    let read_start = Instant::now();
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut buffer = Vec::new();
-    reader.read_to_end(&mut buffer)?;
-    timings.file_classification_and_read += read_start.elapsed();
-
-    let validation_start = Instant::now();
-    let result = if force_utf8 {
-        // Try to decode as UTF-8
-        match String::from_utf8(buffer.clone()) {
-            Ok(content) => Ok(content),
-            Err(_) => {
-                // If UTF-8 decoding fails, try to convert to UTF-8
-                Ok(encoding_rs::UTF_8.decode(&buffer).0.into_owned())
-            }
-        }
-    } else {
-        // Default behavior - try to read as is
-        Ok(String::from_utf8_lossy(&buffer).into_owned())
-    };
-    timings.utf8_validation_or_transcode += validation_start.elapsed();
-    if result.is_ok() {
-        timings.valid_files += 1;
-        timings.valid_bytes += buffer.len() as u64;
-    }
-    result
-}
-
 /// Function to write the repository files with contents to XML without escaping
-fn write_repository_files_to_xml<W: Write>(
+fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
     writer: &mut W,
     file_paths: &Vec<String>,
     base_path: &Path,
     flags: &Params,
+    reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> Result<(), std::io::Error> {
     for file_path in file_paths {
@@ -328,35 +328,18 @@ fn write_repository_files_to_xml<W: Write>(
         let file_size = metadata(&full_path)?.len();
 
         // Check if file is binary using infer
-        let classification_start = Instant::now();
-        let is_binary = is_binary_file(&full_path)?;
-        timings.file_classification_and_read += classification_start.elapsed();
-        if is_binary {
-            writer.write_all(
-                format!(
-                    r#"<file path="{}" size="{}" lines="0">"#,
-                    file_path, file_size
-                )
-                .as_bytes(),
-            )?;
-            writer.write_all(
-                b"\n<!-- This file is a binary file and not included -->\n",
-            )?;
-            writer.write_all(b"</file>\n\n")?;
-            continue;
-        }
-
-        // Try to read the file contents using the full path
-        match read_file_contents_with_timings(&full_path, flags.utf8, timings)
-        {
-            Ok(mut contents) => {
+        match read_classify_and_decode(&full_path, flags.utf8, timings) {
+            Ok(ProcessedFile::Text(mut decoded)) => {
+                if let Some(ref conversion) = decoded.conversion {
+                    reporter.conversion(file_path, conversion)?;
+                }
                 // Apply line numbering if the lnumbers flag is set
                 if flags.line_numbers {
-                    contents = add_line_numbers(&contents);
+                    decoded.text = add_line_numbers(&decoded.text);
                 }
 
                 // Calculate number of lines
-                let line_count = contents.lines().count();
+                let line_count = decoded.text.lines().count();
 
                 // Write the <file> node with size and line attributes
                 writer.write_all(
@@ -369,17 +352,30 @@ fn write_repository_files_to_xml<W: Write>(
                 writer.write_all(b"\n")?; // Proper newline after the opening <file> tag
 
                 // Write raw file contents without escaping
-                writer.write_all(contents.as_bytes())?;
+                writer.write_all(decoded.text.as_bytes())?;
                 writer.write_all(b"</file>\n\n")?; // Close the <file> node
+            }
+            Ok(ProcessedFile::Binary(_)) => {
+                writer.write_all(
+                    format!(
+                        r#"<file path="{}" size="{}" lines="0">"#,
+                        file_path, file_size
+                    )
+                    .as_bytes(),
+                )?;
+                writer.write_all(
+                    b"\n<!-- This file is a binary file and not included -->\n",
+                )?;
+                writer.write_all(b"</file>\n\n")?;
             }
             Err(err) => {
                 // For other types of errors, write a general failure message with the error description
                 let error_message = err.to_string();
-                eprintln!(
+                reporter.error(&format!(
                     "Error reading file '{}': {}",
                     full_path.display(),
                     error_message
-                );
+                ))?;
                 writer.write_all(
                     format!(
                         r#"<file path="{}" size="0" lines="0">"#,
@@ -494,35 +490,6 @@ fn append_file_summary<W: Write>(
     Ok(())
 }
 
-/// Determines if a file is binary by using magic number detection.
-fn is_binary_file(path: &Path) -> io::Result<bool> {
-    let mut file = File::open(path)?;
-    let mut buffer = [0; 1024];
-
-    // Read the first chunk of the file
-    let bytes_read = file.read(&mut buffer)?;
-
-    // Use the infer crate to detect the type
-    if let Some(kind) = infer::get(&buffer[..bytes_read]) {
-        // Check if the file is not recognized as a text format
-        if kind.mime_type().starts_with("text/") {
-            return Ok(false);
-        } else {
-            return Ok(true);
-        }
-    }
-
-    // If infer can't determine, fall back to heuristic approach
-    let mut non_printable_count = 0;
-    for &byte in &buffer[..bytes_read] {
-        if byte < 0x09 || (byte > 0x0D && byte < 0x20) || byte > 0x7E {
-            non_printable_count += 1;
-        }
-    }
-    let threshold = (bytes_read as f32) * 0.3;
-    Ok(non_printable_count as f32 > threshold)
-}
-
 /// Adds line numbers to the given file content, ensuring the content ends
 /// with a newline. The line numbers are dynamically padded to fit the largest
 /// line number.
@@ -563,7 +530,68 @@ mod tests {
     use crate::tokenizer::Model;
     use flate2::read::GzDecoder;
     use std::fs;
+    use std::io::Read;
     use tempfile::tempdir;
+
+    const JAPANESE: &str = "これは文字コード検出のための日本語の文章です。複数の文を含めて、短い入力による誤判定を避けます。古い文書も正しく読み取ります。\n";
+    const SIMPLIFIED: &str = "这是用于字符编码检测的中文文本。它包含多个自然句子，以避免短输入造成误判。旧文件也应该被正确读取。\n";
+    const GB18030: &str = "这是用于字符编码检测的中文文本。它包含多个自然句子，以避免短输入造成误判。扩展字符𠀀用于验证四字节编码。\n";
+    const TRADITIONAL: &str = "這是用於字元編碼偵測的中文文字。它包含多個自然句子，以避免短輸入造成誤判。舊檔案也應該被正確讀取。\n";
+    const RUSSIAN: &str = "Это русский текст для проверки определения кодировки. Он содержит несколько естественных предложений. Старые файлы должны читаться правильно.\n";
+    const WESTERN: &str = "Voici un texte français pour vérifier la détection d’encodage. Il contient plusieurs phrases naturelles. Les fichiers anciens doivent être lus correctement.\n";
+    const UTF16: &str = "UTF-16 text with 日本語, русский текст, and العربية. This fixture contains multiple natural sentences. It verifies byte-order-mark handling.\n";
+    const ENCODING_FIXTURES: [(&str, &[u8], &str); 10] = [
+        (
+            "shift-jis.txt",
+            include_bytes!("../tests/fixtures/encodings/shift-jis.txt"),
+            JAPANESE,
+        ),
+        (
+            "euc-jp.txt",
+            include_bytes!("../tests/fixtures/encodings/euc-jp.txt"),
+            JAPANESE,
+        ),
+        (
+            "iso-2022-jp.txt",
+            include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt"),
+            JAPANESE,
+        ),
+        (
+            "gbk.txt",
+            include_bytes!("../tests/fixtures/encodings/gbk.txt"),
+            SIMPLIFIED,
+        ),
+        (
+            "gb18030.txt",
+            include_bytes!("../tests/fixtures/encodings/gb18030.txt"),
+            GB18030,
+        ),
+        (
+            "big5.txt",
+            include_bytes!("../tests/fixtures/encodings/big5.txt"),
+            TRADITIONAL,
+        ),
+        (
+            "windows-1251.txt",
+            include_bytes!("../tests/fixtures/encodings/windows-1251.txt"),
+            RUSSIAN,
+        ),
+        (
+            "windows-1252.txt",
+            include_bytes!("../tests/fixtures/encodings/windows-1252.txt"),
+            WESTERN,
+        ),
+        (
+            "utf-16le.txt",
+            include_bytes!("../tests/fixtures/encodings/utf-16le.txt"),
+            UTF16,
+        ),
+        (
+            "utf-16be.txt",
+            include_bytes!("../tests/fixtures/encodings/utf-16be.txt"),
+            UTF16,
+        ),
+    ];
 
     #[test]
     fn test_add_line_numbers() {
@@ -576,18 +604,26 @@ mod tests {
     }
 
     #[test]
-    fn test_is_binary_file() {
+    fn test_read_classify_and_decode_distinguishes_text_and_binary() {
         let temp_dir = tempdir().unwrap();
+        let mut timings = ProcessingTimings::default();
 
         // Create a text file
         let text_path = temp_dir.path().join("test.txt");
         fs::write(&text_path, "Hello, World!").unwrap();
-        assert!(!is_binary_file(&text_path).unwrap());
+        assert!(matches!(
+            read_classify_and_decode(&text_path, false, &mut timings).unwrap(),
+            ProcessedFile::Text(_)
+        ));
 
         // Create a binary file
         let binary_path = temp_dir.path().join("test.bin");
         fs::write(&binary_path, [0u8, 159u8, 146u8, 150u8]).unwrap();
-        assert!(is_binary_file(&binary_path).unwrap());
+        assert!(matches!(
+            read_classify_and_decode(&binary_path, false, &mut timings)
+                .unwrap(),
+            ProcessedFile::Binary(_)
+        ));
     }
 
     #[test]
@@ -756,6 +792,231 @@ mod tests {
         assert!(xml_content.contains("<file path=\"test.txt\""));
         // The content should be readable as UTF-8
         assert!(String::from_utf8(xml_content.as_bytes().to_vec()).is_ok());
+    }
+
+    #[test]
+    fn test_encoding_fixture_matrix_is_included_as_valid_utf8_xml() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        let mut file_tree = FileTree::default();
+        for (name, bytes, _) in ENCODING_FIXTURES {
+            fs::write(temp_dir.path().join(name), bytes).unwrap();
+            file_tree.file_paths.push(name.to_string());
+        }
+        let params = Params {
+            output_file: Some(output_file.to_string_lossy().into_owned()),
+            utf8: true,
+            ..Params::default()
+        };
+
+        output_repo_as_xml(
+            &params,
+            file_tree,
+            temp_dir.path(),
+            &Model::GPT4.to_tokenizer().unwrap(),
+        )
+        .unwrap();
+
+        let xml = fs::read_to_string(output_file).unwrap();
+        for (name, _, expected) in ENCODING_FIXTURES {
+            let start = format!("<file path=\"{name}\"");
+            let file_xml = xml.split(&start).nth(1).unwrap();
+            assert!(file_xml
+                .split("</file>")
+                .next()
+                .unwrap()
+                .contains(expected));
+        }
+    }
+
+    #[test]
+    fn test_utf16_fixtures_are_excluded_when_conversion_is_disabled() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        let mut file_tree = FileTree::default();
+        for (name, bytes) in [
+            (
+                "utf-16le.txt",
+                include_bytes!("../tests/fixtures/encodings/utf-16le.txt")
+                    .as_slice(),
+            ),
+            (
+                "utf-16be.txt",
+                include_bytes!("../tests/fixtures/encodings/utf-16be.txt")
+                    .as_slice(),
+            ),
+        ] {
+            fs::write(temp_dir.path().join(name), bytes).unwrap();
+            file_tree.file_paths.push(name.to_string());
+        }
+        let params = Params {
+            output_file: Some(output_file.to_string_lossy().into_owned()),
+            utf8: false,
+            ..Params::default()
+        };
+
+        output_repo_as_xml(
+            &params,
+            file_tree,
+            temp_dir.path(),
+            &Model::GPT4.to_tokenizer().unwrap(),
+        )
+        .unwrap();
+
+        let xml = fs::read_to_string(output_file).unwrap();
+        assert_eq!(xml.matches("binary file and not included").count(), 2);
+        assert!(!xml.contains("UTF-16 text with"));
+    }
+
+    #[test]
+    fn test_progress_phases_and_conversion_follow_execution_order() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        fs::write(
+            temp_dir.path().join("legacy.txt"),
+            include_bytes!("../tests/fixtures/encodings/windows-1252.txt"),
+        )
+        .unwrap();
+        let params = Params {
+            output_file: Some(output_file.to_string_lossy().into_owned()),
+            utf8: true,
+            ..Params::default()
+        };
+        let mut file_tree = FileTree::default();
+        file_tree.file_paths.push("legacy.txt".to_string());
+        let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+        let mut reporter =
+            ProgressReporter::new(Vec::new(), Vec::new(), false);
+        let mut timings = ProcessingTimings::default();
+
+        reporter.phase("Loading tokenizer for GPT-4").unwrap();
+        reporter.phase("Reading files and generating XML").unwrap();
+        output_repo_as_xml_with_timings(
+            &params,
+            file_tree,
+            temp_dir.path(),
+            &tokenizer,
+            "GPT-4",
+            &mut reporter,
+            &mut timings,
+        )
+        .unwrap();
+        reporter.normal_line("-> Successfully wrote XML").unwrap();
+
+        let (normal, diagnostic) = reporter.into_parts();
+        assert_eq!(
+            String::from_utf8(normal).unwrap(),
+            format!(
+                "-> Loading tokenizer for GPT-4\n\
+                 -> Reading files and generating XML\n\
+                 -> Converted 'legacy.txt' from windows-1252 to UTF-8\n\
+                 -> Counting tokens with GPT-4\n\
+                 -> Writing result to '{}'\n\
+                 -> Successfully wrote XML\n",
+                output_file.display()
+            )
+        );
+        assert!(diagnostic.is_empty());
+    }
+
+    #[test]
+    fn test_utf16_replacement_warning_is_emitted_once() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        let mut malformed =
+            include_bytes!("../tests/fixtures/encodings/utf-16le.txt")
+                .to_vec();
+        malformed.pop();
+        fs::write(temp_dir.path().join("malformed.txt"), malformed).unwrap();
+        let params = Params {
+            output_file: Some(output_file.to_string_lossy().into_owned()),
+            utf8: true,
+            ..Params::default()
+        };
+        let mut file_tree = FileTree::default();
+        file_tree.file_paths.push("malformed.txt".to_string());
+        let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+        let mut reporter =
+            ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+        output_repo_as_xml_with_timings(
+            &params,
+            file_tree,
+            temp_dir.path(),
+            &tokenizer,
+            "GPT-4",
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        let (normal, diagnostic) = reporter.into_parts();
+        let normal = String::from_utf8(normal).unwrap();
+        assert_eq!(normal.matches("-> Converted 'malformed.txt'").count(), 1);
+        assert_eq!(
+            String::from_utf8(diagnostic).unwrap(),
+            "warning: 'malformed.txt' decoded as UTF-16LE with replacement characters; information was lost\n"
+        );
+    }
+
+    #[test]
+    fn test_quiet_reporter_keeps_plain_and_gzip_stdout_bytes_clean() {
+        let xml = b"<repository>legacy text</repository>\n";
+        for gzip in [false, true] {
+            let mut output = Vec::new();
+            let mut reporter =
+                ProgressReporter::new(Vec::new(), Vec::new(), true);
+            reporter.phase("Hidden phase").unwrap();
+            reporter
+                .conversion(
+                    "legacy.txt",
+                    &crate::text_processing::ConversionReport {
+                        source_encoding: "windows-1252",
+                        had_replacements: true,
+                    },
+                )
+                .unwrap();
+
+            write_stdout(&mut output, xml, gzip, 6).unwrap();
+            let (normal, diagnostic) = reporter.into_parts();
+            assert!(normal.is_empty());
+            assert!(diagnostic.is_empty());
+            if gzip {
+                assert_eq!(&output[..2], &[0x1f, 0x8b]);
+                let mut decoded = Vec::new();
+                GzDecoder::new(output.as_slice())
+                    .read_to_end(&mut decoded)
+                    .unwrap();
+                assert_eq!(decoded, xml);
+            } else {
+                assert_eq!(output, [xml.as_slice(), b"\n"].concat());
+            }
+        }
+    }
+
+    #[test]
+    fn test_destination_phase_messages_cover_all_destinations() {
+        let file = Params {
+            output_file: Some("result.xml".to_string()),
+            ..Params::default()
+        };
+        assert_eq!(destination_phase(&file), "Writing result to 'result.xml'");
+
+        let gzip = Params { gzip: true, ..file };
+        assert_eq!(
+            destination_phase(&gzip),
+            "Compressing and writing result to 'result.xml.gz'"
+        );
+
+        let clipboard = Params {
+            clipboard: true,
+            gzip: false,
+            ..Params::default()
+        };
+        assert_eq!(
+            destination_phase(&clipboard),
+            "Copying result to clipboard"
+        );
     }
 
     #[test]
