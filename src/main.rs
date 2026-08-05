@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::time::Instant;
 
 use clap::Parser;
 use config::{Config, File, FileFormat};
@@ -20,6 +21,7 @@ mod embedded;
 mod filelist;
 mod repo;
 mod structs;
+mod timings;
 mod tokenizer;
 mod xml_output;
 
@@ -68,6 +70,8 @@ fn load_config() -> Params {
 
 fn main() {
     let args = cli::Flags::parse();
+    let timing_enabled = timings::ProcessingTimings::enabled_from_env();
+    let mut timings = timings::ProcessingTimings::default();
 
     if args.version {
         println!("{}", cli::version_info());
@@ -99,6 +103,7 @@ fn main() {
     };
 
     // Create the tokenizer from the parsed model
+    let tokenizer_start = Instant::now();
     let tokenizer = match model.to_tokenizer() {
         Ok(tokenizer) => tokenizer,
         Err(e) => {
@@ -106,6 +111,7 @@ fn main() {
             exit(1);
         }
     };
+    timings.tokenizer_load = tokenizer_start.elapsed();
 
     // Create a temporary directory for cloning the repository
     let temp_dir = tempdir().unwrap();
@@ -142,11 +148,12 @@ fn main() {
     }
 
     // Output XML
-    match xml_output::output_repo_as_xml(
+    match xml_output::output_repo_as_xml_with_timings(
         &params,
         file_tree,
         &repo_folder,
         &tokenizer,
+        &mut timings,
     ) {
         Ok((number_of_files, total_size, token_count)) => {
             if !params.stdout {
@@ -186,6 +193,9 @@ fn main() {
                     .to_string();
 
                 println!("{}\n", table);
+            }
+            if timing_enabled {
+                let _ = timings.write_records(&mut std::io::stderr().lock());
             }
         }
         Err(e) => {

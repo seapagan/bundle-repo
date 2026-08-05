@@ -1,5 +1,6 @@
 use crate::filelist::{FileTree, FolderNode};
 use crate::structs::{Params, DEFAULT_OUTPUT_FILE};
+use crate::timings::ProcessingTimings;
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
 use dirs_next::home_dir;
@@ -8,16 +9,35 @@ use flate2::Compression;
 use std::fs::{metadata, File};
 use std::io::{self, BufReader, Cursor, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
 
 /// Function to output the repository structure and files list to XML
+#[cfg(test)]
 pub fn output_repo_as_xml(
     flags: &Params,
     file_tree: FileTree,
     base_path: &Path,
     tokenizer: &TokenizerType,
 ) -> Result<(usize, u64, usize), std::io::Error> {
+    output_repo_as_xml_with_timings(
+        flags,
+        file_tree,
+        base_path,
+        tokenizer,
+        &mut ProcessingTimings::default(),
+    )
+}
+
+pub fn output_repo_as_xml_with_timings(
+    flags: &Params,
+    file_tree: FileTree,
+    base_path: &Path,
+    tokenizer: &TokenizerType,
+    timings: &mut ProcessingTimings,
+) -> Result<(usize, u64, usize), std::io::Error> {
     validate_output_options(flags)?;
+    let xml_start = Instant::now();
 
     // Use an in-memory buffer instead of a physical file
     let mut buffer = Cursor::new(Vec::new());
@@ -63,15 +83,24 @@ pub fn output_repo_as_xml(
         &file_tree.file_paths,
         base_path,
         flags,
+        timings,
     )?;
     buffer.write_all(b"</repository_files>\n")?;
     buffer.write_all(b"</repository>\n")?;
+    timings.xml_generation += xml_start
+        .elapsed()
+        .checked_sub(timings.file_classification_and_read)
+        .and_then(|duration| {
+            duration.checked_sub(timings.utf8_validation_or_transcode)
+        })
+        .unwrap_or_default();
 
     finish_output(
         flags,
         file_tree.file_paths.len(),
         buffer.into_inner(),
         tokenizer,
+        timings,
     )
 }
 
@@ -105,34 +134,59 @@ fn finish_output(
     number_of_files: usize,
     xml_bytes: Vec<u8>,
     tokenizer: &TokenizerType,
+    timings: &mut ProcessingTimings,
 ) -> Result<(usize, u64, usize), io::Error> {
     if flags.stdout {
         let stdout = io::stdout();
         let mut output = stdout.lock();
-        write_stdout(&mut output, &xml_bytes, flags.gzip, flags.gzip_level)?;
+        if flags.gzip {
+            let compression_start = Instant::now();
+            let compressed = compress_gzip(&xml_bytes, flags.gzip_level)?;
+            timings.compression += compression_start.elapsed();
+            let write_start = Instant::now();
+            output.write_all(&compressed)?;
+            timings.output_write_or_copy += write_start.elapsed();
+        } else {
+            std::str::from_utf8(&xml_bytes)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let write_start = Instant::now();
+            output.write_all(&xml_bytes)?;
+            output.write_all(b"\n")?;
+            timings.output_write_or_copy += write_start.elapsed();
+        }
         output.flush()?;
         return Ok((number_of_files, 0, 0));
     }
 
     let xml_content = String::from_utf8(xml_bytes)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let token_start = Instant::now();
     let token_count = tokenizer
         .count_tokens(&xml_content)
         .map_err(io::Error::other)?;
+    timings.token_count += token_start.elapsed();
     let total_size = if flags.clipboard {
+        let write_start = Instant::now();
         let mut clipboard = Clipboard::new().map_err(io::Error::other)?;
         clipboard
             .set_text(xml_content.clone())
             .map_err(io::Error::other)?;
+        timings.output_write_or_copy += write_start.elapsed();
         xml_content.len() as u64
     } else {
         let output_bytes = if flags.gzip {
-            compress_gzip(xml_content.as_bytes(), flags.gzip_level)?
+            let compression_start = Instant::now();
+            let compressed =
+                compress_gzip(xml_content.as_bytes(), flags.gzip_level)?;
+            timings.compression += compression_start.elapsed();
+            compressed
         } else {
             xml_content.into_bytes()
         };
+        let write_start = Instant::now();
         let mut file = File::create(effective_output_file(flags))?;
         file.write_all(&output_bytes)?;
+        timings.output_write_or_copy += write_start.elapsed();
         output_bytes.len() as u64
     };
 
@@ -179,6 +233,7 @@ fn compress_gzip(content: &[u8], level: u32) -> io::Result<Vec<u8>> {
     encoder.finish()
 }
 
+#[cfg(test)]
 fn write_stdout<W: Write>(
     output: &mut W,
     content: &[u8],
@@ -224,14 +279,20 @@ fn write_folder_to_xml<W: Write>(
     Ok(())
 }
 
-/// Read a file with the specified encoding handling
-fn read_file_contents(path: &Path, force_utf8: bool) -> io::Result<String> {
+fn read_file_contents_with_timings(
+    path: &Path,
+    force_utf8: bool,
+    timings: &mut ProcessingTimings,
+) -> io::Result<String> {
+    let read_start = Instant::now();
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut buffer = Vec::new();
     reader.read_to_end(&mut buffer)?;
+    timings.file_classification_and_read += read_start.elapsed();
 
-    if force_utf8 {
+    let validation_start = Instant::now();
+    let result = if force_utf8 {
         // Try to decode as UTF-8
         match String::from_utf8(buffer.clone()) {
             Ok(content) => Ok(content),
@@ -243,7 +304,13 @@ fn read_file_contents(path: &Path, force_utf8: bool) -> io::Result<String> {
     } else {
         // Default behavior - try to read as is
         Ok(String::from_utf8_lossy(&buffer).into_owned())
+    };
+    timings.utf8_validation_or_transcode += validation_start.elapsed();
+    if result.is_ok() {
+        timings.valid_files += 1;
+        timings.valid_bytes += buffer.len() as u64;
     }
+    result
 }
 
 /// Function to write the repository files with contents to XML without escaping
@@ -252,6 +319,7 @@ fn write_repository_files_to_xml<W: Write>(
     file_paths: &Vec<String>,
     base_path: &Path,
     flags: &Params,
+    timings: &mut ProcessingTimings,
 ) -> Result<(), std::io::Error> {
     for file_path in file_paths {
         let full_path = base_path.join(file_path);
@@ -260,7 +328,10 @@ fn write_repository_files_to_xml<W: Write>(
         let file_size = metadata(&full_path)?.len();
 
         // Check if file is binary using infer
-        if is_binary_file(&full_path)? {
+        let classification_start = Instant::now();
+        let is_binary = is_binary_file(&full_path)?;
+        timings.file_classification_and_read += classification_start.elapsed();
+        if is_binary {
             writer.write_all(
                 format!(
                     r#"<file path="{}" size="{}" lines="0">"#,
@@ -276,7 +347,8 @@ fn write_repository_files_to_xml<W: Write>(
         }
 
         // Try to read the file contents using the full path
-        match read_file_contents(&full_path, flags.utf8) {
+        match read_file_contents_with_timings(&full_path, flags.utf8, timings)
+        {
             Ok(mut contents) => {
                 // Apply line numbering if the lnumbers flag is set
                 if flags.line_numbers {
