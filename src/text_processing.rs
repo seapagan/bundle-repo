@@ -23,6 +23,7 @@ pub(crate) enum ProcessedFile {
 pub(crate) struct DecodedText {
     pub(crate) text: String,
     pub(crate) conversion: Option<ConversionReport>,
+    pub(crate) utf8_had_replacements: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -57,12 +58,25 @@ fn classify_and_decode(
     timings: &mut ProcessingTimings,
 ) -> ProcessedFile {
     let classification_start = Instant::now();
-    if let Some((encoding, _)) = Encoding::for_bom(&bytes) {
-        timings.file_classification_and_read += classification_start.elapsed();
+    if let Some((encoding, bom_length)) = Encoding::for_bom(&bytes) {
         if encoding == UTF_16LE || encoding == UTF_16BE {
+            timings.file_classification_and_read +=
+                classification_start.elapsed();
             return process_utf16(bytes, encoding, utf8, timings);
         }
         debug_assert_eq!(encoding, UTF_8);
+        let payload = &bytes[bom_length..];
+        if let Some(reason) = magic_binary_reason(payload) {
+            timings.file_classification_and_read +=
+                classification_start.elapsed();
+            return ProcessedFile::Binary(reason);
+        }
+        if let Some(reason) = classify_bytes(payload).binary_reason {
+            timings.file_classification_and_read +=
+                classification_start.elapsed();
+            return ProcessedFile::Binary(reason);
+        }
+        timings.file_classification_and_read += classification_start.elapsed();
         return process_bom_marked_utf8(bytes, utf8, timings);
     }
 
@@ -95,6 +109,7 @@ fn classify_and_decode(
             ProcessedFile::Text(DecodedText {
                 text,
                 conversion: None,
+                utf8_had_replacements: false,
             })
         }
         Err(error) => {
@@ -108,6 +123,7 @@ fn classify_and_decode(
                 ProcessedFile::Text(DecodedText {
                     text,
                     conversion: None,
+                    utf8_had_replacements: false,
                 })
             }
         }
@@ -143,6 +159,7 @@ fn process_utf16(
             source_encoding: encoding.name(),
             had_replacements,
         }),
+        utf8_had_replacements: false,
     })
 }
 
@@ -160,19 +177,23 @@ fn process_bom_marked_utf8(
             ProcessedFile::Text(DecodedText {
                 text,
                 conversion: None,
+                utf8_had_replacements: false,
             })
         }
         Err(error) => {
             let bytes = error.into_bytes();
-            let text = if utf8 {
-                UTF_8.decode_without_bom_handling(&bytes).0.into_owned()
+            let (text, utf8_had_replacements) = if utf8 {
+                let (decoded, had_errors) =
+                    UTF_8.decode_without_bom_handling(&bytes);
+                (decoded.into_owned(), had_errors)
             } else {
-                String::from_utf8_lossy(&bytes).into_owned()
+                (String::from_utf8_lossy(&bytes).into_owned(), false)
             };
             timings.utf8_validation_or_transcode += validation_start.elapsed();
             ProcessedFile::Text(DecodedText {
                 text,
                 conversion: None,
+                utf8_had_replacements,
             })
         }
     }
@@ -203,6 +224,7 @@ fn transcode_legacy(
             source_encoding: encoding.name(),
             had_replacements,
         }),
+        utf8_had_replacements: false,
     })
 }
 
@@ -239,6 +261,7 @@ fn try_transcode_iso_2022_jp(
             source_encoding: encoding.name(),
             had_replacements,
         }),
+        utf8_had_replacements: false,
     }))
 }
 
@@ -396,6 +419,56 @@ mod tests {
                 "UTF-16LE"
             ))
         );
+    }
+
+    #[test]
+    fn test_valid_utf8_bom_preserves_bom_and_allocation() {
+        let mut bytes = b"\xef\xbb\xbfvalid UTF-8 text".to_vec();
+        bytes.shrink_to_fit();
+        let pointer = bytes.as_ptr();
+        let capacity = bytes.capacity();
+
+        let decoded = text(process(bytes, true));
+
+        assert_eq!(decoded.text, "\u{feff}valid UTF-8 text");
+        assert_eq!(decoded.text.as_ptr(), pointer);
+        assert_eq!(decoded.text.capacity(), capacity);
+        assert_eq!(decoded.conversion, None);
+        assert!(!decoded.utf8_had_replacements);
+    }
+
+    #[test]
+    fn test_utf8_bom_payload_binary_evidence_is_excluded() {
+        for (payload, expected) in [
+            (b"text\0text".as_slice(), BinaryReason::NullByte),
+            (b"\x01\x02\x03ab".as_slice(), BinaryReason::ControlDensity),
+        ] {
+            let mut bytes = b"\xef\xbb\xbf".to_vec();
+            bytes.extend_from_slice(payload);
+            assert_eq!(process(bytes, true), ProcessedFile::Binary(expected));
+        }
+
+        let mut bytes = b"\xef\xbb\xbf".to_vec();
+        bytes.extend_from_slice(b"\x89PNG\r\n\x1a\nrest");
+        assert!(matches!(
+            process(bytes, true),
+            ProcessedFile::Binary(BinaryReason::RecognizedMagic(_))
+        ));
+    }
+
+    #[test]
+    fn test_malformed_utf8_bom_reports_only_enabled_replacements() {
+        let bytes = b"\xef\xbb\xbfmalformed \xff text".to_vec();
+
+        let decoded = text(process(bytes.clone(), true));
+        assert_eq!(decoded.text, "\u{feff}malformed \u{fffd} text");
+        assert_eq!(decoded.conversion, None);
+        assert!(decoded.utf8_had_replacements);
+
+        let disabled = text(process(bytes, false));
+        assert_eq!(disabled.text, "\u{feff}malformed \u{fffd} text");
+        assert_eq!(disabled.conversion, None);
+        assert!(!disabled.utf8_had_replacements);
     }
 
     #[test]

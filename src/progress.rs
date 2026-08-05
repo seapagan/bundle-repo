@@ -38,6 +38,15 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         Ok(())
     }
 
+    pub(crate) fn malformed_utf8_replacement(
+        &mut self,
+        path: &str,
+    ) -> io::Result<()> {
+        self.warning(&format!(
+            "warning: '{path}' contained malformed UTF-8 and was decoded with replacement characters; information was lost"
+        ))
+    }
+
     pub(crate) fn normal_line(&mut self, message: &str) -> io::Result<()> {
         if !self.quiet {
             writeln!(self.normal, "{message}")?;
@@ -114,6 +123,9 @@ mod tests {
             )
             .unwrap();
         reporter.error("genuine error").unwrap();
+        reporter
+            .malformed_utf8_replacement("malformed.txt")
+            .unwrap();
 
         let (normal, diagnostic) = reporter.into_parts();
         assert!(normal.is_empty());

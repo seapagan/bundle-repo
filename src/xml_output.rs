@@ -333,6 +333,9 @@ fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
                 if let Some(ref conversion) = decoded.conversion {
                     reporter.conversion(file_path, conversion)?;
                 }
+                if decoded.utf8_had_replacements {
+                    reporter.malformed_utf8_replacement(file_path)?;
+                }
                 // Apply line numbering if the lnumbers flag is set
                 if flags.line_numbers {
                     decoded.text = add_line_numbers(&decoded.text);
@@ -960,6 +963,113 @@ mod tests {
     }
 
     #[test]
+    fn test_malformed_utf8_bom_emits_one_replacement_warning() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        fs::write(
+            temp_dir.path().join("malformed.txt"),
+            b"\xef\xbb\xbfmalformed \xff text",
+        )
+        .unwrap();
+        let params = Params {
+            output_file: Some(output_file.to_string_lossy().into_owned()),
+            utf8: true,
+            ..Params::default()
+        };
+        let mut file_tree = FileTree::default();
+        file_tree.file_paths.push("malformed.txt".to_string());
+        let mut reporter =
+            ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+        output_repo_as_xml_with_timings(
+            &params,
+            file_tree,
+            temp_dir.path(),
+            &Model::GPT4.to_tokenizer().unwrap(),
+            "GPT-4",
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        let (normal, diagnostic) = reporter.into_parts();
+        assert!(!String::from_utf8(normal).unwrap().contains("Converted"));
+        assert_eq!(
+            String::from_utf8(diagnostic).unwrap(),
+            "warning: 'malformed.txt' contained malformed UTF-8 and was decoded with replacement characters; information was lost\n"
+        );
+        let xml = fs::read_to_string(output_file).unwrap();
+        assert!(xml.contains("\u{feff}malformed \u{fffd} text"));
+    }
+
+    #[test]
+    fn test_clean_utf8_bom_emits_no_conversion_or_replacement_message() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        fs::write(temp_dir.path().join("clean.txt"), b"\xef\xbb\xbfclean")
+            .unwrap();
+        let params = Params {
+            output_file: Some(output_file.to_string_lossy().into_owned()),
+            utf8: true,
+            ..Params::default()
+        };
+        let mut file_tree = FileTree::default();
+        file_tree.file_paths.push("clean.txt".to_string());
+        let mut reporter =
+            ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+        output_repo_as_xml_with_timings(
+            &params,
+            file_tree,
+            temp_dir.path(),
+            &Model::GPT4.to_tokenizer().unwrap(),
+            "GPT-4",
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        let (normal, diagnostic) = reporter.into_parts();
+        assert!(!String::from_utf8(normal).unwrap().contains("Converted"));
+        assert!(diagnostic.is_empty());
+    }
+
+    #[test]
+    fn test_malformed_utf8_bom_is_silent_with_quiet_reporter() {
+        let temp_dir = tempdir().unwrap();
+        fs::write(
+            temp_dir.path().join("malformed.txt"),
+            b"\xef\xbb\xbfmalformed \xff text",
+        )
+        .unwrap();
+        let paths = vec!["malformed.txt".to_string()];
+        let params = Params {
+            stdout: true,
+            utf8: true,
+            ..Params::default()
+        };
+        let mut xml = Vec::new();
+        let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+
+        write_repository_files_to_xml(
+            &mut xml,
+            &paths,
+            temp_dir.path(),
+            &params,
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        assert!(String::from_utf8(xml)
+            .unwrap()
+            .contains("\u{feff}malformed \u{fffd} text"));
+        let (normal, diagnostic) = reporter.into_parts();
+        assert!(normal.is_empty());
+        assert!(diagnostic.is_empty());
+    }
+
+    #[test]
     fn test_quiet_reporter_keeps_plain_and_gzip_stdout_bytes_clean() {
         let xml = b"<repository>legacy text</repository>\n";
         for gzip in [false, true] {
@@ -975,6 +1085,9 @@ mod tests {
                         had_replacements: true,
                     },
                 )
+                .unwrap();
+            reporter
+                .malformed_utf8_replacement("malformed.txt")
                 .unwrap();
 
             write_stdout(&mut output, xml, gzip, 6).unwrap();
