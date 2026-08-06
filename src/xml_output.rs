@@ -152,22 +152,13 @@ fn finish_output<N: Write, D: Write>(
     if flags.stdout {
         let stdout = io::stdout();
         let mut output = stdout.lock();
-        if flags.gzip {
-            let compression_start = Instant::now();
-            let compressed = compress_gzip(&xml_bytes, flags.gzip_level)?;
-            timings.compression += compression_start.elapsed();
-            let write_start = Instant::now();
-            output.write_all(&compressed)?;
-            timings.output_write_or_copy += write_start.elapsed();
-        } else {
-            std::str::from_utf8(&xml_bytes)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            let write_start = Instant::now();
-            output.write_all(&xml_bytes)?;
-            output.write_all(b"\n")?;
-            timings.output_write_or_copy += write_start.elapsed();
-        }
-        output.flush()?;
+        write_stdout(
+            &mut output,
+            &xml_bytes,
+            flags.gzip,
+            flags.gzip_level,
+            timings,
+        )?;
         return Ok((number_of_files, 0, 0));
     }
 
@@ -266,21 +257,29 @@ fn compress_gzip(content: &[u8], level: u32) -> io::Result<Vec<u8>> {
     encoder.finish()
 }
 
-#[cfg(test)]
 fn write_stdout<W: Write>(
     output: &mut W,
     content: &[u8],
     gzip: bool,
     level: u32,
+    timings: &mut ProcessingTimings,
 ) -> io::Result<()> {
     if gzip {
-        output.write_all(&compress_gzip(content, level)?)
+        let compression_start = Instant::now();
+        let compressed = compress_gzip(content, level)?;
+        timings.compression += compression_start.elapsed();
+        let write_start = Instant::now();
+        output.write_all(&compressed)?;
+        timings.output_write_or_copy += write_start.elapsed();
     } else {
         std::str::from_utf8(content)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let write_start = Instant::now();
         output.write_all(content)?;
-        output.write_all(b"\n")
+        output.write_all(b"\n")?;
+        timings.output_write_or_copy += write_start.elapsed();
     }
+    output.flush()
 }
 
 /// Function to write folder structure to XML using EventWriter
@@ -1074,6 +1073,7 @@ mod tests {
         let xml = b"<repository>legacy text</repository>\n";
         for gzip in [false, true] {
             let mut output = Vec::new();
+            let mut timings = ProcessingTimings::default();
             let mut reporter =
                 ProgressReporter::new(Vec::new(), Vec::new(), true);
             reporter.phase("Hidden phase").unwrap();
@@ -1090,7 +1090,7 @@ mod tests {
                 .malformed_utf8_replacement("malformed.txt")
                 .unwrap();
 
-            write_stdout(&mut output, xml, gzip, 6).unwrap();
+            write_stdout(&mut output, xml, gzip, 6, &mut timings).unwrap();
             let (normal, diagnostic) = reporter.into_parts();
             assert!(normal.is_empty());
             assert!(diagnostic.is_empty());
@@ -1356,8 +1356,11 @@ mod tests {
     fn test_gzip_stdout_bytes_round_trip() {
         let xml = b"<repository />\n";
         let mut output = Vec::new();
-        write_stdout(&mut output, xml, true, 6).unwrap();
+        let mut timings = ProcessingTimings::default();
+        write_stdout(&mut output, xml, true, 6, &mut timings).unwrap();
         assert_eq!(&output[..2], &[0x1f, 0x8b]);
+        assert!(!timings.compression.is_zero());
+        assert!(!timings.output_write_or_copy.is_zero());
 
         let mut decoded = Vec::new();
         GzDecoder::new(output.as_slice())
@@ -1410,7 +1413,10 @@ mod tests {
     #[test]
     fn test_uncompressed_stdout_preserves_trailing_newline() {
         let mut output = Vec::new();
-        write_stdout(&mut output, b"xml\n", false, 6).unwrap();
+        let mut timings = ProcessingTimings::default();
+        write_stdout(&mut output, b"xml\n", false, 6, &mut timings).unwrap();
         assert_eq!(output, b"xml\n\n");
+        assert!(timings.compression.is_zero());
+        assert!(!timings.output_write_or_copy.is_zero());
     }
 }

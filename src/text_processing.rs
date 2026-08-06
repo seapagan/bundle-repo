@@ -1,11 +1,12 @@
 use crate::timings::ProcessingTimings;
 use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use encoding_rs::{Encoding, ISO_2022_JP, UTF_16BE, UTF_16LE, UTF_8};
-use std::fs;
-use std::io;
+use std::fs::File;
+use std::io::{self, Read};
 use std::path::Path;
 use std::time::Instant;
 
+const BINARY_PROBE_SIZE: usize = 8 * 1024;
 const DISALLOWED_CONTROL_DENSITY: f64 = 0.30;
 
 struct ByteClassification {
@@ -46,8 +47,37 @@ pub(crate) fn read_classify_and_decode(
     utf8: bool,
     timings: &mut ProcessingTimings,
 ) -> io::Result<ProcessedFile> {
+    let open_start = Instant::now();
+    let mut file = File::open(path)?;
+    timings.file_classification_and_read += open_start.elapsed();
+    read_classify_and_decode_from_reader(&mut file, utf8, timings)
+}
+
+fn read_classify_and_decode_from_reader<R: Read>(
+    reader: &mut R,
+    utf8: bool,
+    timings: &mut ProcessingTimings,
+) -> io::Result<ProcessedFile> {
+    let mut bytes = Vec::with_capacity(BINARY_PROBE_SIZE);
     let read_start = Instant::now();
-    let bytes = fs::read(path)?;
+    reader
+        .by_ref()
+        .take(BINARY_PROBE_SIZE as u64)
+        .read_to_end(&mut bytes)?;
+    timings.file_classification_and_read += read_start.elapsed();
+
+    let classification_start = Instant::now();
+    if Encoding::for_bom(&bytes).is_none() {
+        if let Some(reason) = magic_binary_reason(&bytes) {
+            timings.file_classification_and_read +=
+                classification_start.elapsed();
+            return Ok(ProcessedFile::Binary(reason));
+        }
+    }
+    timings.file_classification_and_read += classification_start.elapsed();
+
+    let read_start = Instant::now();
+    reader.read_to_end(&mut bytes)?;
     timings.file_classification_and_read += read_start.elapsed();
     Ok(classify_and_decode(bytes, utf8, timings))
 }
@@ -282,8 +312,8 @@ fn classify_bytes(bytes: &[u8]) -> ByteClassification {
         disallowed += usize::from(is_disallowed_byte(byte));
         if index >= 2
             && previous[0] == 0x1b
-            && ((previous[1] == b'$' && matches!(byte, b'@' | b'B'))
-                || (previous[1] == b'(' && matches!(byte, b'B' | b'I' | b'J')))
+            && previous[1] == b'$'
+            && matches!(byte, b'@' | b'B')
         {
             iso_2022_jp_candidate = true;
         }
@@ -322,7 +352,7 @@ fn is_disallowed_byte(byte: u8) -> bool {
 }
 
 fn is_disallowed_char(character: char) -> bool {
-    matches!(character, '\u{0001}'..='\u{0008}' | '\u{000b}' | '\u{000c}' | '\u{000e}'..='\u{001f}' | '\u{007f}')
+    matches!(character, '\u{0001}'..='\u{0008}' | '\u{000b}' | '\u{000c}' | '\u{000e}'..='\u{001f}' | '\u{007f}' | '\u{0080}'..='\u{009f}')
 }
 
 #[cfg(test)]
@@ -338,6 +368,27 @@ mod tests {
     const RUSSIAN: &str = "Это русский текст для проверки определения кодировки. Он содержит несколько естественных предложений. Старые файлы должны читаться правильно.\n";
     const WESTERN: &str = "Voici un texte français pour vérifier la détection d’encodage. Il contient plusieurs phrases naturelles. Les fichiers anciens doivent être lus correctement.\n";
     const UTF16_TEXT: &str = "UTF-16 text with 日本語, русский текст, and العربية. This fixture contains multiple natural sentences. It verifies byte-order-mark handling.\n";
+
+    struct CountingReader {
+        prefix: &'static [u8],
+        total_len: usize,
+        position: usize,
+    }
+
+    impl Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let count = buffer.len().min(self.total_len - self.position);
+            for (offset, byte) in buffer[..count].iter_mut().enumerate() {
+                *byte = self
+                    .prefix
+                    .get(self.position + offset)
+                    .copied()
+                    .unwrap_or(b'x');
+            }
+            self.position += count;
+            Ok(count)
+        }
+    }
 
     fn process(bytes: Vec<u8>, utf8: bool) -> ProcessedFile {
         classify_and_decode(bytes, utf8, &mut ProcessingTimings::default())
@@ -608,18 +659,15 @@ mod tests {
 
     #[test]
     fn test_iso_2022_jp_candidate_designators_are_recognized() {
-        for designator in [
-            b"\x1b$B".as_slice(),
-            b"\x1b$@".as_slice(),
-            b"\x1b(B".as_slice(),
-            b"\x1b(J".as_slice(),
-            b"\x1b(I".as_slice(),
-        ] {
+        for designator in [b"\x1b$B".as_slice(), b"\x1b$@".as_slice()] {
             let classification = classify_bytes(designator);
             assert!(classification.iso_2022_jp_candidate);
         }
 
         for ordinary_escape in [
+            b"\x1b(Bplain ASCII".as_slice(),
+            b"\x1b(Iplain ASCII".as_slice(),
+            b"\x1b(Jplain ASCII".as_slice(),
             b"\x1b[31mred\x1b[0m".as_slice(),
             b"text \x1bX text".as_slice(),
             b"truncated \x1b$(".as_slice(),
@@ -627,6 +675,44 @@ mod tests {
             let classification = classify_bytes(ordinary_escape);
             assert!(!classification.iso_2022_jp_candidate);
         }
+    }
+
+    #[test]
+    fn test_ascii_designators_retain_owned_utf8_fast_path() {
+        for expected in [
+            "\u{1b}(Bplain ASCII",
+            "日本語 before \u{1b}(I after",
+            "Русский before \u{1b}(J after",
+        ] {
+            let mut bytes = expected.as_bytes().to_vec();
+            bytes.shrink_to_fit();
+            let pointer = bytes.as_ptr();
+            let capacity = bytes.capacity();
+
+            let decoded = text(process(bytes, true));
+
+            assert_eq!(decoded.text.as_bytes(), expected.as_bytes());
+            assert_eq!(decoded.text.as_ptr(), pointer);
+            assert_eq!(decoded.text.capacity(), capacity);
+            assert_eq!(decoded.conversion, None);
+        }
+    }
+
+    #[test]
+    fn test_iso_2022_jp_fixture_still_decodes_after_narrow_probe() {
+        let bytes =
+            include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt");
+
+        let decoded = text(process(bytes.to_vec(), true));
+
+        assert_eq!(decoded.text, JAPANESE);
+        assert_eq!(
+            decoded.conversion,
+            Some(ConversionReport {
+                source_encoding: "ISO-2022-JP",
+                had_replacements: false,
+            })
+        );
     }
 
     #[test]
@@ -645,22 +731,6 @@ mod tests {
         assert_eq!(decoded.text.capacity(), capacity);
         assert_eq!(decoded.conversion, None);
         assert_eq!(timings.transcoded_files, 0);
-    }
-
-    #[test]
-    fn test_non_iso_detector_result_retains_owned_utf8_fast_path() {
-        let expected = "café before \u{1b}(B after";
-        let mut bytes = expected.as_bytes().to_vec();
-        bytes.shrink_to_fit();
-        let pointer = bytes.as_ptr();
-        let capacity = bytes.capacity();
-
-        let decoded = text(process(bytes, true));
-
-        assert_eq!(decoded.text, expected);
-        assert_eq!(decoded.text.as_ptr(), pointer);
-        assert_eq!(decoded.text.capacity(), capacity);
-        assert_eq!(decoded.conversion, None);
     }
 
     #[test]
@@ -703,6 +773,28 @@ mod tests {
                     | ProcessedFile::Binary(BinaryReason::NullByte)
             ));
         }
+    }
+
+    #[test]
+    fn test_recognized_large_binary_reads_only_probe() {
+        let mut reader = CountingReader {
+            prefix: b"\x89PNG\r\n\x1a\n",
+            total_len: BINARY_PROBE_SIZE * 4,
+            position: 0,
+        };
+
+        let processed = read_classify_and_decode_from_reader(
+            &mut reader,
+            true,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            processed,
+            ProcessedFile::Binary(BinaryReason::RecognizedMagic("image/png"))
+        ));
+        assert_eq!(reader.position, BINARY_PROBE_SIZE);
     }
 
     #[test]
@@ -766,11 +858,16 @@ mod tests {
                 .to_vec();
         assert_eq!(malformed.pop(), Some(b'\n'));
         malformed.pop();
+        malformed.shrink_to_fit();
         let expected = malformed.clone();
+        let pointer = malformed.as_ptr();
+        let capacity = malformed.capacity();
 
         let decoded = text(process(malformed, true));
 
         assert_eq!(decoded.text.as_bytes(), expected);
+        assert_eq!(decoded.text.as_ptr(), pointer);
+        assert_eq!(decoded.text.capacity(), capacity);
         assert_eq!(decoded.conversion, None);
     }
 
@@ -824,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn test_post_decode_plausibility_uses_same_control_policy() {
+    fn test_post_decode_plausibility_rejects_control_density() {
         assert_eq!(text_binary_reason("line\nwith\ttabs\r"), None);
         assert_eq!(
             text_binary_reason("\u{0001}\u{0002}\u{0003}ab"),
@@ -833,6 +930,31 @@ mod tests {
         assert_eq!(
             text_binary_reason("text\0text"),
             Some(BinaryReason::NullByte)
+        );
+        assert_eq!(
+            text_binary_reason("\u{0081}\u{008d}\u{008f}ab"),
+            Some(BinaryReason::ControlDensity)
+        );
+        assert_eq!(
+            process(vec![0x81, b' ', 0x8d, b' ', 0x8f, b' '], true),
+            ProcessedFile::Binary(BinaryReason::ImplausibleDecodedData)
+        );
+    }
+
+    #[test]
+    fn test_windows_1252_punctuation_remains_plausible_text() {
+        let decoded = text(process(
+            b"\x93Quoted prose\x94 with an \x96 dash.".to_vec(),
+            true,
+        ));
+
+        assert_eq!(decoded.text, "“Quoted prose” with an – dash.");
+        assert_eq!(
+            decoded.conversion,
+            Some(ConversionReport {
+                source_encoding: "windows-1252",
+                had_replacements: false,
+            })
         );
     }
 }
