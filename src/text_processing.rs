@@ -68,9 +68,16 @@ fn read_classify_and_decode_from_reader<R: Read>(
 
     let classification_start = Instant::now();
     let early_binary_reason = match Encoding::for_bom(&bytes) {
-        None => magic_binary_reason(&bytes),
+        None => bytes
+            .contains(&0)
+            .then_some(BinaryReason::NullByte)
+            .or_else(|| magic_binary_reason(&bytes)),
         Some((encoding, bom_length)) if encoding == UTF_8 => {
-            magic_binary_reason(&bytes[bom_length..])
+            let payload = &bytes[bom_length..];
+            payload
+                .contains(&0)
+                .then_some(BinaryReason::NullByte)
+                .or_else(|| magic_binary_reason(payload))
         }
         Some((encoding, _))
             if !utf8 && (encoding == UTF_16LE || encoding == UTF_16BE) =>
@@ -368,15 +375,18 @@ fn is_disallowed_char(character: char) -> bool {
 mod tests {
     use super::*;
     use crate::embedded::{get_tokenizer_json, TokenizerFamily};
+    use crate::test_fixtures::{
+        BIG5_BYTES, ENCODING_FIXTURES, EUC_JP_BYTES, GB18030_BYTES, GBK_BYTES,
+        ISO_2022_JP_BYTES, JAPANESE, SHIFT_JIS_BYTES, UTF16LE_BYTES,
+        UTF16_TEXT,
+    };
     use sha2::{Digest, Sha256};
 
-    const JAPANESE: &str = "これは文字コード検出のための日本語の文章です。複数の文を含めて、短い入力による誤判定を避けます。古い文書も正しく読み取ります。\n";
-    const SIMPLIFIED_CHINESE: &str = "这是用于字符编码检测的中文文本。它包含多个自然句子，以避免短输入造成误判。旧文件也应该被正确读取。\n";
-    const GB18030_CHINESE: &str = "这是用于字符编码检测的中文文本。它包含多个自然句子，以避免短输入造成误判。扩展字符𠀀用于验证四字节编码。\n";
-    const TRADITIONAL_CHINESE: &str = "這是用於字元編碼偵測的中文文字。它包含多個自然句子，以避免短輸入造成誤判。舊檔案也應該被正確讀取。\n";
-    const RUSSIAN: &str = "Это русский текст для проверки определения кодировки. Он содержит несколько естественных предложений. Старые файлы должны читаться правильно.\n";
-    const WESTERN: &str = "Voici un texte français pour vérifier la détection d’encodage. Il contient plusieurs phrases naturelles. Les fichiers anciens doivent être lus correctement.\n";
-    const UTF16_TEXT: &str = "UTF-16 text with 日本語, русский текст, and العربية. This fixture contains multiple natural sentences. It verifies byte-order-mark handling.\n";
+    const LATE_NUL_BYTES: [u8; BINARY_PROBE_SIZE + 1] = {
+        let mut bytes = [b'x'; BINARY_PROBE_SIZE + 1];
+        bytes[BINARY_PROBE_SIZE] = 0;
+        bytes
+    };
 
     struct CountingReader {
         prefix: &'static [u8],
@@ -530,64 +540,17 @@ mod tests {
 
     #[test]
     fn test_encoding_fixture_matrix_decodes_exact_text_and_labels() {
-        let cases = [
-            (
-                include_bytes!("../tests/fixtures/encodings/shift-jis.txt")
-                    .as_slice(),
-                JAPANESE,
-                "Shift_JIS",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/euc-jp.txt")
-                    .as_slice(),
-                JAPANESE,
-                "EUC-JP",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt")
-                    .as_slice(),
-                JAPANESE,
-                "ISO-2022-JP",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/gbk.txt")
-                    .as_slice(),
-                SIMPLIFIED_CHINESE,
-                "GBK",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/gb18030.txt")
-                    .as_slice(),
-                GB18030_CHINESE,
-                "GBK",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/big5.txt")
-                    .as_slice(),
-                TRADITIONAL_CHINESE,
-                "Big5",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/windows-1251.txt")
-                    .as_slice(),
-                RUSSIAN,
-                "windows-1251",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/windows-1252.txt")
-                    .as_slice(),
-                WESTERN,
-                "windows-1252",
-            ),
-        ];
-
-        for (bytes, expected, encoding) in cases {
-            let decoded = text(process(bytes.to_vec(), true));
-            assert_eq!(decoded.text, expected, "wrong text for {encoding}");
+        for fixture in &ENCODING_FIXTURES[..8] {
+            let decoded = text(process(fixture.bytes.to_vec(), true));
+            assert_eq!(
+                decoded.text, fixture.expected,
+                "wrong text for {}",
+                fixture.encoding
+            );
             assert_eq!(
                 decoded.conversion,
                 Some(ConversionReport {
-                    source_encoding: encoding,
+                    source_encoding: fixture.encoding,
                     had_replacements: false,
                 })
             );
@@ -596,35 +559,27 @@ mod tests {
 
     #[test]
     fn test_utf16_fixture_matrix_and_disabled_timing() {
-        for (bytes, encoding) in [
-            (
-                include_bytes!("../tests/fixtures/encodings/utf-16le.txt")
-                    .as_slice(),
-                "UTF-16LE",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/utf-16be.txt")
-                    .as_slice(),
-                "UTF-16BE",
-            ),
-        ] {
-            let decoded = text(process(bytes.to_vec(), true));
+        for fixture in &ENCODING_FIXTURES[8..] {
+            let decoded = text(process(fixture.bytes.to_vec(), true));
             assert_eq!(decoded.text, UTF16_TEXT);
             assert_eq!(
                 decoded.conversion,
                 Some(ConversionReport {
-                    source_encoding: encoding,
+                    source_encoding: fixture.encoding,
                     had_replacements: false,
                 })
             );
 
             let mut timings = ProcessingTimings::default();
-            let disabled =
-                classify_and_decode(bytes.to_vec(), false, &mut timings);
+            let disabled = classify_and_decode(
+                fixture.bytes.to_vec(),
+                false,
+                &mut timings,
+            );
             assert_eq!(
                 disabled,
                 ProcessedFile::Binary(BinaryReason::Utf16ConversionDisabled(
-                    encoding
+                    fixture.encoding
                 ))
             );
             assert_eq!(timings.transcoded_files, 0);
@@ -634,16 +589,16 @@ mod tests {
     #[test]
     fn test_fixture_hashes_are_stable() {
         let cases = [
-            (include_bytes!("../tests/fixtures/encodings/big5.txt").as_slice(), "193d7f0e99d3a5964ebf217e629efef1c707d2c83be8317d7ec4f81271b91602"),
-            (include_bytes!("../tests/fixtures/encodings/euc-jp.txt").as_slice(), "91a37bc153ef380393e5c2cb8f52e793e593c5cd1e0d9b7de1cd20c151023d0f"),
-            (include_bytes!("../tests/fixtures/encodings/gb18030.txt").as_slice(), "9e595b6e63720df4393911617670f8c3136f82757fee328b7f550dc12ad95cd4"),
-            (include_bytes!("../tests/fixtures/encodings/gbk.txt").as_slice(), "7fd8f1bcec1064109b0511f69e94d0655a8894f8da29c60f45c03940936bc33e"),
-            (include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt").as_slice(), "5e3a4177b42d3c7f2aaa7a5b48456d2bb0a16ca18acb7df2c902c45382b6888f"),
-            (include_bytes!("../tests/fixtures/encodings/shift-jis.txt").as_slice(), "3f5ea89b27d50f0978035ed513a81f359ba814ad39776fb402b762313d942dbf"),
-            (include_bytes!("../tests/fixtures/encodings/utf-16be.txt").as_slice(), "f6dbc0c548d420a3fa7ebdedfbe73c4275693e895ac5161c52d5126439dd79fd"),
-            (include_bytes!("../tests/fixtures/encodings/utf-16le.txt").as_slice(), "89092b865c9a2447b8ea301b974459256ad938874750e44bcecea1ae6296576f"),
-            (include_bytes!("../tests/fixtures/encodings/windows-1251.txt").as_slice(), "bc18e2357afd2a20f107a1c5ac44e3dbc17c9d9a7710369b3e92a7d6bfb5bb95"),
-            (include_bytes!("../tests/fixtures/encodings/windows-1252.txt").as_slice(), "e4a57b8dc2af3b7865147af1ce6d9d0375d63ca9fa16200e52225b3eb116beb7"),
+            (BIG5_BYTES, "193d7f0e99d3a5964ebf217e629efef1c707d2c83be8317d7ec4f81271b91602"),
+            (EUC_JP_BYTES, "91a37bc153ef380393e5c2cb8f52e793e593c5cd1e0d9b7de1cd20c151023d0f"),
+            (GB18030_BYTES, "9e595b6e63720df4393911617670f8c3136f82757fee328b7f550dc12ad95cd4"),
+            (GBK_BYTES, "7fd8f1bcec1064109b0511f69e94d0655a8894f8da29c60f45c03940936bc33e"),
+            (ISO_2022_JP_BYTES, "5e3a4177b42d3c7f2aaa7a5b48456d2bb0a16ca18acb7df2c902c45382b6888f"),
+            (SHIFT_JIS_BYTES, "3f5ea89b27d50f0978035ed513a81f359ba814ad39776fb402b762313d942dbf"),
+            (ENCODING_FIXTURES[9].bytes, "f6dbc0c548d420a3fa7ebdedfbe73c4275693e895ac5161c52d5126439dd79fd"),
+            (UTF16LE_BYTES, "89092b865c9a2447b8ea301b974459256ad938874750e44bcecea1ae6296576f"),
+            (ENCODING_FIXTURES[6].bytes, "bc18e2357afd2a20f107a1c5ac44e3dbc17c9d9a7710369b3e92a7d6bfb5bb95"),
+            (ENCODING_FIXTURES[7].bytes, "e4a57b8dc2af3b7865147af1ce6d9d0375d63ca9fa16200e52225b3eb116beb7"),
         ];
 
         for (bytes, expected) in cases {
@@ -709,8 +664,7 @@ mod tests {
 
     #[test]
     fn test_iso_2022_jp_fixture_still_decodes_after_narrow_probe() {
-        let bytes =
-            include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt");
+        let bytes = ISO_2022_JP_BYTES;
 
         let decoded = text(process(bytes.to_vec(), true));
 
@@ -744,8 +698,7 @@ mod tests {
 
     #[test]
     fn test_iso_2022_jp_is_not_detected_when_conversion_is_disabled() {
-        let bytes =
-            include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt");
+        let bytes = ISO_2022_JP_BYTES;
         let mut timings = ProcessingTimings::default();
 
         let decoded =
@@ -807,6 +760,25 @@ mod tests {
     }
 
     #[test]
+    fn test_unrecognized_large_binary_with_probe_nul_reads_only_probe() {
+        let mut reader = CountingReader {
+            prefix: b"unrecognized\0binary",
+            total_len: BINARY_PROBE_SIZE * 4,
+            position: 0,
+        };
+
+        let processed = read_classify_and_decode_from_reader(
+            &mut reader,
+            true,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        assert_eq!(processed, ProcessedFile::Binary(BinaryReason::NullByte));
+        assert_eq!(reader.position, BINARY_PROBE_SIZE);
+    }
+
+    #[test]
     fn test_utf8_bom_recognized_large_binary_reads_only_probe() {
         let mut reader = CountingReader {
             prefix: b"\xef\xbb\xbf\x89PNG\r\n\x1a\n",
@@ -826,6 +798,45 @@ mod tests {
             ProcessedFile::Binary(BinaryReason::RecognizedMagic("image/png"))
         ));
         assert_eq!(reader.position, BINARY_PROBE_SIZE);
+    }
+
+    #[test]
+    fn test_utf8_bom_large_binary_with_payload_nul_reads_only_probe() {
+        let mut reader = CountingReader {
+            prefix: b"\xef\xbb\xbfunrecognized\0binary",
+            total_len: BINARY_PROBE_SIZE * 4,
+            position: 0,
+        };
+
+        let processed = read_classify_and_decode_from_reader(
+            &mut reader,
+            true,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        assert_eq!(processed, ProcessedFile::Binary(BinaryReason::NullByte));
+        assert_eq!(reader.position, BINARY_PROBE_SIZE);
+    }
+
+    #[test]
+    fn test_nul_after_probe_is_fully_read_before_classification() {
+        let total_len = BINARY_PROBE_SIZE * 4;
+        let mut reader = CountingReader {
+            prefix: &LATE_NUL_BYTES,
+            total_len,
+            position: 0,
+        };
+
+        let processed = read_classify_and_decode_from_reader(
+            &mut reader,
+            true,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        assert_eq!(processed, ProcessedFile::Binary(BinaryReason::NullByte));
+        assert_eq!(reader.position, total_len);
     }
 
     #[test]
@@ -896,6 +907,26 @@ mod tests {
     }
 
     #[test]
+    fn test_utf16_probe_nul_is_not_short_circuited_when_enabled() {
+        let total_len = BINARY_PROBE_SIZE * 4;
+        let mut reader = CountingReader {
+            prefix: b"\xff\xfeA\0",
+            total_len,
+            position: 0,
+        };
+
+        let processed = read_classify_and_decode_from_reader(
+            &mut reader,
+            true,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(processed, ProcessedFile::Text(_)));
+        assert_eq!(reader.position, total_len);
+    }
+
+    #[test]
     fn test_utf8_bom_text_is_fully_read_and_preserved() {
         let total_len = BINARY_PROBE_SIZE * 4;
         let mut reader = CountingReader {
@@ -931,31 +962,11 @@ mod tests {
     #[test]
     fn test_truncated_multibyte_fixtures_report_selected_decoder_results() {
         let cases = [
-            (
-                include_bytes!("../tests/fixtures/encodings/shift-jis.txt")
-                    .as_slice(),
-                "Shift_JIS",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/euc-jp.txt")
-                    .as_slice(),
-                "EUC-JP",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/gbk.txt")
-                    .as_slice(),
-                "GBK",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/gb18030.txt")
-                    .as_slice(),
-                "GBK",
-            ),
-            (
-                include_bytes!("../tests/fixtures/encodings/big5.txt")
-                    .as_slice(),
-                "Big5",
-            ),
+            (SHIFT_JIS_BYTES, "Shift_JIS"),
+            (EUC_JP_BYTES, "EUC-JP"),
+            (GBK_BYTES, "GBK"),
+            (GB18030_BYTES, "GBK"),
+            (BIG5_BYTES, "Big5"),
         ];
 
         for (fixture, source_encoding) in cases {
@@ -976,9 +987,7 @@ mod tests {
 
     #[test]
     fn test_truncated_iso_2022_jp_uses_normal_utf8_path_when_not_selected() {
-        let mut malformed =
-            include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt")
-                .to_vec();
+        let mut malformed = ISO_2022_JP_BYTES.to_vec();
         assert_eq!(malformed.pop(), Some(b'\n'));
         malformed.pop();
         malformed.shrink_to_fit();
@@ -996,9 +1005,7 @@ mod tests {
 
     #[test]
     fn test_truncated_utf16_reports_replacement_and_disabled_stays_binary() {
-        let mut malformed =
-            include_bytes!("../tests/fixtures/encodings/utf-16le.txt")
-                .to_vec();
+        let mut malformed = UTF16LE_BYTES.to_vec();
         malformed.pop();
 
         let decoded = text(process(malformed.clone(), true));

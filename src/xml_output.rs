@@ -45,6 +45,8 @@ pub fn output_repo_as_xml_with_timings<N: Write, D: Write>(
     timings: &mut ProcessingTimings,
 ) -> Result<(usize, u64, usize), std::io::Error> {
     validate_output_options(flags)?;
+    let classification_before = timings.file_classification_and_read;
+    let utf8_before = timings.utf8_validation_or_transcode;
     let xml_start = Instant::now();
 
     // Use an in-memory buffer instead of a physical file
@@ -96,12 +98,18 @@ pub fn output_repo_as_xml_with_timings<N: Write, D: Write>(
     )?;
     buffer.write_all(b"</repository_files>\n")?;
     buffer.write_all(b"</repository>\n")?;
+    let classification_elapsed = timings
+        .file_classification_and_read
+        .checked_sub(classification_before)
+        .unwrap_or_default();
+    let utf8_elapsed = timings
+        .utf8_validation_or_transcode
+        .checked_sub(utf8_before)
+        .unwrap_or_default();
     timings.xml_generation += xml_start
         .elapsed()
-        .checked_sub(timings.file_classification_and_read)
-        .and_then(|duration| {
-            duration.checked_sub(timings.utf8_validation_or_transcode)
-        })
+        .checked_sub(classification_elapsed)
+        .and_then(|duration| duration.checked_sub(utf8_elapsed))
         .unwrap_or_default();
 
     finish_output(
@@ -529,71 +537,15 @@ fn add_line_numbers(file_content: &str) -> String {
 mod tests {
     use super::*;
     use crate::filelist::FileTree;
+    use crate::test_fixtures::{
+        ENCODING_FIXTURES, UTF16BE_BYTES, UTF16LE_BYTES, WINDOWS_1252_BYTES,
+    };
     use crate::tokenizer::Model;
     use flate2::read::GzDecoder;
     use std::fs;
     use std::io::Read;
+    use std::time::Duration;
     use tempfile::tempdir;
-
-    const JAPANESE: &str = "これは文字コード検出のための日本語の文章です。複数の文を含めて、短い入力による誤判定を避けます。古い文書も正しく読み取ります。\n";
-    const SIMPLIFIED: &str = "这是用于字符编码检测的中文文本。它包含多个自然句子，以避免短输入造成误判。旧文件也应该被正确读取。\n";
-    const GB18030: &str = "这是用于字符编码检测的中文文本。它包含多个自然句子，以避免短输入造成误判。扩展字符𠀀用于验证四字节编码。\n";
-    const TRADITIONAL: &str = "這是用於字元編碼偵測的中文文字。它包含多個自然句子，以避免短輸入造成誤判。舊檔案也應該被正確讀取。\n";
-    const RUSSIAN: &str = "Это русский текст для проверки определения кодировки. Он содержит несколько естественных предложений. Старые файлы должны читаться правильно.\n";
-    const WESTERN: &str = "Voici un texte français pour vérifier la détection d’encodage. Il contient plusieurs phrases naturelles. Les fichiers anciens doivent être lus correctement.\n";
-    const UTF16: &str = "UTF-16 text with 日本語, русский текст, and العربية. This fixture contains multiple natural sentences. It verifies byte-order-mark handling.\n";
-    const ENCODING_FIXTURES: [(&str, &[u8], &str); 10] = [
-        (
-            "shift-jis.txt",
-            include_bytes!("../tests/fixtures/encodings/shift-jis.txt"),
-            JAPANESE,
-        ),
-        (
-            "euc-jp.txt",
-            include_bytes!("../tests/fixtures/encodings/euc-jp.txt"),
-            JAPANESE,
-        ),
-        (
-            "iso-2022-jp.txt",
-            include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt"),
-            JAPANESE,
-        ),
-        (
-            "gbk.txt",
-            include_bytes!("../tests/fixtures/encodings/gbk.txt"),
-            SIMPLIFIED,
-        ),
-        (
-            "gb18030.txt",
-            include_bytes!("../tests/fixtures/encodings/gb18030.txt"),
-            GB18030,
-        ),
-        (
-            "big5.txt",
-            include_bytes!("../tests/fixtures/encodings/big5.txt"),
-            TRADITIONAL,
-        ),
-        (
-            "windows-1251.txt",
-            include_bytes!("../tests/fixtures/encodings/windows-1251.txt"),
-            RUSSIAN,
-        ),
-        (
-            "windows-1252.txt",
-            include_bytes!("../tests/fixtures/encodings/windows-1252.txt"),
-            WESTERN,
-        ),
-        (
-            "utf-16le.txt",
-            include_bytes!("../tests/fixtures/encodings/utf-16le.txt"),
-            UTF16,
-        ),
-        (
-            "utf-16be.txt",
-            include_bytes!("../tests/fixtures/encodings/utf-16be.txt"),
-            UTF16,
-        ),
-    ];
 
     #[test]
     fn test_add_line_numbers() {
@@ -664,6 +616,50 @@ mod tests {
         assert!(xml_content.contains("<repository_files>"));
         assert!(xml_content.contains("<file path=\"test.txt\""));
         assert!(xml_content.contains("Test content"));
+    }
+
+    #[test]
+    fn test_reused_timings_subtract_only_per_call_file_phase_deltas() {
+        let temp_dir = tempdir().unwrap();
+        let output_file = temp_dir.path().join("output.xml");
+        let params = Params {
+            output_file: Some(output_file.to_string_lossy().into_owned()),
+            ..Params::default()
+        };
+        let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+        let mut reporter =
+            ProgressReporter::new(Vec::new(), Vec::new(), false);
+        let mut timings = ProcessingTimings {
+            file_classification_and_read: Duration::from_secs(1),
+            utf8_validation_or_transcode: Duration::from_secs(1),
+            ..ProcessingTimings::default()
+        };
+
+        output_repo_as_xml_with_timings(
+            &params,
+            FileTree::default(),
+            temp_dir.path(),
+            &tokenizer,
+            "GPT-4",
+            &mut reporter,
+            &mut timings,
+        )
+        .unwrap();
+        let after_first_call = timings.xml_generation;
+
+        output_repo_as_xml_with_timings(
+            &params,
+            FileTree::default(),
+            temp_dir.path(),
+            &tokenizer,
+            "GPT-4",
+            &mut reporter,
+            &mut timings,
+        )
+        .unwrap();
+
+        assert!(after_first_call > Duration::ZERO);
+        assert!(timings.xml_generation > after_first_call);
     }
 
     #[test]
@@ -801,9 +797,10 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let output_file = temp_dir.path().join("output.xml");
         let mut file_tree = FileTree::default();
-        for (name, bytes, _) in ENCODING_FIXTURES {
-            fs::write(temp_dir.path().join(name), bytes).unwrap();
-            file_tree.file_paths.push(name.to_string());
+        for fixture in ENCODING_FIXTURES {
+            fs::write(temp_dir.path().join(fixture.name), fixture.bytes)
+                .unwrap();
+            file_tree.file_paths.push(fixture.name.to_string());
         }
         let params = Params {
             output_file: Some(output_file.to_string_lossy().into_owned()),
@@ -820,14 +817,14 @@ mod tests {
         .unwrap();
 
         let xml = fs::read_to_string(output_file).unwrap();
-        for (name, _, expected) in ENCODING_FIXTURES {
-            let start = format!("<file path=\"{name}\"");
+        for fixture in ENCODING_FIXTURES {
+            let start = format!("<file path=\"{}\"", fixture.name);
             let file_xml = xml.split(&start).nth(1).unwrap();
             assert!(file_xml
                 .split("</file>")
                 .next()
                 .unwrap()
-                .contains(expected));
+                .contains(fixture.expected));
         }
     }
 
@@ -837,16 +834,8 @@ mod tests {
         let output_file = temp_dir.path().join("output.xml");
         let mut file_tree = FileTree::default();
         for (name, bytes) in [
-            (
-                "utf-16le.txt",
-                include_bytes!("../tests/fixtures/encodings/utf-16le.txt")
-                    .as_slice(),
-            ),
-            (
-                "utf-16be.txt",
-                include_bytes!("../tests/fixtures/encodings/utf-16be.txt")
-                    .as_slice(),
-            ),
+            ("utf-16le.txt", UTF16LE_BYTES),
+            ("utf-16be.txt", UTF16BE_BYTES),
         ] {
             fs::write(temp_dir.path().join(name), bytes).unwrap();
             file_tree.file_paths.push(name.to_string());
@@ -874,11 +863,8 @@ mod tests {
     fn test_progress_phases_and_conversion_follow_execution_order() {
         let temp_dir = tempdir().unwrap();
         let output_file = temp_dir.path().join("output.xml");
-        fs::write(
-            temp_dir.path().join("legacy.txt"),
-            include_bytes!("../tests/fixtures/encodings/windows-1252.txt"),
-        )
-        .unwrap();
+        fs::write(temp_dir.path().join("legacy.txt"), WINDOWS_1252_BYTES)
+            .unwrap();
         let params = Params {
             output_file: Some(output_file.to_string_lossy().into_owned()),
             utf8: true,
@@ -925,9 +911,7 @@ mod tests {
     fn test_utf16_replacement_warning_is_emitted_once() {
         let temp_dir = tempdir().unwrap();
         let output_file = temp_dir.path().join("output.xml");
-        let mut malformed =
-            include_bytes!("../tests/fixtures/encodings/utf-16le.txt")
-                .to_vec();
+        let mut malformed = UTF16LE_BYTES.to_vec();
         malformed.pop();
         fs::write(temp_dir.path().join("malformed.txt"), malformed).unwrap();
         let params = Params {

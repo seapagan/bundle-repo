@@ -22,6 +22,8 @@ mod filelist;
 mod progress;
 mod repo;
 mod structs;
+#[cfg(test)]
+mod test_fixtures;
 mod text_processing;
 mod timings;
 mod tokenizer;
