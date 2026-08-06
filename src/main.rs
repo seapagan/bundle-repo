@@ -633,7 +633,6 @@ mod tests {
                     )
                 );
                 assert_eq!(timings.transcoded_files, 0);
-                assert!(timings.transcode_time.is_zero());
             }
         }
     }

@@ -6,7 +6,6 @@ pub(crate) struct ProcessingTimings {
     pub(crate) tokenizer_load: Duration,
     pub(crate) file_classification_and_read: Duration,
     pub(crate) utf8_validation_or_transcode: Duration,
-    pub(crate) transcode_time: Duration,
     pub(crate) xml_generation: Duration,
     pub(crate) token_count: Duration,
     pub(crate) compression: Duration,

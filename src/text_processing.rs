@@ -147,7 +147,6 @@ fn process_utf16(
     let text = decoded.into_owned();
     let elapsed = validation_start.elapsed();
     timings.utf8_validation_or_transcode += elapsed;
-    timings.transcode_time += elapsed;
     if text_binary_reason(&text).is_some() {
         return ProcessedFile::Binary(BinaryReason::ImplausibleDecodedData);
     }
@@ -212,7 +211,6 @@ fn transcode_legacy(
     let text = decoded.into_owned();
     let elapsed = validation_start.elapsed();
     timings.utf8_validation_or_transcode += elapsed;
-    timings.transcode_time += elapsed;
     if text_binary_reason(&text).is_some() {
         return ProcessedFile::Binary(BinaryReason::ImplausibleDecodedData);
     }
@@ -241,13 +239,10 @@ fn try_transcode_iso_2022_jp(
         return Err(bytes);
     }
 
-    let decode_start = Instant::now();
     let (decoded, had_replacements) =
         encoding.decode_without_bom_handling(&bytes);
     let text = decoded.into_owned();
-    let decode_elapsed = decode_start.elapsed();
     timings.utf8_validation_or_transcode += detection_start.elapsed();
-    timings.transcode_time += decode_elapsed;
     if text_binary_reason(&text).is_some() {
         return Ok(ProcessedFile::Binary(
             BinaryReason::ImplausibleDecodedData,
@@ -306,13 +301,15 @@ fn text_binary_reason(text: &str) -> Option<BinaryReason> {
     if text.contains('\0') {
         return Some(BinaryReason::NullByte);
     }
-    exceeds_control_density(
-        text.chars()
-            .filter(|character| is_disallowed_char(*character))
-            .count(),
-        text.chars().count(),
-    )
-    .then_some(BinaryReason::ControlDensity)
+    let (disallowed, total) =
+        text.chars().fold((0, 0), |(disallowed, total), character| {
+            (
+                disallowed + usize::from(is_disallowed_char(character)),
+                total + 1,
+            )
+        });
+    exceeds_control_density(disallowed, total)
+        .then_some(BinaryReason::ControlDensity)
 }
 
 fn exceeds_control_density(disallowed: usize, total: usize) -> bool {
@@ -570,7 +567,6 @@ mod tests {
                     encoding
                 ))
             );
-            assert!(timings.transcode_time.is_zero());
             assert_eq!(timings.transcoded_files, 0);
         }
     }
@@ -596,16 +592,17 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_utf8_has_zero_transcode_time() {
+    fn test_valid_utf8_is_not_reported_as_transcoded() {
         let mut timings = ProcessingTimings::default();
-        let result = classify_and_decode(
-            "日本語 Русский العربية".as_bytes().to_vec(),
+        let expected = "日本語 Русский العربية";
+        let decoded = text(classify_and_decode(
+            expected.as_bytes().to_vec(),
             true,
             &mut timings,
-        );
+        ));
 
-        assert!(matches!(result, ProcessedFile::Text(_)));
-        assert!(timings.transcode_time.is_zero());
+        assert_eq!(decoded.text.as_bytes(), expected.as_bytes());
+        assert_eq!(decoded.conversion, None);
         assert_eq!(timings.transcoded_files, 0);
     }
 
@@ -647,7 +644,7 @@ mod tests {
         assert_eq!(decoded.text.as_ptr(), pointer);
         assert_eq!(decoded.text.capacity(), capacity);
         assert_eq!(decoded.conversion, None);
-        assert!(timings.transcode_time.is_zero());
+        assert_eq!(timings.transcoded_files, 0);
     }
 
     #[test]
@@ -677,7 +674,6 @@ mod tests {
 
         assert_eq!(decoded.text.as_bytes(), bytes);
         assert_eq!(decoded.conversion, None);
-        assert!(timings.transcode_time.is_zero());
         assert_eq!(timings.transcoded_files, 0);
     }
 
