@@ -67,12 +67,21 @@ fn read_classify_and_decode_from_reader<R: Read>(
     timings.file_classification_and_read += read_start.elapsed();
 
     let classification_start = Instant::now();
-    if Encoding::for_bom(&bytes).is_none() {
-        if let Some(reason) = magic_binary_reason(&bytes) {
-            timings.file_classification_and_read +=
-                classification_start.elapsed();
-            return Ok(ProcessedFile::Binary(reason));
+    let early_binary_reason = match Encoding::for_bom(&bytes) {
+        None => magic_binary_reason(&bytes),
+        Some((encoding, bom_length)) if encoding == UTF_8 => {
+            magic_binary_reason(&bytes[bom_length..])
         }
+        Some((encoding, _))
+            if !utf8 && (encoding == UTF_16LE || encoding == UTF_16BE) =>
+        {
+            Some(BinaryReason::Utf16ConversionDisabled(encoding.name()))
+        }
+        Some(_) => None,
+    };
+    if let Some(reason) = early_binary_reason {
+        timings.file_classification_and_read += classification_start.elapsed();
+        return Ok(ProcessedFile::Binary(reason));
     }
     timings.file_classification_and_read += classification_start.elapsed();
 
@@ -795,6 +804,120 @@ mod tests {
             ProcessedFile::Binary(BinaryReason::RecognizedMagic("image/png"))
         ));
         assert_eq!(reader.position, BINARY_PROBE_SIZE);
+    }
+
+    #[test]
+    fn test_utf8_bom_recognized_large_binary_reads_only_probe() {
+        let mut reader = CountingReader {
+            prefix: b"\xef\xbb\xbf\x89PNG\r\n\x1a\n",
+            total_len: BINARY_PROBE_SIZE * 4,
+            position: 0,
+        };
+
+        let processed = read_classify_and_decode_from_reader(
+            &mut reader,
+            true,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            processed,
+            ProcessedFile::Binary(BinaryReason::RecognizedMagic("image/png"))
+        ));
+        assert_eq!(reader.position, BINARY_PROBE_SIZE);
+    }
+
+    #[test]
+    fn test_utf16_bom_reads_only_probe_when_conversion_is_disabled() {
+        for (prefix, encoding_name) in [
+            (b"\xff\xfe".as_slice(), "UTF-16LE"),
+            (b"\xfe\xff".as_slice(), "UTF-16BE"),
+        ] {
+            let mut reader = CountingReader {
+                prefix,
+                total_len: BINARY_PROBE_SIZE * 4,
+                position: 0,
+            };
+
+            let processed = read_classify_and_decode_from_reader(
+                &mut reader,
+                false,
+                &mut ProcessingTimings::default(),
+            )
+            .unwrap();
+
+            assert_eq!(
+                processed,
+                ProcessedFile::Binary(BinaryReason::Utf16ConversionDisabled(
+                    encoding_name,
+                ))
+            );
+            assert_eq!(reader.position, BINARY_PROBE_SIZE);
+        }
+    }
+
+    #[test]
+    fn test_utf16_bom_is_fully_read_and_decoded_when_enabled() {
+        let total_len = BINARY_PROBE_SIZE * 4;
+        for (prefix, encoding_name) in [
+            (b"\xff\xfe".as_slice(), "UTF-16LE"),
+            (b"\xfe\xff".as_slice(), "UTF-16BE"),
+        ] {
+            let mut reader = CountingReader {
+                prefix,
+                total_len,
+                position: 0,
+            };
+
+            let decoded = text(
+                read_classify_and_decode_from_reader(
+                    &mut reader,
+                    true,
+                    &mut ProcessingTimings::default(),
+                )
+                .unwrap(),
+            );
+
+            assert_eq!(reader.position, total_len);
+            assert_eq!(decoded.text.chars().count(), (total_len - 2) / 2);
+            assert!(decoded
+                .text
+                .chars()
+                .all(|character| character == '\u{7878}'));
+            assert_eq!(
+                decoded.conversion,
+                Some(ConversionReport {
+                    source_encoding: encoding_name,
+                    had_replacements: false,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn test_utf8_bom_text_is_fully_read_and_preserved() {
+        let total_len = BINARY_PROBE_SIZE * 4;
+        let mut reader = CountingReader {
+            prefix: b"\xef\xbb\xbfhello",
+            total_len,
+            position: 0,
+        };
+
+        let decoded = text(
+            read_classify_and_decode_from_reader(
+                &mut reader,
+                true,
+                &mut ProcessingTimings::default(),
+            )
+            .unwrap(),
+        );
+        let expected = format!("\u{feff}hello{}", "x".repeat(total_len - 8));
+
+        assert_eq!(reader.position, total_len);
+        assert_eq!(decoded.text, expected);
+        assert_eq!(decoded.conversion, None);
+        assert!(!decoded.utf8_had_replacements);
     }
 
     #[test]
