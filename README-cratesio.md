@@ -558,8 +558,10 @@ understood by an LLM. Below is an example layout with explanations for each tag:
 
 BundleRepo writes included decoded text as CDATA. If file content contains
 `]]>`, the XML writer uses adjacent CDATA sections; an XML parser reconstructs
-the original logical characters. XML 1.0 parsers normalize CRLF and lone CR
-line endings to LF. BundleRepo numbers lines before that normalization.
+the original logical characters. BundleRepo treats LF, CRLF, and lone CR as
+logical line boundaries when it computes the `lines` attribute and applies
+`-l` numbering. XML 1.0 parsers normalize CRLF and lone CR to LF, so parsed
+content uses LF for each boundary.
 
 XML syntax characters such as `<`, `>`, `&`, and quotes remain valid in file
 content and path metadata. The writer escapes metadata and keeps file content

@@ -10,6 +10,7 @@ use arboard::Clipboard;
 use dirs_next::home_dir;
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use std::borrow::Cow;
 use std::fs::{File, metadata};
 use std::io::{self, Cursor, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -170,8 +171,8 @@ fn validate_xml_attribute(value: &str, role: &str) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::InvalidData,
         format!(
-            "{role} {:?} contains {} at byte index {byte_index}, which {reason}",
-            value.escape_debug().to_string(),
+            "{role} \"{}\" contains {} at byte index {byte_index}, which {reason}",
+            value.escape_debug(),
             format_code_point(character),
         ),
     ))
@@ -478,9 +479,13 @@ fn write_processed_text_file<W: Write, N: Write, D: Write>(
         reporter.malformed_utf8_replacement(path)?;
     }
     if let Some(invalid) = first_invalid_xml10_char(&decoded.text) {
+        let code_point = format_code_point(invalid.character);
+        reporter.warning(&format!(
+            "warning: '{path}' content was omitted because XML 1.0 cannot represent character {code_point}"
+        ))?;
         let comment = format!(
             "Text content omitted: XML 1.0 cannot represent character {}",
-            format_code_point(invalid.character),
+            code_point,
         );
         return write_placeholder_file_entry(writer, path, size, &comment);
     }
@@ -497,7 +502,7 @@ fn write_text_file_entry<W: Write>(
     content: &str,
 ) -> io::Result<()> {
     let size = size.to_string();
-    let lines = content.lines().count().to_string();
+    let lines = xml_logical_text(content).lines().count().to_string();
     writer
         .write(
             XmlEvent::start_element("file")
@@ -642,7 +647,8 @@ fn write_text_element<W: Write>(
 ///     A string with line numbers added to each line, left-padded, and
 ///     followed by 4 spaces. Ensures the final content ends with a newline.
 fn add_line_numbers(file_content: &str) -> String {
-    let lines: Vec<&str> = file_content.lines().collect();
+    let normalized = xml_logical_text(file_content);
+    let lines: Vec<&str> = normalized.lines().collect();
     let total_lines = lines.len();
 
     // Determine the width needed for the largest line number
@@ -662,6 +668,14 @@ fn add_line_numbers(file_content: &str) -> String {
     }
 
     numbered_content
+}
+
+fn xml_logical_text(content: &str) -> Cow<'_, str> {
+    if content.contains('\r') {
+        Cow::Owned(content.replace("\r\n", "\n").replace('\r', "\n"))
+    } else {
+        Cow::Borrowed(content)
+    }
 }
 
 #[cfg(test)]
@@ -849,12 +863,17 @@ mod tests {
     #[test]
     fn test_metadata_validation_rejects_each_entry_point_before_file_access() {
         let cases = [
-            ("repository file path", 0),
-            ("repository structure file path", 1),
-            ("repository structure folder name", 2),
-            ("repository structure folder name", 3),
+            ("repository file path", 0, "missing\\u{b}file", 7),
+            ("repository structure file path", 1, "bad\\u{b}basename", 3),
+            ("repository structure folder name", 2, "bad\\u{b}folder", 3),
+            (
+                "repository structure folder name",
+                3,
+                "nested\\u{b}folder",
+                6,
+            ),
         ];
-        for (expected_role, location) in cases {
+        for (expected_role, location, escaped_value, byte_index) in cases {
             let mut tree = FileTree::default();
             match location {
                 0 => tree.file_paths.push("missing\u{000b}file".to_string()),
@@ -883,11 +902,12 @@ mod tests {
 
             let error = validate_file_tree_xml_metadata(&tree).unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-            let message = error.to_string();
-            assert!(message.contains(expected_role));
-            assert!(message.contains("\\u{b}"));
-            assert!(message.contains("U+000B"));
-            assert!(message.contains("byte index"));
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "{expected_role} \"{escaped_value}\" contains U+000B at byte index {byte_index}, which cannot be represented in XML 1.0"
+                )
+            );
         }
     }
 
@@ -920,8 +940,10 @@ mod tests {
         tree.file_paths.push("a\tb".to_string());
         let error = validate_file_tree_xml_metadata(&tree).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-        assert!(error.to_string().contains("round-trip"));
-        assert!(error.to_string().contains("U+0009"));
+        assert_eq!(
+            error.to_string(),
+            "repository file path \"a\\tb\" contains U+0009 at byte index 1, which cannot round-trip through XML attributes with the resolved writer"
+        );
     }
 
     #[test]
@@ -1012,11 +1034,31 @@ mod tests {
     }
 
     #[test]
-    fn test_line_numbered_content_round_trips_from_cdata() {
-        let xml = serialize_single_file(b"Line 1\nLine 2\nLine 3", true);
-        let file = parse_file(&xml, "test.txt");
-        assert_eq!(file.text, "1  Line 1\n2  Line 2\n3  Line 3\n");
-        assert_eq!(attribute(&file, "lines"), "3");
+    fn test_line_numbered_content_uses_xml_logical_lines() {
+        for content in [
+            b"alpha\nbeta\ngamma\n".as_slice(),
+            b"alpha\r\nbeta\r\ngamma\r\n".as_slice(),
+            b"alpha\rbeta\rgamma\n".as_slice(),
+        ] {
+            let xml = serialize_single_file(content, true);
+            let file = parse_file(&xml, "test.txt");
+            assert_eq!(file.text, "1  alpha\n2  beta\n3  gamma\n");
+            assert_eq!(attribute(&file, "lines"), "3");
+        }
+    }
+
+    #[test]
+    fn test_line_metadata_uses_xml_logical_lines() {
+        for content in [
+            b"alpha\nbeta\ngamma\n".as_slice(),
+            b"alpha\r\nbeta\r\ngamma\r\n".as_slice(),
+            b"alpha\rbeta\rgamma\n".as_slice(),
+        ] {
+            let xml = serialize_single_file(content, false);
+            let file = parse_file(&xml, "test.txt");
+            assert_eq!(file.text, "alpha\nbeta\ngamma\n");
+            assert_eq!(attribute(&file, "lines"), "3");
+        }
     }
 
     #[test]
@@ -1048,6 +1090,38 @@ mod tests {
             assert_eq!(file.comments.len(), 1);
             assert!(file.comments[0].contains("content omitted"));
             assert!(file.comments[0].contains(&format_code_point(character)));
+        }
+    }
+
+    #[test]
+    fn test_xml_forbidden_text_warning_respects_quiet_reporter() {
+        let content = "a sufficiently long text prefix \u{000b} and suffix";
+        let temp_dir = tempdir().unwrap();
+        fs::write(temp_dir.path().join("test.txt"), content).unwrap();
+        let mut tree = FileTree::default();
+        tree.file_paths.push("test.txt".to_string());
+
+        for quiet in [false, true] {
+            let mut reporter =
+                ProgressReporter::new(Vec::new(), Vec::new(), quiet);
+            serialize_repository_xml(
+                &Params::default(),
+                &tree,
+                temp_dir.path(),
+                &mut reporter,
+                &mut ProcessingTimings::default(),
+            )
+            .unwrap();
+            let (normal, diagnostic) = reporter.into_parts();
+            assert!(normal.is_empty());
+            if quiet {
+                assert!(diagnostic.is_empty());
+            } else {
+                assert_eq!(
+                    String::from_utf8(diagnostic).unwrap(),
+                    "warning: 'test.txt' content was omitted because XML 1.0 cannot represent character U+000B\n"
+                );
+            }
         }
     }
 
