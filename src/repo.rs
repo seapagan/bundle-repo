@@ -65,19 +65,31 @@ pub fn clone_repo(
         }
         Err(e) => {
             let error_message = match (e.class(), e.code()) {
-            (ErrorClass::Reference, ErrorCode::NotFound) => {
-                if let Some(branch_name) = &flags.branch {
-                    format!("The specified branch '{branch_name}' does not exist in the repository.")
-                } else {
-                    format!("Failed to clone: {}", e)
+                (ErrorClass::Reference, ErrorCode::NotFound) => {
+                    if let Some(branch_name) = &flags.branch {
+                        format!(
+                            "The specified branch '{branch_name}' does not exist in the repository."
+                        )
+                    } else {
+                        format!("Failed to clone: {}", e)
+                    }
                 }
-            },
-            (ErrorClass::Net, _) => format!("Network error: The repository '{}' might not exist or you may not have permission to access it.", repo_input),
-            (ErrorClass::Http, _) if e.message().contains("too many redirects or authentication replays") => {
-                format!("The repository '{}' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option.", repo_input)
-            },
-            _ => format!("Failed to clone: {}", e),
-        };
+                (ErrorClass::Net, _) => format!(
+                    "Network error: The repository '{}' might not exist or you may not have permission to access it.",
+                    repo_input
+                ),
+                (ErrorClass::Http, _)
+                    if e.message().contains(
+                        "too many redirects or authentication replays",
+                    ) =>
+                {
+                    format!(
+                        "The repository '{}' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option.",
+                        repo_input
+                    )
+                }
+                _ => format!("Failed to clone: {}", e),
+            };
             Err(git2::Error::from_str(&error_message))
         }
     }

@@ -1,6 +1,6 @@
 use crate::timings::ProcessingTimings;
 use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
-use encoding_rs::{Encoding, ISO_2022_JP, UTF_16BE, UTF_16LE, UTF_8};
+use encoding_rs::{Encoding, ISO_2022_JP, UTF_8, UTF_16BE, UTF_16LE};
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
@@ -374,11 +374,11 @@ fn is_disallowed_char(character: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::embedded::{get_tokenizer_json, TokenizerFamily};
+    use crate::embedded::{TokenizerFamily, get_tokenizer_json};
     use crate::test_fixtures::{
         BIG5_BYTES, ENCODING_FIXTURES, EUC_JP_BYTES, GB18030_BYTES, GBK_BYTES,
-        ISO_2022_JP_BYTES, JAPANESE, SHIFT_JIS_BYTES, UTF16LE_BYTES,
-        UTF16_TEXT,
+        ISO_2022_JP_BYTES, JAPANESE, SHIFT_JIS_BYTES, UTF16_TEXT,
+        UTF16LE_BYTES,
     };
     use sha2::{Digest, Sha256};
 
@@ -589,16 +589,46 @@ mod tests {
     #[test]
     fn test_fixture_hashes_are_stable() {
         let cases = [
-            (BIG5_BYTES, "193d7f0e99d3a5964ebf217e629efef1c707d2c83be8317d7ec4f81271b91602"),
-            (EUC_JP_BYTES, "91a37bc153ef380393e5c2cb8f52e793e593c5cd1e0d9b7de1cd20c151023d0f"),
-            (GB18030_BYTES, "9e595b6e63720df4393911617670f8c3136f82757fee328b7f550dc12ad95cd4"),
-            (GBK_BYTES, "7fd8f1bcec1064109b0511f69e94d0655a8894f8da29c60f45c03940936bc33e"),
-            (ISO_2022_JP_BYTES, "5e3a4177b42d3c7f2aaa7a5b48456d2bb0a16ca18acb7df2c902c45382b6888f"),
-            (SHIFT_JIS_BYTES, "3f5ea89b27d50f0978035ed513a81f359ba814ad39776fb402b762313d942dbf"),
-            (ENCODING_FIXTURES[9].bytes, "f6dbc0c548d420a3fa7ebdedfbe73c4275693e895ac5161c52d5126439dd79fd"),
-            (UTF16LE_BYTES, "89092b865c9a2447b8ea301b974459256ad938874750e44bcecea1ae6296576f"),
-            (ENCODING_FIXTURES[6].bytes, "bc18e2357afd2a20f107a1c5ac44e3dbc17c9d9a7710369b3e92a7d6bfb5bb95"),
-            (ENCODING_FIXTURES[7].bytes, "e4a57b8dc2af3b7865147af1ce6d9d0375d63ca9fa16200e52225b3eb116beb7"),
+            (
+                BIG5_BYTES,
+                "193d7f0e99d3a5964ebf217e629efef1c707d2c83be8317d7ec4f81271b91602",
+            ),
+            (
+                EUC_JP_BYTES,
+                "91a37bc153ef380393e5c2cb8f52e793e593c5cd1e0d9b7de1cd20c151023d0f",
+            ),
+            (
+                GB18030_BYTES,
+                "9e595b6e63720df4393911617670f8c3136f82757fee328b7f550dc12ad95cd4",
+            ),
+            (
+                GBK_BYTES,
+                "7fd8f1bcec1064109b0511f69e94d0655a8894f8da29c60f45c03940936bc33e",
+            ),
+            (
+                ISO_2022_JP_BYTES,
+                "5e3a4177b42d3c7f2aaa7a5b48456d2bb0a16ca18acb7df2c902c45382b6888f",
+            ),
+            (
+                SHIFT_JIS_BYTES,
+                "3f5ea89b27d50f0978035ed513a81f359ba814ad39776fb402b762313d942dbf",
+            ),
+            (
+                ENCODING_FIXTURES[9].bytes,
+                "f6dbc0c548d420a3fa7ebdedfbe73c4275693e895ac5161c52d5126439dd79fd",
+            ),
+            (
+                UTF16LE_BYTES,
+                "89092b865c9a2447b8ea301b974459256ad938874750e44bcecea1ae6296576f",
+            ),
+            (
+                ENCODING_FIXTURES[6].bytes,
+                "bc18e2357afd2a20f107a1c5ac44e3dbc17c9d9a7710369b3e92a7d6bfb5bb95",
+            ),
+            (
+                ENCODING_FIXTURES[7].bytes,
+                "e4a57b8dc2af3b7865147af1ce6d9d0375d63ca9fa16200e52225b3eb116beb7",
+            ),
         ];
 
         for (bytes, expected) in cases {
@@ -896,10 +926,12 @@ mod tests {
 
             assert_eq!(reader.position, total_len);
             assert_eq!(decoded.text.chars().count(), (total_len - 2) / 2);
-            assert!(decoded
-                .text
-                .chars()
-                .all(|character| character == '\u{7878}'));
+            assert!(
+                decoded
+                    .text
+                    .chars()
+                    .all(|character| character == '\u{7878}')
+            );
             assert_eq!(
                 decoded.conversion,
                 Some(ConversionReport {

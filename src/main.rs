@@ -7,11 +7,11 @@ use config::{Config, File, FileFormat};
 use dirs_next::home_dir;
 use structs::Params;
 use tabled::{
-    settings::{
-        object::{Columns, Rows},
-        Alignment, Modify, Remove, Style,
-    },
     Table, Tabled,
+    settings::{
+        Alignment, Modify, Remove, Style,
+        object::{Columns, Rows},
+    },
 };
 use tempfile::tempdir;
 use tokenizer::Model;
@@ -232,7 +232,7 @@ mod tests {
     use super::*;
     use crate::cli::Flags;
     use crate::text_processing::{
-        read_classify_and_decode, BinaryReason, ProcessedFile,
+        BinaryReason, ProcessedFile, read_classify_and_decode,
     };
     use clap::Parser;
     use std::fs;
@@ -429,10 +429,12 @@ mod tests {
         std::env::set_current_dir(temp_dir.path()).unwrap();
         let result = repo::check_current_directory(&params);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Not a git repository"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Not a git repository")
+        );
     }
 
     #[test]
@@ -516,8 +518,10 @@ mod tests {
             .with(Modify::list(Columns::first(), Alignment::right()))
             .to_string();
 
-        assert!(table
-            .contains(&format!("Token count ({}):", model.display_name())));
+        assert!(
+            table
+                .contains(&format!("Token count ({}):", model.display_name()))
+        );
         assert!(table.contains("100"));
     }
 

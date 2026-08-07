@@ -1,14 +1,14 @@
 use crate::filelist::{FileTree, FolderNode};
 use crate::progress::ProgressReporter;
-use crate::structs::{Params, DEFAULT_OUTPUT_FILE};
-use crate::text_processing::{read_classify_and_decode, ProcessedFile};
+use crate::structs::{DEFAULT_OUTPUT_FILE, Params};
+use crate::text_processing::{ProcessedFile, read_classify_and_decode};
 use crate::timings::ProcessingTimings;
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
 use dirs_next::home_dir;
-use flate2::write::GzEncoder;
 use flate2::Compression;
-use std::fs::{metadata, File};
+use flate2::write::GzEncoder;
+use std::fs::{File, metadata};
 use std::io::{self, Cursor, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -724,8 +724,11 @@ mod tests {
         assert!(result.is_ok());
 
         let xml_content = fs::read_to_string(output_file).unwrap();
-        assert!(xml_content
-            .contains("<!-- This file is a binary file and not included -->"));
+        assert!(
+            xml_content.contains(
+                "<!-- This file is a binary file and not included -->"
+            )
+        );
     }
 
     #[test]
@@ -820,11 +823,13 @@ mod tests {
         for fixture in ENCODING_FIXTURES {
             let start = format!("<file path=\"{}\"", fixture.name);
             let file_xml = xml.split(&start).nth(1).unwrap();
-            assert!(file_xml
-                .split("</file>")
-                .next()
-                .unwrap()
-                .contains(fixture.expected));
+            assert!(
+                file_xml
+                    .split("</file>")
+                    .next()
+                    .unwrap()
+                    .contains(fixture.expected)
+            );
         }
     }
 
@@ -1044,9 +1049,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(String::from_utf8(xml)
-            .unwrap()
-            .contains("\u{feff}malformed \u{fffd} text"));
+        assert!(
+            String::from_utf8(xml)
+                .unwrap()
+                .contains("\u{feff}malformed \u{fffd} text")
+        );
         let (normal, diagnostic) = reporter.into_parts();
         assert!(normal.is_empty());
         assert!(diagnostic.is_empty());

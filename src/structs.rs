@@ -673,7 +673,7 @@ mod tests {
 
     #[test]
     fn test_unknown_model_config_reports_supported_values() {
-        use crate::tokenizer::{Model, MODEL_VALUES};
+        use crate::tokenizer::{MODEL_VALUES, Model};
 
         let config = Config::builder()
             .add_source(File::from_str(

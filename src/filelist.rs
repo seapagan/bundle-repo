@@ -335,11 +335,15 @@ mod tests {
         assert_eq!(file_tree.file_paths.len(), 4);
         assert!(file_tree.file_paths.contains(&"file1.txt".to_string()));
         assert!(file_tree.file_paths.contains(&"src/file2.rs".to_string()));
-        assert!(file_tree
-            .file_paths
-            .contains(&"src/nested/file3.rs".to_string()));
-        assert!(file_tree
-            .file_paths
-            .contains(&"src/nested/deep/file4.rs".to_string()));
+        assert!(
+            file_tree
+                .file_paths
+                .contains(&"src/nested/file3.rs".to_string())
+        );
+        assert!(
+            file_tree
+                .file_paths
+                .contains(&"src/nested/deep/file4.rs".to_string())
+        );
     }
 }
