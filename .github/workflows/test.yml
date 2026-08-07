@@ -35,6 +35,12 @@ jobs:
         with:
           toolchain: ${{ env.MSRV_VERSION }}
 
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v1-${{ runner.os }}-rust-${{ env.MSRV_VERSION }}
+          shared-key: msrv
+
       - name: Check all targets and features
         run: cargo check --all-targets --all-features --locked
 
@@ -62,7 +68,6 @@ jobs:
         with:
           prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
           shared-key: native-linux
-          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Cargo tools
         uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
@@ -178,7 +183,6 @@ jobs:
         with:
           prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
           shared-key: native-windows
-          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Cargo tools
         uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
