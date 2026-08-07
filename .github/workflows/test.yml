@@ -17,8 +17,30 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_VERSION: 1.97.1
+  MSRV_VERSION: 1.88
 
 jobs:
+  msrv:
+    name: Check MSRV
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.88
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.MSRV_VERSION }}
+
+      - name: Check all targets and features
+        run: cargo check --all-targets --all-features --locked
+
+      - name: Test all features
+        run: cargo test --all-features --locked
+
   unix:
     name: Native Linux
     runs-on: ubuntu-24.04

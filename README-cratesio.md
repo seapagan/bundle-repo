@@ -109,6 +109,7 @@ You can install BundleRepo from `crates.io`, build it from source, or download a
 prebuilt release binary. You will need to have
 [Rust](https://www.rust-lang.org/tools/install) installed only when installing
 from `crates.io` or building the project from source.
+The minimum supported Rust version (MSRV) is Rust 1.88.
 
 ### Installation
 
