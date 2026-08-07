@@ -1,7 +1,9 @@
 use crate::filelist::{FileTree, FolderNode};
 use crate::progress::ProgressReporter;
 use crate::structs::{DEFAULT_OUTPUT_FILE, Params};
-use crate::text_processing::{ProcessedFile, read_classify_and_decode};
+use crate::text_processing::{
+    DecodedText, ProcessedFile, read_classify_and_decode,
+};
 use crate::timings::ProcessingTimings;
 use crate::tokenizer::TokenizerType;
 use arboard::Clipboard;
@@ -251,7 +253,7 @@ fn finish_output<N: Write, D: Write>(
     reporter.phase(&format!("Counting tokens with {model_name}"))?;
     let token_start = Instant::now();
     let token_count = tokenizer
-        .count_tokens(&xml_content)
+        .count_tokens(xml_content)
         .map_err(io::Error::other)?;
     timings.token_count += token_start.elapsed();
     let total_size = if flags.clipboard {
@@ -431,34 +433,9 @@ fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
         let full_path = base_path.join(file_path);
         let file_size = metadata(&full_path)?.len();
         match read_classify_and_decode(&full_path, flags.utf8, timings) {
-            Ok(ProcessedFile::Text(mut decoded)) => {
-                if let Some(ref conversion) = decoded.conversion {
-                    reporter.conversion(file_path, conversion)?;
-                }
-                if decoded.utf8_had_replacements {
-                    reporter.malformed_utf8_replacement(file_path)?;
-                }
-                if let Some(invalid) = first_invalid_xml10_char(&decoded.text)
-                {
-                    let comment = format!(
-                        "Text content omitted: XML 1.0 cannot represent character {}",
-                        format_code_point(invalid.character),
-                    );
-                    write_placeholder_file_entry(
-                        writer, file_path, file_size, &comment,
-                    )?;
-                } else {
-                    if flags.line_numbers {
-                        decoded.text = add_line_numbers(&decoded.text);
-                    }
-                    write_text_file_entry(
-                        writer,
-                        file_path,
-                        file_size,
-                        &decoded.text,
-                    )?;
-                }
-            }
+            Ok(ProcessedFile::Text(decoded)) => write_processed_text_file(
+                writer, file_path, file_size, decoded, flags, reporter,
+            )?,
             Ok(ProcessedFile::Binary(_)) => {
                 write_placeholder_file_entry(
                     writer,
@@ -484,6 +461,33 @@ fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
     }
 
     writer.write(XmlEvent::end_element()).map_err(map_xml_error)
+}
+
+fn write_processed_text_file<W: Write, N: Write, D: Write>(
+    writer: &mut EventWriter<W>,
+    path: &str,
+    size: u64,
+    mut decoded: DecodedText,
+    flags: &Params,
+    reporter: &mut ProgressReporter<N, D>,
+) -> io::Result<()> {
+    if let Some(ref conversion) = decoded.conversion {
+        reporter.conversion(path, conversion)?;
+    }
+    if decoded.utf8_had_replacements {
+        reporter.malformed_utf8_replacement(path)?;
+    }
+    if let Some(invalid) = first_invalid_xml10_char(&decoded.text) {
+        let comment = format!(
+            "Text content omitted: XML 1.0 cannot represent character {}",
+            format_code_point(invalid.character),
+        );
+        return write_placeholder_file_entry(writer, path, size, &comment);
+    }
+    if flags.line_numbers {
+        decoded.text = add_line_numbers(&decoded.text);
+    }
+    write_text_file_entry(writer, path, size, &decoded.text)
 }
 
 fn write_text_file_entry<W: Write>(
