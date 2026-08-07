@@ -92,11 +92,11 @@ and 11 tested).
   - `path`: the file path relative to the repository root
   - `size`: file size in bytes
   - `lines`: number of lines in the file
-  - Raw file content (not escaped)
-- **Token Count**: Estimates the final XML size in model tokens. BundleRepo uses
-  local `tiktoken` backends for GPT models and embedded official tokenizers for
-  DeepSeek and GLM, so counting remains offline in one binary. The default is
-  GPT-5.
+  - Text file content serialized in CDATA
+- **Token Count**: Estimates the final serialized XML, including CDATA
+  delimiters, in model tokens. BundleRepo uses local `tiktoken` backends for GPT
+  models and embedded official tokenizers for DeepSeek and GLM, so counting
+  remains offline in one binary. The default is GPT-5.
 - **XML Output**: Generates an XML file (`packed-repo.xml`) that contains the
   entire repository structure and file details.
 - **Global and local configuration files**: Allows you to set default values
@@ -568,13 +568,35 @@ understood by an LLM. Below is an example layout with explanations for each tag:
     <summary>
       <!-- A summary of the files and their contents -->
     </summary>
-    <file path="src/main.rs" size="1474" lines="53">
-      <!-- For each file, the path, size in bytes, and number of lines are provided -->
-      <!-- Full file contents are included here -->
-    </file>
+    <file path="src/main.rs" size="1474" lines="53"><![CDATA[fn main() {
+    println!("hello");
+}
+]]></file>
   </repository_files>
 </repository>
 ```
+
+BundleRepo writes included decoded text as CDATA. If file content contains
+`]]>`, the XML writer uses adjacent CDATA sections; an XML parser reconstructs
+the original logical characters. XML 1.0 parsers normalize CRLF and lone CR
+line endings to LF. BundleRepo numbers lines before that normalization.
+
+XML syntax characters such as `<`, `>`, `&`, and quotes remain valid in file
+content and path metadata. The writer escapes metadata and keeps file content
+inside CDATA. BundleRepo supports ordinary Unicode, including CJK text, Arabic,
+Cyrillic, accented text, replacement characters, emoji, and
+supplementary-plane characters.
+
+If decoded text contains a character that XML 1.0 cannot represent, BundleRepo
+keeps the `<file>` entry, records the source byte size, sets `lines="0"`, omits
+the content, and adds a comment naming the first unsupported code point.
+BundleRepo stops before writing output when required path or folder metadata
+contains an XML 1.0-forbidden character. It also rejects tab characters because
+the current XML writer cannot round-trip them in attributes. LF and CR in
+metadata round-trip through character references.
+
+Plain file, clipboard, and plain stdout output use the same serialized XML
+bytes. Gzip output compresses those bytes without changing the document.
 
 ## Beta Status
 
