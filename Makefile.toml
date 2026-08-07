@@ -1,6 +1,37 @@
+[env]
+MSRV_VERSION = "1.88"
+
 [tasks.prepare-coverage]
 script_runner = "@duckscript"
 script = ["mkdir target/llvm-cov"]
+
+[tasks.msrv-check]
+private = true
+install_crate = false
+command = "cargo"
+args = [
+  "+${MSRV_VERSION}",
+  "check",
+  "--all-targets",
+  "--all-features",
+  "--locked",
+]
+
+[tasks.msrv-test]
+private = true
+dependencies = ["msrv-check"]
+install_crate = false
+command = "cargo"
+args = [
+  "+${MSRV_VERSION}",
+  "test",
+  "--all-features",
+  "--locked",
+]
+
+[tasks.msrv]
+description = "Check and test against the minimum supported Rust version"
+dependencies = ["msrv-test"]
 
 [tasks.test]
 description = "Run native tests and write repository-relative LCOV coverage"
