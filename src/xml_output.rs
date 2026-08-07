@@ -673,7 +673,7 @@ mod tests {
     use std::io::Read;
     use std::time::Duration;
     use tempfile::tempdir;
-    use xml::reader::{EventReader, XmlEvent as ReaderXmlEvent};
+    use xml::reader::{ParserConfig, XmlEvent as ReaderXmlEvent};
 
     #[derive(Debug)]
     struct ParsedFile {
@@ -685,7 +685,10 @@ mod tests {
     fn parse_document(xml: &[u8]) -> Vec<ReaderXmlEvent> {
         let mut events = Vec::new();
         let mut reached_end = false;
-        for event in EventReader::new(xml) {
+        for event in ParserConfig::new()
+            .ignore_comments(false)
+            .create_reader(xml)
+        {
             let event = event.unwrap();
             reached_end |= matches!(event, ReaderXmlEvent::EndDocument);
             events.push(event);
@@ -768,6 +771,48 @@ mod tests {
             &mut ProcessingTimings::default(),
         )
         .unwrap()
+    }
+
+    fn serialize_text_entry(path: &str, content: &str) -> Vec<u8> {
+        let mut writer = EmitterConfig::new()
+            .perform_indent(true)
+            .write_document_declaration(false)
+            .create_writer(Cursor::new(Vec::new()));
+        writer
+            .write(XmlEvent::StartDocument {
+                version: XmlVersion::Version10,
+                encoding: Some("utf-8"),
+                standalone: None,
+            })
+            .unwrap();
+        writer.write(XmlEvent::start_element("repository")).unwrap();
+        write_text_file_entry(
+            &mut writer,
+            path,
+            content.len() as u64,
+            content,
+        )
+        .unwrap();
+        writer.write(XmlEvent::end_element()).unwrap();
+        writer.into_inner().into_inner()
+    }
+
+    fn serialize_read_error_entry(path: &str, diagnostic: &str) -> Vec<u8> {
+        let mut writer = EmitterConfig::new()
+            .perform_indent(true)
+            .write_document_declaration(false)
+            .create_writer(Cursor::new(Vec::new()));
+        writer
+            .write(XmlEvent::StartDocument {
+                version: XmlVersion::Version10,
+                encoding: Some("utf-8"),
+                standalone: None,
+            })
+            .unwrap();
+        writer.write(XmlEvent::start_element("repository")).unwrap();
+        write_read_error_file_entry(&mut writer, path, diagnostic).unwrap();
+        writer.write(XmlEvent::end_element()).unwrap();
+        writer.into_inner().into_inner()
     }
 
     #[test]
@@ -928,6 +973,215 @@ mod tests {
             .collect::<String>();
         assert!(prose.contains("Each <file> should be interpreted"));
         assert!(!element_names.contains(&".py"));
+    }
+
+    #[test]
+    fn test_cdata_content_matrix_round_trips_through_complete_documents() {
+        let cases = [
+            "ordinary text",
+            "<tag attr='single' other=\"double\"> & text > tail",
+            "literal </file><injected>markup</injected>",
+            "]]>",
+            "before]]>middle]]>after",
+            "]]>at start and at end]]>",
+            "日本語 العربية Кириллица café 😀 \u{fffd} \u{10000}",
+            "",
+            "first\r\nsecond\rthird\nfourth",
+        ];
+
+        for content in cases {
+            let xml = serialize_single_file(content.as_bytes(), false);
+            let file = parse_file(&xml, "test.txt");
+            let expected = content.replace("\r\n", "\n").replace('\r', "\n");
+            assert_eq!(file.text, expected, "failed content {content:?}");
+            assert!(String::from_utf8(xml).unwrap().contains("<![CDATA["));
+        }
+    }
+
+    #[test]
+    fn test_embedded_cdata_end_tokens_use_adjacent_sections() {
+        let content = "a]]>b]]>c";
+        let xml = serialize_single_file(content.as_bytes(), false);
+        let serialized = String::from_utf8(xml.clone()).unwrap();
+        assert!(serialized.matches("<![CDATA[").count() >= 3);
+        assert_eq!(parse_file(&xml, "test.txt").text, content);
+    }
+
+    #[test]
+    fn test_line_numbered_content_round_trips_from_cdata() {
+        let xml = serialize_single_file(b"Line 1\nLine 2\nLine 3", true);
+        let file = parse_file(&xml, "test.txt");
+        assert_eq!(file.text, "1  Line 1\n2  Line 2\n3  Line 3\n");
+        assert_eq!(attribute(&file, "lines"), "3");
+    }
+
+    #[test]
+    fn test_xml_forbidden_text_is_omitted_without_reclassification() {
+        for character in ['\u{000b}', '\u{001f}', '\u{fffe}', '\u{ffff}'] {
+            let content = format!(
+                "a sufficiently long text prefix {character} and suffix"
+            );
+            let temp_dir = tempdir().unwrap();
+            let path = temp_dir.path().join("test.txt");
+            fs::write(&path, content.as_bytes()).unwrap();
+            assert!(matches!(
+                read_classify_and_decode(
+                    &path,
+                    false,
+                    &mut ProcessingTimings::default()
+                )
+                .unwrap(),
+                ProcessedFile::Text(_)
+            ));
+
+            let xml = serialize_single_file(content.as_bytes(), false);
+            let serialized = String::from_utf8(xml.clone()).unwrap();
+            let file = parse_file(&xml, "test.txt");
+            assert_eq!(attribute(&file, "size"), content.len().to_string());
+            assert_eq!(attribute(&file, "lines"), "0");
+            assert!(file.text.is_empty());
+            assert!(!serialized.contains("<![CDATA["));
+            assert_eq!(file.comments.len(), 1);
+            assert!(file.comments[0].contains("content omitted"));
+            assert!(file.comments[0].contains(&format_code_point(character)));
+        }
+    }
+
+    #[test]
+    fn test_sparse_del_remains_text_and_round_trips_as_xml10() {
+        let content = "before\u{007f}after";
+        assert!(is_xml10_char('\u{007f}'));
+        let temp_dir = tempdir().unwrap();
+        let path = temp_dir.path().join("test.txt");
+        fs::write(&path, content).unwrap();
+        assert!(matches!(
+            read_classify_and_decode(
+                &path,
+                false,
+                &mut ProcessingTimings::default()
+            )
+            .unwrap(),
+            ProcessedFile::Text(_)
+        ));
+        let xml = serialize_single_file(content.as_bytes(), false);
+        assert_eq!(parse_file(&xml, "test.txt").text, content);
+    }
+
+    #[test]
+    fn test_xml_sensitive_metadata_round_trips_in_structure_and_file_entries()
+    {
+        let file_name = "file<&\"'.txt";
+        let folder_name = "folder<&\"'";
+        let mut tree = FileTree::default();
+        tree.folder_node.files.push(file_name.to_string());
+        tree.folder_node
+            .subfolders
+            .insert(folder_name.to_string(), FolderNode::default());
+        let temp_dir = tempdir().unwrap();
+        let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+        let xml = serialize_repository_xml(
+            &Params::default(),
+            &tree,
+            temp_dir.path(),
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+        let events = parse_document(&xml);
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ReaderXmlEvent::StartElement { name, attributes, .. }
+                if name.local_name == "file"
+                    && attributes.iter().any(|attribute|
+                        attribute.name.local_name == "path"
+                            && attribute.value == file_name)
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ReaderXmlEvent::StartElement { name, attributes, .. }
+                if name.local_name == "folder"
+                    && attributes.iter().any(|attribute|
+                        attribute.name.local_name == "name"
+                            && attribute.value == folder_name)
+        )));
+
+        let entry_xml = serialize_text_entry(file_name, "content");
+        assert_eq!(parse_file(&entry_xml, file_name).text, "content");
+    }
+
+    #[test]
+    fn test_lf_and_cr_metadata_round_trip_exactly() {
+        let path = "line\nfeed.txt";
+        let entry_xml = serialize_text_entry(path, "content");
+        assert!(String::from_utf8_lossy(&entry_xml).contains("&#xA;"));
+        validate_xml_attribute(path, "test path").unwrap();
+        assert_eq!(attribute(&parse_file(&entry_xml, path), "path"), path);
+
+        let folder_name = "carriage\rreturn";
+        let mut tree = FileTree::default();
+        tree.folder_node
+            .subfolders
+            .insert(folder_name.to_string(), FolderNode::default());
+        validate_file_tree_xml_metadata(&tree).unwrap();
+        let temp_dir = tempdir().unwrap();
+        let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+        let xml = serialize_repository_xml(
+            &Params::default(),
+            &tree,
+            temp_dir.path(),
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+        assert!(String::from_utf8_lossy(&xml).contains("&#xD;"));
+        assert!(parse_document(&xml).iter().any(|event| matches!(
+            event,
+            ReaderXmlEvent::StartElement { name, attributes, .. }
+                if name.local_name == "folder"
+                    && attributes.iter().any(|attribute|
+                        attribute.name.local_name == "name"
+                            && attribute.value == folder_name)
+        )));
+    }
+
+    #[test]
+    fn test_read_error_comment_is_xml_safe_and_diagnostic() {
+        let diagnostic = "bad -- <tag> & \"quote\" trailing-\u{000b}";
+        let xml = serialize_read_error_entry("test.txt", diagnostic);
+        let file = parse_file(&xml, "test.txt");
+        assert_eq!(attribute(&file, "size"), "0");
+        assert_eq!(attribute(&file, "lines"), "0");
+        assert!(file.text.is_empty());
+        assert_eq!(file.comments.len(), 1);
+        let comment = &file.comments[0];
+        for expected in ["bad", "<tag>", "&", "\"quote\"", "trailing-"] {
+            assert!(
+                comment.contains(expected),
+                "missing {expected:?}: {comment:?}"
+            );
+        }
+        assert!(comment.contains("[unrepresentable U+000B]"));
+    }
+
+    #[test]
+    fn test_invalid_metadata_creates_no_destination_file() {
+        let temp_dir = tempdir().unwrap();
+        let output = temp_dir.path().join("must-not-exist.xml");
+        let params = Params {
+            output_file: Some(output.to_string_lossy().into_owned()),
+            ..Params::default()
+        };
+        let mut tree = FileTree::default();
+        tree.file_paths.push("missing\u{000b}file".to_string());
+        let error = output_repo_as_xml(
+            &params,
+            tree,
+            temp_dir.path(),
+            &Model::GPT4.to_tokenizer().unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(!output.exists());
     }
 
     #[test]
@@ -1106,12 +1360,12 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        let xml_content = fs::read_to_string(output_file).unwrap();
-        assert!(
-            xml_content.contains(
-                "<!-- This file is a binary file and not included -->"
-            )
-        );
+        let xml_content = fs::read(output_file).unwrap();
+        let file = parse_file(&xml_content, "test.bin");
+        assert_eq!(attribute(&file, "size"), "4");
+        assert_eq!(attribute(&file, "lines"), "0");
+        assert!(file.text.is_empty());
+        assert!(file.comments[0].contains("binary file and not included"));
     }
 
     #[test]
@@ -1745,6 +1999,69 @@ mod tests {
             .read_to_end(&mut decoded)
             .unwrap();
         assert_eq!(decoded, xml);
+    }
+
+    #[test]
+    fn test_all_testable_destinations_use_canonical_serialization_bytes() {
+        let temp_dir = tempdir().unwrap();
+        fs::write(temp_dir.path().join("test.txt"), "a <tag> & ]]> tail")
+            .unwrap();
+        let mut expected_tree = FileTree::default();
+        expected_tree.file_paths.push("test.txt".to_string());
+        let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+        let expected = serialize_repository_xml(
+            &Params::default(),
+            &expected_tree,
+            temp_dir.path(),
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+
+        let plain_path = temp_dir.path().join("plain.xml");
+        let plain_params = Params {
+            output_file: Some(plain_path.to_string_lossy().into_owned()),
+            ..Params::default()
+        };
+        let mut plain_tree = FileTree::default();
+        plain_tree.file_paths.push("test.txt".to_string());
+        output_repo_as_xml(
+            &plain_params,
+            plain_tree,
+            temp_dir.path(),
+            &Model::GPT4.to_tokenizer().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(plain_path).unwrap(), expected);
+
+        let mut stdout = Vec::new();
+        write_stdout(
+            &mut stdout,
+            &expected,
+            false,
+            6,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+        assert_eq!(stdout, expected);
+
+        let mut gzip_stdout = Vec::new();
+        write_stdout(
+            &mut gzip_stdout,
+            &expected,
+            true,
+            6,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+        let mut decoded = Vec::new();
+        GzDecoder::new(gzip_stdout.as_slice())
+            .read_to_end(&mut decoded)
+            .unwrap();
+        assert_eq!(decoded, expected);
+
+        let clipboard_text = String::from_utf8(expected.clone()).unwrap();
+        assert_eq!(clipboard_text.as_bytes(), expected);
     }
 
     #[test]
