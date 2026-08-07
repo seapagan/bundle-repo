@@ -581,7 +581,8 @@ BundleRepo writes included decoded text as CDATA. If file content contains
 the original logical characters. BundleRepo treats LF, CRLF, and lone CR as
 logical line boundaries when it computes the `lines` attribute and applies
 `-l` numbering. XML 1.0 parsers normalize CRLF and lone CR to LF, so parsed
-content uses LF for each boundary.
+content uses LF for each boundary. An empty file has zero logical lines and
+remains empty when `-l` is used.
 
 XML syntax characters such as `<`, `>`, `&`, and quotes remain valid in file
 content and path metadata. The writer escapes metadata and keeps file content
@@ -589,13 +590,22 @@ inside CDATA. BundleRepo supports ordinary Unicode, including CJK text, Arabic,
 Cyrillic, accented text, replacement characters, emoji, and
 supplementary-plane characters.
 
-If decoded text contains a character that XML 1.0 cannot represent, BundleRepo
-keeps the `<file>` entry, records the source byte size, sets `lines="0"`, omits
-the content, and adds a comment naming the first unsupported code point.
-BundleRepo stops before writing output when required path or folder metadata
-contains an XML 1.0-forbidden character. It also rejects tab characters because
-the current XML writer cannot round-trip them in attributes. LF and CR in
-metadata round-trip through character references.
+BundleRepo validates required filename and folder metadata before it processes
+file contents or opens an output destination. If a name contains an XML
+1.0-forbidden character, generation fails instead of altering the path. The
+error identifies the offending metadata and code point so you can rename or
+remove the path. This validation prevents partial XML output.
+
+BundleRepo also rejects TAB (`U+0009`) in filename and folder metadata. TAB is
+legal XML 1.0 text, but the currently resolved `xml` writer emits TAB directly
+in an attribute. XML attribute-value normalization then gives a conforming
+parser a space, which would corrupt the path. LF and CR metadata round-trip
+through character references and remain supported.
+
+File content follows a different policy. If decoded text contains an XML
+1.0-forbidden character, BundleRepo can preserve the surrounding `<file>` entry
+and its path. It records the source byte size, sets `lines="0"`, omits the
+content, and adds a diagnostic comment naming the first unsupported code point.
 
 Plain file, clipboard, and plain stdout output use the same serialized XML
 bytes. Gzip output compresses those bytes without changing the document.

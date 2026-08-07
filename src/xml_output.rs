@@ -645,8 +645,12 @@ fn write_text_element<W: Write>(
 ///
 /// Returns:
 ///     A string with line numbers added to each line, left-padded, and
-///     followed by 4 spaces. Ensures the final content ends with a newline.
+///     followed by 4 spaces. Non-empty content ends with a newline.
 fn add_line_numbers(file_content: &str) -> String {
+    if file_content.is_empty() {
+        return String::new();
+    }
+
     let normalized = xml_logical_text(file_content);
     let lines: Vec<&str> = normalized.lines().collect();
     let total_lines = lines.len();
@@ -691,6 +695,7 @@ mod tests {
     use std::io::Read;
     use std::time::Duration;
     use tempfile::tempdir;
+    use xml::attribute::OwnedAttribute;
     use xml::reader::{ParserConfig, XmlEvent as ReaderXmlEvent};
 
     #[derive(Debug)]
@@ -719,7 +724,24 @@ mod tests {
         let events = parse_document(xml);
         let mut parsed = None;
         let mut in_file = false;
-        for event in events {
+        let repository_files = events
+            .into_iter()
+            .skip_while(|event| {
+                !matches!(
+                    event,
+                    ReaderXmlEvent::StartElement { name, .. }
+                        if name.local_name == "repository_files"
+                )
+            })
+            .skip(1)
+            .take_while(|event| {
+                !matches!(
+                    event,
+                    ReaderXmlEvent::EndElement { name }
+                        if name.local_name == "repository_files"
+                )
+            });
+        for event in repository_files {
             match event {
                 ReaderXmlEvent::StartElement {
                     name, attributes, ..
@@ -771,6 +793,62 @@ mod tests {
             .unwrap()
     }
 
+    fn reader_attribute(attributes: &[OwnedAttribute], name: &str) -> String {
+        attributes
+            .iter()
+            .find(|attribute| attribute.name.local_name == name)
+            .unwrap()
+            .value
+            .clone()
+    }
+
+    fn parse_structure_files(xml: &[u8]) -> Vec<(Vec<String>, String)> {
+        let events = parse_document(xml);
+        let mut folders = Vec::new();
+        let mut files = Vec::new();
+        let structure = events
+            .into_iter()
+            .skip_while(|event| {
+                !matches!(
+                    event,
+                    ReaderXmlEvent::StartElement { name, .. }
+                        if name.local_name == "repository_structure"
+                )
+            })
+            .skip(1)
+            .take_while(|event| {
+                !matches!(
+                    event,
+                    ReaderXmlEvent::EndElement { name }
+                        if name.local_name == "repository_structure"
+                )
+            });
+        for event in structure {
+            match event {
+                ReaderXmlEvent::StartElement {
+                    name, attributes, ..
+                } if name.local_name == "folder" => {
+                    folders.push(reader_attribute(&attributes, "name"));
+                }
+                ReaderXmlEvent::StartElement {
+                    name, attributes, ..
+                } if name.local_name == "file" => {
+                    files.push((
+                        folders.clone(),
+                        reader_attribute(&attributes, "path"),
+                    ));
+                }
+                ReaderXmlEvent::EndElement { name }
+                    if name.local_name == "folder" =>
+                {
+                    folders.pop();
+                }
+                _ => {}
+            }
+        }
+        files
+    }
+
     fn serialize_single_file(content: &[u8], line_numbers: bool) -> Vec<u8> {
         let temp_dir = tempdir().unwrap();
         fs::write(temp_dir.path().join("test.txt"), content).unwrap();
@@ -804,6 +882,9 @@ mod tests {
             })
             .unwrap();
         writer.write(XmlEvent::start_element("repository")).unwrap();
+        writer
+            .write(XmlEvent::start_element("repository_files"))
+            .unwrap();
         write_text_file_entry(
             &mut writer,
             path,
@@ -811,6 +892,7 @@ mod tests {
             content,
         )
         .unwrap();
+        writer.write(XmlEvent::end_element()).unwrap();
         writer.write(XmlEvent::end_element()).unwrap();
         writer.into_inner().into_inner()
     }
@@ -828,7 +910,11 @@ mod tests {
             })
             .unwrap();
         writer.write(XmlEvent::start_element("repository")).unwrap();
+        writer
+            .write(XmlEvent::start_element("repository_files"))
+            .unwrap();
         write_read_error_file_entry(&mut writer, path, diagnostic).unwrap();
+        writer.write(XmlEvent::end_element()).unwrap();
         writer.write(XmlEvent::end_element()).unwrap();
         writer.into_inner().into_inner()
     }
@@ -1062,6 +1148,16 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_file_remains_empty_with_and_without_line_numbers() {
+        for line_numbers in [false, true] {
+            let xml = serialize_single_file(b"", line_numbers);
+            let file = parse_file(&xml, "test.txt");
+            assert_eq!(attribute(&file, "lines"), "0");
+            assert!(file.text.is_empty());
+        }
+    }
+
+    #[test]
     fn test_xml_forbidden_text_is_omitted_without_reclassification() {
         for character in ['\u{000b}', '\u{001f}', '\u{fffe}', '\u{ffff}'] {
             let content = format!(
@@ -1188,6 +1284,68 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_file_selects_repository_content_entry_on_path_collision() {
+        let path = "collision.txt";
+        let content = "repository content";
+        let temp_dir = tempdir().unwrap();
+        fs::write(temp_dir.path().join(path), content).unwrap();
+        let mut tree = FileTree::default();
+        tree.folder_node.files.push(path.to_string());
+        tree.file_paths.push(path.to_string());
+        let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+
+        let xml = serialize_repository_xml(
+            &Params::default(),
+            &tree,
+            temp_dir.path(),
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+        let file = parse_file(&xml, path);
+
+        assert_eq!(attribute(&file, "size"), content.len().to_string());
+        assert_eq!(attribute(&file, "lines"), "1");
+        assert_eq!(file.text, content);
+    }
+
+    #[test]
+    fn test_nested_repository_structure_round_trips_with_hierarchy() {
+        let mut deepest = FolderNode::default();
+        deepest.files.push("deep.txt".to_string());
+        let mut middle = FolderNode::default();
+        middle.files.push("middle.txt".to_string());
+        middle.subfolders.insert("deep".to_string(), deepest);
+        let mut tree = FileTree::default();
+        tree.folder_node.files.push("root.txt".to_string());
+        tree.folder_node
+            .subfolders
+            .insert("middle".to_string(), middle);
+        let temp_dir = tempdir().unwrap();
+        let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+
+        let xml = serialize_repository_xml(
+            &Params::default(),
+            &tree,
+            temp_dir.path(),
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            parse_structure_files(&xml),
+            [
+                (Vec::<String>::new(), "root.txt".to_string()),
+                (vec!["middle".to_string()], "middle.txt".to_string()),
+                (
+                    vec!["middle".to_string(), "deep".to_string()],
+                    "deep.txt".to_string(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn test_lf_and_cr_metadata_round_trip_exactly() {
         let path = "line\nfeed.txt";
         let entry_xml = serialize_text_entry(path, "content");
@@ -1231,14 +1389,10 @@ mod tests {
         assert_eq!(attribute(&file, "lines"), "0");
         assert!(file.text.is_empty());
         assert_eq!(file.comments.len(), 1);
-        let comment = &file.comments[0];
-        for expected in ["bad", "<tag>", "&", "\"quote\"", "trailing-"] {
-            assert!(
-                comment.contains(expected),
-                "missing {expected:?}: {comment:?}"
-            );
-        }
-        assert!(comment.contains("[unrepresentable U+000B]"));
+        assert_eq!(
+            file.comments[0],
+            " Failed to read file: bad -  <tag> & \"quote\" trailing-[unrepresentable U+000B] "
+        );
     }
 
     #[test]
