@@ -54,5 +54,5 @@ incremental = true
 
 [dev-dependencies]
 fs_extra = "1.3"
-sha2 = "0.10"
+sha2 = "0.11"
 temp-env = "0.3.6"
