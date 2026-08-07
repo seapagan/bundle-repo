@@ -132,7 +132,7 @@ pub struct Flags {
         long = "utf8",
         short = 'u',
         action = ArgAction::SetTrue,
-        help = "Force UTF-8 encoding for all text files",
+        help = "Detect and convert legacy text encodings to UTF-8",
     )]
     pub utf8: bool,
 
@@ -140,7 +140,7 @@ pub struct Flags {
         long = "no-utf8",
         short = 'U',
         action = ArgAction::SetTrue,
-        help = "Disable UTF-8 encoding for text files",
+        help = "Disable legacy text conversion to UTF-8",
         conflicts_with = "utf8",
     )]
     pub no_utf8: bool,
