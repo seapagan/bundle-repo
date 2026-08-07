@@ -602,7 +602,11 @@ mod tests {
         ];
 
         for (bytes, expected) in cases {
-            assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected);
+            let actual = Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            assert_eq!(actual, expected);
         }
     }
 
