@@ -53,6 +53,59 @@ fn test_invalid_config_falls_back_to_defaults() {
 }
 
 #[test]
+fn test_success_report_names_file_and_metrics() {
+    let params = Params {
+        output_file: Some("result.xml".to_string()),
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+    report_success(&params, Model::GPT4o, (3, 2048, 512), &mut reporter)
+        .unwrap();
+
+    let (normal, diagnostic) = reporter.into_parts();
+    let normal = String::from_utf8(normal).unwrap();
+    assert!(normal.starts_with("-> Successfully wrote XML to 'result.xml'\n"));
+    assert!(normal.contains("Total Files processed:  3"));
+    assert!(normal.contains("Total output size (bytes):  2048"));
+    assert!(normal.contains("Token count (GPT-4o):  512"));
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_success_report_names_clipboard_destination() {
+    let params = Params {
+        clipboard: true,
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+    report_success(&params, Model::GPT5, (1, 2, 3), &mut reporter).unwrap();
+
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.starts_with(b"-> Successfully copied XML to clipboard\n"));
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_success_report_is_silent_for_stdout_output() {
+    let params = Params {
+        stdout: true,
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
+
+    report_success(&params, Model::GPT5, (1, 2, 3), &mut reporter).unwrap();
+
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.is_empty());
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
 fn test_exclude_takes_precedence_over_extend_exclude() {
     // Setup CLI args with both exclude and extend-exclude
     let args = Flags::parse_from([

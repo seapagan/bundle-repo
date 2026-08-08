@@ -77,6 +77,50 @@ fn load_config_from_paths(
     }
 }
 
+fn report_success<N: std::io::Write, D: std::io::Write>(
+    params: &Params,
+    model: Model,
+    metrics: (usize, u64, usize),
+    reporter: &mut progress::ProgressReporter<N, D>,
+) -> std::io::Result<()> {
+    if params.stdout {
+        return Ok(());
+    }
+
+    if params.clipboard {
+        reporter.normal_line("-> Successfully copied XML to clipboard")?;
+    } else {
+        reporter.normal_line(&format!(
+            "-> Successfully wrote XML to '{}'",
+            xml_output::effective_output_file(params).display()
+        ))?;
+    }
+
+    let (number_of_files, total_size, token_count) = metrics;
+    let summary_data = vec![
+        SummaryTable {
+            metric: "Total Files processed:".to_string(),
+            value: number_of_files.to_string(),
+        },
+        SummaryTable {
+            metric: "Total output size (bytes):".to_string(),
+            value: total_size.to_string(),
+        },
+        SummaryTable {
+            metric: format!("Token count ({}):", model.display_name()),
+            value: token_count.to_string(),
+        },
+    ];
+
+    let table = Table::new(summary_data)
+        .with(Remove::row(Rows::first()))
+        .with(Style::empty())
+        .with(Modify::list(Columns::first(), Alignment::right()))
+        .to_string();
+
+    reporter.normal_text(&format!("\nSummary:\n{table}\n\n"))
+}
+
 fn main() {
     let args = cli::Flags::parse();
     let timing_enabled = timings::ProcessingTimings::enabled_from_env();
@@ -174,51 +218,8 @@ fn main() {
         &mut reporter,
         &mut timings,
     ) {
-        Ok((number_of_files, total_size, token_count)) => {
-            if !params.stdout {
-                // Print the summary only if not using stdout
-                if params.clipboard {
-                    reporter
-                        .normal_line("-> Successfully copied XML to clipboard")
-                        .unwrap();
-                } else {
-                    reporter
-                        .normal_line(&format!(
-                            "-> Successfully wrote XML to '{}'",
-                            xml_output::effective_output_file(&params)
-                                .display()
-                        ))
-                        .unwrap();
-                }
-                let summary_data = vec![
-                    SummaryTable {
-                        metric: "Total Files processed:".to_string(),
-                        value: number_of_files.to_string(),
-                    },
-                    SummaryTable {
-                        metric: "Total output size (bytes):".to_string(),
-                        value: total_size.to_string(),
-                    },
-                    SummaryTable {
-                        metric: format!(
-                            "Token count ({}):",
-                            model.display_name()
-                        ),
-                        value: token_count.to_string(),
-                    },
-                ];
-
-                // Build and print the table
-                let table = Table::new(summary_data)
-                    .with(Remove::row(Rows::first()))
-                    .with(Style::empty())
-                    .with(Modify::list(Columns::first(), Alignment::right()))
-                    .to_string();
-
-                reporter
-                    .normal_text(&format!("\nSummary:\n{table}\n\n"))
-                    .unwrap();
-            }
+        Ok(metrics) => {
+            report_success(&params, model, metrics, &mut reporter).unwrap();
             if timing_enabled {
                 let _ = timings.write_records(&mut std::io::stderr().lock());
             }
