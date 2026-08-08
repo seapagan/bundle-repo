@@ -4,6 +4,7 @@ use crate::text_processing::{
     BinaryReason, ProcessedFile, read_classify_and_decode,
 };
 use clap::Parser;
+use git2::{Repository, Signature};
 use std::fs;
 
 fn create_test_config(toml_content: &str) -> Params {
@@ -15,6 +16,16 @@ fn create_test_config(toml_content: &str) -> Params {
         .build()
         .unwrap();
     config.into()
+}
+
+fn initialize_repository(path: &Path) {
+    let repo = Repository::init(path).unwrap();
+    repo.set_head("refs/heads/test-branch").unwrap();
+    let tree_id = repo.index().unwrap().write_tree().unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    let signature = Signature::now("Test", "test@example.com").unwrap();
+    repo.commit(Some("HEAD"), &signature, &signature, "test", &tree, &[])
+        .unwrap();
 }
 
 #[test]
@@ -259,37 +270,149 @@ fn test_no_exclude_patterns() {
 }
 
 #[test]
-fn test_current_directory_check() {
+fn test_application_runs_local_repository_and_reports_success() {
     let temp_dir = tempdir().unwrap();
-    let params = Params::default();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-    let result = repo::check_current_directory(&params);
-    assert!(result.is_err());
+    initialize_repository(temp_dir.path());
+    fs::write(temp_dir.path().join("example.txt"), "example content").unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let clone_parent = tempdir().unwrap();
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        clone_parent.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = fs::read_to_string(output_path).unwrap();
+    assert!(xml.contains("example.txt"));
+    assert!(xml.contains("example content"));
+    let (normal, diagnostic) = reporter.into_parts();
+    let normal = String::from_utf8(normal).unwrap();
+    assert!(normal.contains("-> Loading tokenizer for GPT-5"));
+    assert!(normal.contains("-> Reading files and generating XML"));
+    assert!(normal.contains("-> Successfully wrote XML to"));
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_application_maps_tokenizer_failure_to_exit_code() {
+    let temp_dir = tempdir().unwrap();
+    let params = Params {
+        model: Some("unknown".to_string()),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 1);
     assert!(
-        result
-            .unwrap_err()
+        error
             .to_string()
-            .contains("Not a git repository")
+            .starts_with("ERROR: Unsupported model: unknown.")
     );
 }
 
 #[test]
-fn test_xml_output_error() {
+fn test_application_maps_clone_failure_to_exit_code() {
     let temp_dir = tempdir().unwrap();
+    let params = Params::default();
+    let args = Flags::parse_from(["program", "not a repository"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 2);
+    assert_eq!(error.to_string(), "Error: Invalid repository shorthand");
+}
+
+#[test]
+fn test_application_maps_discovery_failure_to_exit_code() {
+    let temp_dir = tempdir().unwrap();
+    let params = Params::default();
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 3);
+    assert_eq!(error.to_string(), "Error: Not a git repository");
+}
+
+#[test]
+fn test_application_maps_output_failure_to_exit_code() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
     let params = Params {
-        output_file: Some("/nonexistent/directory/output.xml".to_string()),
+        output_file: Some(
+            temp_dir
+                .path()
+                .join("missing/directory/output.xml")
+                .to_string_lossy()
+                .into_owned(),
+        ),
         ..Params::default()
     };
-    let file_tree = filelist::group_files_by_directory(vec![]);
-    let model = Model::GPT4o;
-    let tokenizer = model.to_tokenizer().unwrap();
-    let result = xml_output::output_repo_as_xml(
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
         &params,
-        file_tree,
         temp_dir.path(),
-        &tokenizer,
-    );
-    assert!(result.is_err());
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 4);
+    assert!(error.to_string().starts_with("X  Failed to write XML: "));
 }
 
 #[test]

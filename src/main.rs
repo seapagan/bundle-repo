@@ -1,4 +1,5 @@
-use std::path::{Path, PathBuf};
+use std::fmt;
+use std::path::Path;
 use std::process::exit;
 use std::time::Instant;
 
@@ -140,6 +141,87 @@ fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(
     Ok((model, tokenizer))
 }
 
+#[derive(Debug)]
+enum ApplicationError {
+    Tokenizer(String),
+    Clone(git2::Error),
+    CurrentDirectory(git2::Error),
+    Output(std::io::Error),
+}
+
+impl ApplicationError {
+    const fn exit_code(&self) -> i32 {
+        match self {
+            Self::Tokenizer(_) => 1,
+            Self::Clone(_) => 2,
+            Self::CurrentDirectory(_) => 3,
+            Self::Output(_) => 4,
+        }
+    }
+}
+
+impl fmt::Display for ApplicationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tokenizer(error) => formatter.write_str(error),
+            Self::Clone(error) | Self::CurrentDirectory(error) => {
+                write!(formatter, "Error: {error}")
+            }
+            Self::Output(error) => {
+                write!(formatter, "X  Failed to write XML: {error}")
+            }
+        }
+    }
+}
+
+fn run_application<N: std::io::Write, D: std::io::Write>(
+    args: &cli::Flags,
+    params: &Params,
+    repository_path: &Path,
+    clone_parent: &Path,
+    reporter: &mut progress::ProgressReporter<N, D>,
+    timings: &mut timings::ProcessingTimings,
+) -> Result<(), ApplicationError> {
+    let (model, tokenizer) = prepare_tokenizer(params, reporter, timings)
+        .map_err(ApplicationError::Tokenizer)?;
+
+    let repo_folder = if let Some(ref repo_input) = args.repo {
+        repo::clone_repo(
+            params,
+            repo_input,
+            params.token.as_deref(),
+            clone_parent,
+        )
+        .map_err(ApplicationError::Clone)?
+    } else {
+        repo::check_repository_at(repository_path, params)
+            .map_err(ApplicationError::CurrentDirectory)?;
+        repository_path.to_path_buf()
+    };
+
+    let file_list = filelist::list_files_in_repo(
+        &repo_folder,
+        params.extend_exclude.as_deref(),
+        params.exclude.as_deref(),
+    );
+    let file_tree = filelist::group_files_by_directory(file_list);
+
+    reporter.phase("Reading files and generating XML").unwrap();
+    let metrics = xml_output::output_repo_as_xml_with_timings(
+        params,
+        file_tree,
+        &repo_folder,
+        &tokenizer,
+        model.display_name(),
+        reporter,
+        timings,
+    )
+    .map_err(ApplicationError::Output)?;
+    report_success(params, model, metrics, reporter).unwrap();
+
+    Ok(())
+}
+
 fn main() {
     let args = cli::Flags::parse();
     let timing_enabled = timings::ProcessingTimings::enabled_from_env();
@@ -169,67 +251,23 @@ fn main() {
         params.stdout,
     );
 
-    let (model, tokenizer) =
-        match prepare_tokenizer(&params, &mut reporter, &mut timings) {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                reporter.error(&error).unwrap();
-                exit(1);
-            }
-        };
-
-    // Create a temporary directory for cloning the repository
     let temp_dir = tempdir().unwrap();
-    let repo_folder = if let Some(ref repo_input) = args.repo {
-        match repo::clone_repo(
-            &params,
-            repo_input,
-            params.token.as_deref(),
-            temp_dir.path(),
-        ) {
-            Ok(repo_folder) => repo_folder,
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                exit(2);
-            }
-        }
-    } else if let Err(e) = repo::check_current_directory(&params) {
-        eprintln!("Error: {}", e);
-        exit(3);
-    } else {
-        PathBuf::from(".")
-    };
-
-    // List and group files
-    let file_list = filelist::list_files_in_repo(
-        &repo_folder,
-        params.extend_exclude.as_deref(),
-        params.exclude.as_deref(),
-    );
-    let file_tree = filelist::group_files_by_directory(file_list);
-
-    // Output XML
-    reporter.phase("Reading files and generating XML").unwrap();
-    match xml_output::output_repo_as_xml_with_timings(
+    match run_application(
+        &args,
         &params,
-        file_tree,
-        &repo_folder,
-        &tokenizer,
-        model.display_name(),
+        Path::new("."),
+        temp_dir.path(),
         &mut reporter,
         &mut timings,
     ) {
-        Ok(metrics) => {
-            report_success(&params, model, metrics, &mut reporter).unwrap();
+        Ok(()) => {
             if timing_enabled {
                 let _ = timings.write_records(&mut std::io::stderr().lock());
             }
         }
-        Err(e) => {
-            reporter
-                .error(&format!("X  Failed to write XML: {e}"))
-                .unwrap();
-            exit(4);
+        Err(error) => {
+            reporter.error(&error.to_string()).unwrap();
+            exit(error.exit_code());
         }
     }
 }
