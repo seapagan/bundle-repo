@@ -1,22 +1,35 @@
 use crate::filelist::{FileTree, FolderNode};
 use crate::progress::ProgressReporter;
-use crate::structs::{DEFAULT_OUTPUT_FILE, Params};
+#[cfg(test)]
+use crate::structs::DEFAULT_OUTPUT_FILE;
+use crate::structs::Params;
 use crate::text_processing::{
     DecodedText, ProcessedFile, read_classify_and_decode,
 };
 use crate::timings::ProcessingTimings;
 use crate::tokenizer::TokenizerType;
-use arboard::Clipboard;
-use dirs_next::home_dir;
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use std::borrow::Cow;
-use std::fs::{File, metadata};
-use std::io::{self, Cursor, IsTerminal, Write};
-use std::path::{Path, PathBuf};
+use std::fs::metadata;
+use std::io::{self, Cursor, Write};
+use std::path::Path;
 use std::time::Instant;
 use xml::common::{XmlVersion, is_xml10_char};
 use xml::writer::{EmitterConfig, EventWriter, XmlEvent};
+
+mod destination;
+
+use destination::finish_output;
+pub use destination::{effective_output_file, validate_output_options};
+
+#[cfg(test)]
+use destination::{
+    create_output_file, destination_phase, effective_output_file_with_home,
+    validate_output_options_for, write_stdout,
+};
+#[cfg(test)]
+use std::fs::File;
+#[cfg(test)]
+use std::path::PathBuf;
 
 #[derive(Debug, Eq, PartialEq)]
 struct InvalidXml10Char {
@@ -200,183 +213,6 @@ fn write_characters<W: Write>(
 
 fn format_code_point(character: char) -> String {
     format!("U+{:04X}", character as u32)
-}
-
-pub fn validate_output_options(flags: &Params) -> io::Result<()> {
-    validate_output_options_for(flags, io::stdout().is_terminal())
-}
-
-fn validate_output_options_for(
-    flags: &Params,
-    stdout_is_terminal: bool,
-) -> io::Result<()> {
-    if flags.gzip && flags.clipboard && !flags.stdout {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "gzip output cannot be copied to the clipboard; use --no-gzip --clipboard",
-        ));
-    }
-
-    if flags.gzip && flags.stdout && stdout_is_terminal {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "refusing to write gzip data to a terminal; redirect stdout or use --no-gzip",
-        ));
-    }
-
-    Ok(())
-}
-
-fn finish_output<N: Write, D: Write>(
-    flags: &Params,
-    number_of_files: usize,
-    xml_bytes: Vec<u8>,
-    tokenizer: &TokenizerType,
-    model_name: &str,
-    reporter: &mut ProgressReporter<N, D>,
-    timings: &mut ProcessingTimings,
-) -> Result<(usize, u64, usize), io::Error> {
-    if flags.stdout {
-        let stdout = io::stdout();
-        let mut output = stdout.lock();
-        write_stdout(
-            &mut output,
-            &xml_bytes,
-            flags.gzip,
-            flags.gzip_level,
-            timings,
-        )?;
-        return Ok((number_of_files, 0, 0));
-    }
-
-    let xml_content = std::str::from_utf8(&xml_bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    reporter.phase(&format!("Counting tokens with {model_name}"))?;
-    let token_start = Instant::now();
-    let token_count = tokenizer
-        .count_tokens(xml_content)
-        .map_err(io::Error::other)?;
-    timings.token_count += token_start.elapsed();
-    let total_size = if flags.clipboard {
-        reporter.phase(&destination_phase(flags))?;
-        let write_start = Instant::now();
-        let mut clipboard = Clipboard::new().map_err(io::Error::other)?;
-        clipboard
-            .set_text(xml_content.to_owned())
-            .map_err(io::Error::other)?;
-        timings.output_write_or_copy += write_start.elapsed();
-        xml_bytes.len() as u64
-    } else {
-        let output_path = effective_output_file(flags);
-        reporter.phase(&destination_phase(flags))?;
-        let output_bytes = if flags.gzip {
-            let compression_start = Instant::now();
-            let compressed = compress_gzip(&xml_bytes, flags.gzip_level)?;
-            timings.compression += compression_start.elapsed();
-            compressed
-        } else {
-            xml_bytes
-        };
-        let write_start = Instant::now();
-        let mut file = create_output_file(&output_path)?;
-        file.write_all(&output_bytes)?;
-        timings.output_write_or_copy += write_start.elapsed();
-        output_bytes.len() as u64
-    };
-
-    Ok((number_of_files, total_size, token_count))
-}
-
-fn create_output_file(output_path: &Path) -> io::Result<File> {
-    File::create(output_path).map_err(|error| {
-        io::Error::new(
-            error.kind(),
-            format!(
-                "failed to create output file '{}': {error}",
-                output_path.display()
-            ),
-        )
-    })
-}
-
-fn destination_phase(flags: &Params) -> String {
-    if flags.clipboard {
-        "Copying result to clipboard".to_string()
-    } else if flags.gzip {
-        format!(
-            "Compressing and writing result to '{}'",
-            effective_output_file(flags).display()
-        )
-    } else {
-        format!(
-            "Writing result to '{}'",
-            effective_output_file(flags).display()
-        )
-    }
-}
-
-pub fn effective_output_file(flags: &Params) -> PathBuf {
-    effective_output_file_with_home(flags, home_dir().as_deref())
-}
-
-fn effective_output_file_with_home(
-    flags: &Params,
-    home_directory: Option<&Path>,
-) -> PathBuf {
-    let output_file = PathBuf::from(
-        flags
-            .output_file
-            .clone()
-            .unwrap_or_else(|| DEFAULT_OUTPUT_FILE.to_string()),
-    );
-    let output_file = home_directory
-        .and_then(|home| {
-            let relative_path = output_file.strip_prefix("~").ok()?;
-            (!relative_path.as_os_str().is_empty())
-                .then(|| home.join(relative_path))
-        })
-        .unwrap_or(output_file);
-    let has_gzip_suffix = output_file
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("gz"));
-    if flags.gzip && !has_gzip_suffix {
-        let mut compressed_path = output_file.into_os_string();
-        compressed_path.push(".gz");
-        PathBuf::from(compressed_path)
-    } else {
-        output_file
-    }
-}
-
-fn compress_gzip(content: &[u8], level: u32) -> io::Result<Vec<u8>> {
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::new(level));
-    encoder.write_all(content)?;
-    encoder.finish()
-}
-
-fn write_stdout<W: Write>(
-    output: &mut W,
-    content: &[u8],
-    gzip: bool,
-    level: u32,
-    timings: &mut ProcessingTimings,
-) -> io::Result<()> {
-    if gzip {
-        let compression_start = Instant::now();
-        let compressed = compress_gzip(content, level)?;
-        timings.compression += compression_start.elapsed();
-        let write_start = Instant::now();
-        output.write_all(&compressed)?;
-        timings.output_write_or_copy += write_start.elapsed();
-    } else {
-        std::str::from_utf8(content)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        let write_start = Instant::now();
-        output.write_all(content)?;
-        timings.output_write_or_copy += write_start.elapsed();
-    }
-    output.flush()
 }
 
 fn write_repository_structure<W: Write>(
