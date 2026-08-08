@@ -111,8 +111,11 @@ pub fn is_valid_shorthand(input: &str) -> bool {
     re.is_match(input)
 }
 
-pub fn check_current_directory(flags: &Params) -> Result<(), git2::Error> {
-    match Repository::discover(".") {
+pub(crate) fn check_repository_at(
+    path: &Path,
+    flags: &Params,
+) -> Result<(), git2::Error> {
+    match Repository::discover(path) {
         Ok(repo) => {
             if !flags.stdout {
                 let repo_path = repo.path().parent().unwrap().display();

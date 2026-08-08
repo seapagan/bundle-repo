@@ -3,6 +3,17 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
+const DEFAULT_EXCLUDE_PATTERNS: [&str; 8] = [
+    r"(?i)\.gitignore",
+    r"(?i)renovate\.json",
+    r"(?i)requirement.*\.txt",
+    r"(?i)\.lock$",
+    r"(?i)licen[cs]e(\..*)?",
+    r"(?i)\.github",
+    r"(?i)\.git",
+    r"(?i)\.vscode",
+];
+
 #[derive(Default)]
 pub struct FolderNode {
     pub files: Vec<String>,
@@ -31,59 +42,64 @@ fn literal_exclude_pattern(pattern: &str) -> String {
     format!(r"(?i){}", regex::escape(&pattern))
 }
 
+struct ExclusionMatcher {
+    patterns: Vec<Regex>,
+}
+
+impl ExclusionMatcher {
+    fn new(
+        extend_exclude: Option<&[String]>,
+        exclude: Option<&[String]>,
+    ) -> Self {
+        let patterns = if let Some(patterns) = exclude {
+            patterns
+                .iter()
+                .map(|pattern| literal_exclude_pattern(pattern))
+                .collect()
+        } else {
+            let mut patterns = DEFAULT_EXCLUDE_PATTERNS
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>();
+            if let Some(extend_patterns) = extend_exclude {
+                patterns.extend(
+                    extend_patterns
+                        .iter()
+                        .map(|pattern| literal_exclude_pattern(pattern)),
+                );
+            }
+            patterns
+        };
+
+        Self {
+            patterns: patterns
+                .into_iter()
+                .map(|pattern| {
+                    Regex::new(&pattern).unwrap_or_else(|error| {
+                        eprintln!(
+                            "Warning: Invalid regex pattern '{pattern}': {error}"
+                        );
+                        Regex::new(r"^$").unwrap()
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    fn matches(&self, repository_path: &str) -> bool {
+        self.patterns
+            .iter()
+            .any(|pattern| pattern.is_match(repository_path))
+    }
+}
+
 pub fn list_files_in_repo(
-    repo_path: &PathBuf,
+    repo_path: &Path,
     extend_exclude: Option<&[String]>,
     exclude: Option<&[String]>,
 ) -> Vec<String> {
     let mut file_list = Vec::new();
-
-    // Initialize ignore patterns based on whether exclude is set
-    let ignore_patterns: Vec<String> = if let Some(patterns) = exclude {
-        // If exclude is set, use only those patterns
-        patterns
-            .iter()
-            .map(|pattern| literal_exclude_pattern(pattern))
-            .collect()
-    } else {
-        // Otherwise use default patterns
-        let mut patterns: Vec<String> = vec![
-            r"(?i)\.gitignore",
-            r"(?i)renovate\.json",
-            r"(?i)requirement.*\.txt",
-            r"(?i)\.lock$",
-            r"(?i)licen[cs]e(\..*)?",
-            r"(?i)\.github",
-            r"(?i)\.git",
-            r"(?i)\.vscode",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect();
-
-        // Add additional patterns if provided
-        if let Some(extend_patterns) = extend_exclude {
-            patterns.extend(
-                extend_patterns
-                    .iter()
-                    .map(|pattern| literal_exclude_pattern(pattern)),
-            );
-        }
-        patterns
-    };
-
-    let regex_list: Vec<Regex> = ignore_patterns
-        .iter()
-        .map(|pattern| {
-            Regex::new(pattern).unwrap_or_else(|e| {
-                eprintln!(
-                    "Warning: Invalid regex pattern '{}': {}",
-                    pattern, e
-                );
-                Regex::new(r"^$").unwrap()
-            })
-        })
-        .collect();
+    let exclusions = ExclusionMatcher::new(extend_exclude, exclude);
 
     let walker = WalkBuilder::new(repo_path)
         .hidden(false)
@@ -105,8 +121,7 @@ pub fn list_files_in_repo(
                     Err(_) => continue,
                 };
 
-                // Skip if the file matches any of our patterns
-                if regex_list.iter().any(|re| re.is_match(&relative_path)) {
+                if exclusions.matches(&relative_path) {
                     continue;
                 }
 
