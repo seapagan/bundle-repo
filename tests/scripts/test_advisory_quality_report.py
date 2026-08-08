@@ -8,6 +8,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).parents[2]
 SCRIPT = ROOT / ".github" / "scripts" / "advisory_quality_report.py"
@@ -104,6 +105,29 @@ class ParsingTests(unittest.TestCase):
             ],
         )
 
+    def test_extracts_ordinary_and_generic_function_names(self) -> None:
+        cases = (
+            ("ordinary", "fn ordinary(value: u8) {}"),
+            ("generic", "fn generic<T>(value: T) {}"),
+            (
+                "bounded_generic",
+                "fn bounded_generic<T: Copy, U>(first: T, second: U) {}",
+            ),
+        )
+        for function, declaration in cases:
+            with self.subTest(declaration=declaration):
+                diagnostic = (
+                    "warning: this function has too many lines (68/60)\n"
+                    "  --> src/example.rs:5:1\n"
+                    f"5 | {declaration}\n"
+                    "   = note: requested with `-W clippy::too-many-lines`\n"
+                )
+
+                findings = REPORT.extract_findings(diagnostic)
+
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0].function, function)
+
     def test_both_marker_forms_identify_each_lint(self) -> None:
         for lint, warning, marker_line in LINT_MARKER_CASES:
             with self.subTest(marker=marker_line):
@@ -174,6 +198,37 @@ class PlatformReportTests(unittest.TestCase):
         self.assertIn("`classify_and_decode`", report)
         self.assertIn("`clippy::too_many_lines`", report)
         self.assertIn("68/60 lines", report)
+
+    def test_platform_mode_replaces_invalid_utf8_and_extracts_finding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            quality_log = root / "quality.log"
+            markdown = root / "quality-linux.md"
+            structured = root / "quality-linux.json"
+            quality_log.write_bytes(
+                b"incidental invalid byte: \xff\n"
+                + TOO_MANY_LINES_DIAGNOSTIC.encode("utf-8")
+            )
+            argv = [
+                str(SCRIPT),
+                "platform",
+                str(quality_log),
+                str(markdown),
+                str(structured),
+                "Linux",
+            ]
+
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch("builtins.print") as print_mock,
+            ):
+                REPORT.main()
+
+            print_mock.assert_called_once_with(1)
+            result = REPORT.load_platform_result(structured)
+            self.assertEqual(result.platform, "Linux")
+            self.assertEqual(result.findings, (finding(),))
+            self.assertIn("`classify_and_decode`", markdown.read_text("utf-8"))
 
 
 class CombinedCommentTests(unittest.TestCase):

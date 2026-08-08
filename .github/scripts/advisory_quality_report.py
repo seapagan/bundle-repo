@@ -12,7 +12,7 @@ from typing import Any
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 LOCATION = re.compile(r"^\s*-->\s+(.+):(\d+):(\d+)\s*$")
-FUNCTION = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+FUNCTION = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\b")
 RATIO = re.compile(r"\((\d+)/(\d+)\)")
 LINT_MARKERS = {
     "clippy::too_many_lines": ("#too_many_lines", "clippy::too-many-lines"),
@@ -286,7 +286,9 @@ def main() -> None:
     """Write one platform result or an aggregated sticky comment."""
     args = parse_args()
     if args.command == "platform":
-        findings = extract_findings(args.input.read_text(encoding="utf-8"))
+        findings = extract_findings(
+            args.input.read_text(encoding="utf-8", errors="replace")
+        )
         args.markdown_output.write_text(
             render_report(args.platform, findings),
             encoding="utf-8",
