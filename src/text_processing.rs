@@ -67,11 +67,25 @@ fn read_classify_and_decode_from_reader<R: Read>(
     timings.file_classification_and_read += read_start.elapsed();
 
     let classification_start = Instant::now();
-    let early_binary_reason = match Encoding::for_bom(&bytes) {
+    let early_binary_reason = classify_probe(&bytes, utf8);
+    if let Some(reason) = early_binary_reason {
+        timings.file_classification_and_read += classification_start.elapsed();
+        return Ok(ProcessedFile::Binary(reason));
+    }
+    timings.file_classification_and_read += classification_start.elapsed();
+
+    let read_start = Instant::now();
+    reader.read_to_end(&mut bytes)?;
+    timings.file_classification_and_read += read_start.elapsed();
+    Ok(classify_and_decode(bytes, utf8, timings))
+}
+
+fn classify_probe(bytes: &[u8], utf8: bool) -> Option<BinaryReason> {
+    match Encoding::for_bom(bytes) {
         None => bytes
             .contains(&0)
             .then_some(BinaryReason::NullByte)
-            .or_else(|| magic_binary_reason(&bytes)),
+            .or_else(|| magic_binary_reason(bytes)),
         Some((encoding, bom_length)) if encoding == UTF_8 => {
             let payload = &bytes[bom_length..];
             payload
@@ -85,17 +99,7 @@ fn read_classify_and_decode_from_reader<R: Read>(
             Some(BinaryReason::Utf16ConversionDisabled(encoding.name()))
         }
         Some(_) => None,
-    };
-    if let Some(reason) = early_binary_reason {
-        timings.file_classification_and_read += classification_start.elapsed();
-        return Ok(ProcessedFile::Binary(reason));
     }
-    timings.file_classification_and_read += classification_start.elapsed();
-
-    let read_start = Instant::now();
-    reader.read_to_end(&mut bytes)?;
-    timings.file_classification_and_read += read_start.elapsed();
-    Ok(classify_and_decode(bytes, utf8, timings))
 }
 
 fn classify_and_decode(
@@ -104,28 +108,48 @@ fn classify_and_decode(
     timings: &mut ProcessingTimings,
 ) -> ProcessedFile {
     let classification_start = Instant::now();
-    if let Some((encoding, bom_length)) = Encoding::for_bom(&bytes) {
-        if encoding == UTF_16LE || encoding == UTF_16BE {
-            timings.file_classification_and_read +=
-                classification_start.elapsed();
-            return process_utf16(bytes, encoding, utf8, timings);
-        }
-        debug_assert_eq!(encoding, UTF_8);
-        let payload = &bytes[bom_length..];
-        if let Some(reason) = magic_binary_reason(payload) {
-            timings.file_classification_and_read +=
-                classification_start.elapsed();
-            return ProcessedFile::Binary(reason);
-        }
-        if let Some(reason) = classify_bytes(payload).binary_reason {
-            timings.file_classification_and_read +=
-                classification_start.elapsed();
-            return ProcessedFile::Binary(reason);
-        }
-        timings.file_classification_and_read += classification_start.elapsed();
-        return process_bom_marked_utf8(bytes, utf8, timings);
+    match Encoding::for_bom(&bytes) {
+        Some((encoding, bom_length)) => process_bom_marked(
+            bytes,
+            encoding,
+            bom_length,
+            utf8,
+            timings,
+            classification_start,
+        ),
+        None => process_unmarked(bytes, utf8, timings, classification_start),
     }
+}
 
+fn process_bom_marked(
+    bytes: Vec<u8>,
+    encoding: &'static Encoding,
+    bom_length: usize,
+    utf8: bool,
+    timings: &mut ProcessingTimings,
+    classification_start: Instant,
+) -> ProcessedFile {
+    if encoding == UTF_16LE || encoding == UTF_16BE {
+        timings.file_classification_and_read += classification_start.elapsed();
+        return process_utf16(bytes, encoding, utf8, timings);
+    }
+    debug_assert_eq!(encoding, UTF_8);
+    let payload = &bytes[bom_length..];
+    let binary_reason = magic_binary_reason(payload)
+        .or_else(|| classify_bytes(payload).binary_reason);
+    timings.file_classification_and_read += classification_start.elapsed();
+    match binary_reason {
+        Some(reason) => ProcessedFile::Binary(reason),
+        None => process_bom_marked_utf8(bytes, utf8, timings),
+    }
+}
+
+fn process_unmarked(
+    bytes: Vec<u8>,
+    utf8: bool,
+    timings: &mut ProcessingTimings,
+    classification_start: Instant,
+) -> ProcessedFile {
     if let Some(reason) = magic_binary_reason(&bytes) {
         timings.file_classification_and_read += classification_start.elapsed();
         return ProcessedFile::Binary(reason);
