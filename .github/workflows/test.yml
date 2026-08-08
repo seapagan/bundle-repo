@@ -386,6 +386,16 @@ jobs:
             exit 1
           fi
 
+      - name: Run Codacy coverage reporter
+        env:
+          CODACY_CONFIGURED: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        if: ${{ env.CODACY_CONFIGURED != '' }}
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        continue-on-error: true
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: coverage.lcov
+
       - name: Generate combined HTML coverage
         run: >-
           genhtml coverage.lcov
