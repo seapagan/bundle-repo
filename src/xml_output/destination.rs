@@ -58,11 +58,11 @@ pub(super) fn finish_output<N: Write, D: Write>(
         return Ok((number_of_files, 0, 0));
     }
 
-    let xml_content = std::str::from_utf8(&xml_bytes)
+    let xml_content = String::from_utf8(xml_bytes)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let token_count =
-        count_tokens(xml_content, tokenizer, model_name, reporter, timings)?;
-    let total_size = write_destination(flags, xml_bytes, reporter, timings)?;
+        count_tokens(&xml_content, tokenizer, model_name, reporter, timings)?;
+    let total_size = write_destination(flags, xml_content, reporter, timings)?;
     Ok((number_of_files, total_size, token_count))
 }
 
@@ -84,22 +84,19 @@ fn count_tokens<N: Write, D: Write>(
 
 fn write_destination<N: Write, D: Write>(
     flags: &Params,
-    xml_bytes: Vec<u8>,
+    xml_content: String,
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> io::Result<u64> {
     if flags.clipboard {
         reporter.phase(&destination_phase(flags))?;
-        let xml_content =
-            std::str::from_utf8(&xml_bytes).map_err(|error| {
-                io::Error::new(io::ErrorKind::InvalidData, error)
-            })?;
-        return write_clipboard(xml_content, xml_bytes.len(), timings);
+        let content_length = xml_content.len();
+        return write_clipboard(&xml_content, content_length, timings);
     }
 
     let output_path = effective_output_file(flags);
     reporter.phase(&destination_phase(flags))?;
-    write_file(flags, &output_path, xml_bytes, timings)
+    write_file(flags, &output_path, xml_content.into_bytes(), timings)
 }
 
 fn write_clipboard(
