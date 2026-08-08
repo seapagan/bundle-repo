@@ -66,8 +66,9 @@ jobs:
         shell: bash
         run: |
           report="quality-${{ matrix.slug }}.md"
-          count="$(python .github/scripts/advisory_quality_report.py \
-            quality.log "$report" "${{ matrix.platform }}")"
+          findings="quality-${{ matrix.slug }}.json"
+          count="$(python .github/scripts/advisory_quality_report.py platform \
+            quality.log "$report" "$findings" "${{ matrix.platform }}")"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
           if (( count > 0 )); then
             echo "::warning title=Advisory maintainability::$count findings detected on ${{ matrix.platform }}; see the Advisory quality summary."
@@ -77,7 +78,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: advisory-quality-${{ matrix.slug }}
-          path: quality-${{ matrix.slug }}.md
+          path: |
+            quality-${{ matrix.slug }}.md
+            quality-${{ matrix.slug }}.json
           if-no-files-found: error
           retention-days: 1
 
@@ -104,33 +107,10 @@ jobs:
       - name: Build sticky comment
         shell: bash
         run: |
-          linux_report="quality-reports/quality-linux.md"
-          windows_report="quality-reports/quality-windows.md"
-          test -s "$linux_report"
-          test -s "$windows_report"
-
-          if grep -q '^⚠️' "$linux_report" "$windows_report"; then
-            heading="## ⚠️ Advisory maintainability"
-          else
-            heading="## ✅ Advisory maintainability"
-          fi
-
-          {
-            echo '<!-- bundlerepo-advisory-quality -->'
-            echo
-            echo "$heading"
-            echo
-            echo 'Clippy maintainability checks are advisory and do not block merging.'
-            echo
-            cat "$linux_report"
-            echo
-            cat "$windows_report"
-            echo
-            echo 'Thresholds:'
-            echo
-            echo '- function lines: 60'
-            echo '- arguments: 8'
-          } > quality-comment.md
+          python .github/scripts/advisory_quality_report.py combine \
+            quality-comment.md \
+            quality-reports/quality-linux.json \
+            quality-reports/quality-windows.json
 
       - name: Create or update sticky comment
         shell: bash
