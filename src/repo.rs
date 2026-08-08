@@ -63,35 +63,42 @@ pub fn clone_repo(
             }
             Ok(repo_folder)
         }
-        Err(e) => {
-            let error_message = match (e.class(), e.code()) {
-                (ErrorClass::Reference, ErrorCode::NotFound) => {
-                    if let Some(branch_name) = &flags.branch {
-                        format!(
-                            "The specified branch '{branch_name}' does not exist in the repository."
-                        )
-                    } else {
-                        format!("Failed to clone: {}", e)
-                    }
-                }
-                (ErrorClass::Net, _) => format!(
-                    "Network error: The repository '{}' might not exist or you may not have permission to access it.",
-                    repo_input
-                ),
-                (ErrorClass::Http, _)
-                    if e.message().contains(
-                        "too many redirects or authentication replays",
-                    ) =>
-                {
-                    format!(
-                        "The repository '{}' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option.",
-                        repo_input
-                    )
-                }
-                _ => format!("Failed to clone: {}", e),
-            };
-            Err(git2::Error::from_str(&error_message))
+        Err(error) => Err(git2::Error::from_str(&clone_error_message(
+            repo_input,
+            flags.branch.as_deref(),
+            &error,
+        ))),
+    }
+}
+
+fn clone_error_message(
+    repo_input: &str,
+    branch_name: Option<&str>,
+    error: &git2::Error,
+) -> String {
+    match (error.class(), error.code()) {
+        (ErrorClass::Reference, ErrorCode::NotFound) => {
+            if let Some(branch_name) = branch_name {
+                format!(
+                    "The specified branch '{branch_name}' does not exist in the repository."
+                )
+            } else {
+                format!("Failed to clone: {error}")
+            }
         }
+        (ErrorClass::Net, _) => format!(
+            "Network error: The repository '{repo_input}' might not exist or you may not have permission to access it."
+        ),
+        (ErrorClass::Http, _)
+            if error
+                .message()
+                .contains("too many redirects or authentication replays") =>
+        {
+            format!(
+                "The repository '{repo_input}' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option."
+            )
+        }
+        _ => format!("Failed to clone: {error}"),
     }
 }
 
@@ -165,5 +172,65 @@ mod tests {
         repo.set_head_detached(commit_id).unwrap();
 
         assert_eq!(get_current_branch_name(&repo).unwrap(), "detached HEAD");
+    }
+
+    #[test]
+    fn test_clone_error_reports_missing_requested_branch() {
+        let missing_reference = git2::Error::new(
+            ErrorCode::NotFound,
+            ErrorClass::Reference,
+            "reference not found",
+        );
+        assert_eq!(
+            clone_error_message(
+                "owner/repo",
+                Some("missing"),
+                &missing_reference
+            ),
+            "The specified branch 'missing' does not exist in the repository."
+        );
+        assert_eq!(
+            clone_error_message("owner/repo", None, &missing_reference),
+            "Failed to clone: reference not found; class=Reference (4); code=NotFound (-3)"
+        );
+    }
+
+    #[test]
+    fn test_clone_error_reports_network_context() {
+        let network = git2::Error::new(
+            ErrorCode::GenericError,
+            ErrorClass::Net,
+            "offline",
+        );
+        assert_eq!(
+            clone_error_message("owner/repo", None, &network),
+            "Network error: The repository 'owner/repo' might not exist or you may not have permission to access it."
+        );
+    }
+
+    #[test]
+    fn test_clone_error_reports_authentication_guidance() {
+        let authentication = git2::Error::new(
+            ErrorCode::Auth,
+            ErrorClass::Http,
+            "too many redirects or authentication replays",
+        );
+        assert_eq!(
+            clone_error_message("owner/private", None, &authentication),
+            "The repository 'owner/private' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option."
+        );
+    }
+
+    #[test]
+    fn test_clone_error_preserves_unexpected_details() {
+        let unexpected = git2::Error::new(
+            ErrorCode::GenericError,
+            ErrorClass::Os,
+            "disk full",
+        );
+        assert_eq!(
+            clone_error_message("owner/repo", None, &unexpected),
+            "Failed to clone: disk full; class=Os (2)"
+        );
     }
 }
