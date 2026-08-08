@@ -64,14 +64,17 @@ jobs:
 
       - name: Build advisory report
         shell: bash
+        env:
+          QUALITY_PLATFORM: ${{ matrix.platform }}
+          QUALITY_SLUG: ${{ matrix.slug }}
         run: |
-          report="quality-${{ matrix.slug }}.md"
-          findings="quality-${{ matrix.slug }}.json"
+          report="quality-${QUALITY_SLUG}.md"
+          findings="quality-${QUALITY_SLUG}.json"
           count="$(python .github/scripts/advisory_quality_report.py platform \
-            quality.log "$report" "$findings" "${{ matrix.platform }}")"
+            quality.log "$report" "$findings" "$QUALITY_PLATFORM")"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
           if (( count > 0 )); then
-            echo "::warning title=Advisory maintainability::$count findings detected on ${{ matrix.platform }}; see the Advisory quality summary."
+            echo "::warning title=Advisory maintainability::$count findings detected on $QUALITY_PLATFORM; see the Advisory quality summary."
           fi
 
       - name: Upload advisory report
@@ -93,8 +96,8 @@ jobs:
     runs-on: ubuntu-24.04
 
     permissions:
-      actions: read
-      pull-requests: write
+      actions: read # Download native quality-report artifacts.
+      pull-requests: write # Create or update the marker-based sticky PR comment.
 
     steps:
       - name: Download advisory reports
