@@ -23,6 +23,7 @@ mod progress;
 mod repo;
 mod structs;
 #[cfg(test)]
+#[path = "../tests/crate/test_fixtures.rs"]
 mod test_fixtures;
 mod text_processing;
 mod timings;

@@ -16,25 +16,25 @@ pub(crate) const WESTERN: &str = "Voici un texte français pour vérifier la dé
 pub(crate) const UTF16_TEXT: &str = "UTF-16 text with 日本語, русский текст, and العربية. This fixture contains multiple natural sentences. It verifies byte-order-mark handling.\n";
 
 pub(crate) const SHIFT_JIS_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/shift-jis.txt");
+    include_bytes!("../fixtures/encodings/shift-jis.txt");
 pub(crate) const EUC_JP_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/euc-jp.txt");
+    include_bytes!("../fixtures/encodings/euc-jp.txt");
 pub(crate) const ISO_2022_JP_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/iso-2022-jp.txt");
+    include_bytes!("../fixtures/encodings/iso-2022-jp.txt");
 pub(crate) const GBK_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/gbk.txt");
+    include_bytes!("../fixtures/encodings/gbk.txt");
 pub(crate) const GB18030_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/gb18030.txt");
+    include_bytes!("../fixtures/encodings/gb18030.txt");
 pub(crate) const BIG5_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/big5.txt");
+    include_bytes!("../fixtures/encodings/big5.txt");
 pub(crate) const WINDOWS_1251_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/windows-1251.txt");
+    include_bytes!("../fixtures/encodings/windows-1251.txt");
 pub(crate) const WINDOWS_1252_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/windows-1252.txt");
+    include_bytes!("../fixtures/encodings/windows-1252.txt");
 pub(crate) const UTF16LE_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/utf-16le.txt");
+    include_bytes!("../fixtures/encodings/utf-16le.txt");
 pub(crate) const UTF16BE_BYTES: &[u8] =
-    include_bytes!("../tests/fixtures/encodings/utf-16be.txt");
+    include_bytes!("../fixtures/encodings/utf-16be.txt");
 
 pub(crate) const ENCODING_FIXTURES: [EncodingFixture; 10] = [
     EncodingFixture {
