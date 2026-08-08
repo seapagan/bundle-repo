@@ -31,6 +31,21 @@ fn test_detached_head_name() {
 }
 
 #[test]
+fn test_clone_repo_rejects_invalid_repository_input() {
+    let destination_dir = tempdir().unwrap();
+    let params = Params {
+        stdout: true,
+        ..Params::default()
+    };
+
+    let error =
+        clone_repo(&params, "not a repository", None, destination_dir.path())
+            .unwrap_err();
+
+    assert_eq!(error.message(), "Invalid repository shorthand");
+}
+
+#[test]
 fn test_clone_error_reports_missing_requested_branch() {
     let missing_reference = Error::new(
         ErrorCode::NotFound,
