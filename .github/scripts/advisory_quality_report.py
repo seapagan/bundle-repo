@@ -231,14 +231,25 @@ def render_combined_comment(results: list[PlatformResult]) -> str:
     for finding, platforms in finding_platforms.items():
         grouped.setdefault(frozenset(platforms), []).append(finding)
 
-    icon = "⚠️" if finding_platforms else "✅"
     lines = [
         "<!-- bundlerepo-advisory-quality -->",
         "",
-        f"## {icon} Advisory maintainability",
+        f"## {'⚠️' if finding_platforms else '✅'} Maintainability checks",
         "",
-        "Clippy maintainability checks are advisory and do not block merging.",
     ]
+    if finding_platforms:
+        lines.append(
+            "Clippy reported advisory maintainability findings. "
+            "These do not block merging."
+        )
+    else:
+        lines.extend(
+            [
+                "No advisory maintainability findings.",
+                "",
+                "All checked functions are within the configured thresholds:",
+            ]
+        )
     group_order = sorted(
         grouped,
         key=lambda platforms: (
@@ -253,15 +264,9 @@ def render_combined_comment(results: list[PlatformResult]) -> str:
                 f"- `{finding.location}` — `{finding.function}` — "
                 f"`{finding.lint}` — {finding.detail}"
             )
-    lines.extend(
-        [
-            "",
-            "Thresholds:",
-            "",
-            "- function lines: 60",
-            "- arguments: 8",
-        ]
-    )
+    if finding_platforms:
+        lines.extend(["", "Thresholds:"])
+    lines.extend(["", "- function lines: 60", "- arguments: 8"])
     return "\n".join(lines) + "\n"
 
 
