@@ -154,7 +154,19 @@ args = ["check", "--all-targets", "--all-features"]
 description = "Run Clippy for all native Unix targets and features"
 dependencies = ["_require-unix"]
 command = "cargo"
-args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+# Maintainability exceptions are owned by the advisory quality task.
+args = [
+  "clippy",
+  "--all-targets",
+  "--all-features",
+  "--",
+  "-D",
+  "warnings",
+  "-A",
+  "clippy::too_many_lines",
+  "-A",
+  "clippy::too_many_arguments",
+]
 
 [tasks.unix-test]
 description = "Run all native Unix tests"
@@ -191,7 +203,18 @@ args = ["check", "--all-targets", "--all-features"]
 description = "Run Clippy for all native Windows targets and features"
 dependencies = ["_require-windows"]
 command = "cargo"
-args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+args = [
+  "clippy",
+  "--all-targets",
+  "--all-features",
+  "--",
+  "-D",
+  "warnings",
+  "-A",
+  "clippy::too_many_lines",
+  "-A",
+  "clippy::too_many_arguments",
+]
 
 [tasks.windows-test]
 description = "Run all native Windows tests"
@@ -245,6 +268,10 @@ args = [
   "--",
   "-D",
   "warnings",
+  "-A",
+  "clippy::too_many_lines",
+  "-A",
+  "clippy::too_many_arguments",
 ]
 
 [tasks.xwin-build]
