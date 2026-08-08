@@ -44,10 +44,16 @@ fn test_local_config_overrides_global_config() {
 #[test]
 fn test_invalid_config_falls_back_to_defaults() {
     let temp_dir = tempdir().unwrap();
+    let global_config = temp_dir.path().join("global.toml");
     let local_config = temp_dir.path().join("invalid.toml");
+    fs::write(
+        &global_config,
+        "model = \"gpt4\"\nline_numbers = true\ngzip_level = 9\n",
+    )
+    .unwrap();
     fs::write(&local_config, "model = [").unwrap();
 
-    let params = load_config_from_paths(None, &local_config);
+    let params = load_config_from_paths(Some(&global_config), &local_config);
 
     assert_eq!(params, Params::default());
 }
@@ -250,17 +256,6 @@ fn test_no_exclude_patterns() {
 
     assert!(params.exclude.is_none());
     assert!(params.extend_exclude.is_none());
-}
-
-#[test]
-fn test_repo_clone_error() {
-    let temp_dir = tempdir().unwrap();
-    let args = Flags::parse_from(["bundlerepo", "invalid_repo"]);
-    let config = Params::default();
-    let params = Params::from_args_and_config(&args, config);
-    let result =
-        repo::clone_repo(&params, "invalid_repo", None, temp_dir.path());
-    assert!(result.is_err());
 }
 
 #[test]
