@@ -8,6 +8,8 @@ repopack-output.xml
 .bundlerepo.toml
 tarpaulin-report.html
 
+# Python bytecode
+*.py[cod]
 
 # AI stuff
 .codex/
