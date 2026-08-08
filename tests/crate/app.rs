@@ -18,6 +18,139 @@ fn create_test_config(toml_content: &str) -> Params {
 }
 
 #[test]
+fn test_local_config_overrides_global_config() {
+    let temp_dir = tempdir().unwrap();
+    let global_config = temp_dir.path().join("global.toml");
+    let local_config = temp_dir.path().join("local.toml");
+    fs::write(
+        &global_config,
+        "model = \"gpt4\"\nline_numbers = true\ngzip_level = 8\n",
+    )
+    .unwrap();
+    fs::write(
+        &local_config,
+        "model = \"gpt5\"\ngzip = true\ngzip_level = 3\n",
+    )
+    .unwrap();
+
+    let params = load_config_from_paths(Some(&global_config), &local_config);
+
+    assert_eq!(params.model.as_deref(), Some("gpt5"));
+    assert!(params.line_numbers);
+    assert!(params.gzip);
+    assert_eq!(params.gzip_level, 3);
+}
+
+#[test]
+fn test_invalid_config_falls_back_to_defaults() {
+    let temp_dir = tempdir().unwrap();
+    let global_config = temp_dir.path().join("global.toml");
+    let local_config = temp_dir.path().join("invalid.toml");
+    fs::write(
+        &global_config,
+        "model = \"gpt4\"\nline_numbers = true\ngzip_level = 9\n",
+    )
+    .unwrap();
+    fs::write(&local_config, "model = [").unwrap();
+
+    let params = load_config_from_paths(Some(&global_config), &local_config);
+
+    assert_eq!(params, Params::default());
+}
+
+#[test]
+fn test_success_report_names_file_and_metrics() {
+    let params = Params {
+        output_file: Some("result.xml".to_string()),
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+    report_success(&params, Model::GPT4o, (3, 2048, 512), &mut reporter)
+        .unwrap();
+
+    let (normal, diagnostic) = reporter.into_parts();
+    let normal = String::from_utf8(normal).unwrap();
+    assert!(normal.starts_with("-> Successfully wrote XML to 'result.xml'\n"));
+    assert!(normal.contains("Total Files processed:  3"));
+    assert!(normal.contains("Total output size (bytes):  2048"));
+    assert!(normal.contains("Token count (GPT-4o):  512"));
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_success_report_names_clipboard_destination() {
+    let params = Params {
+        clipboard: true,
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+    report_success(&params, Model::GPT5, (1, 2, 3), &mut reporter).unwrap();
+
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.starts_with(b"-> Successfully copied XML to clipboard\n"));
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_success_report_is_silent_for_stdout_output() {
+    let params = Params {
+        stdout: true,
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+
+    report_success(&params, Model::GPT5, (1, 2, 3), &mut reporter).unwrap();
+
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.is_empty());
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_prepare_tokenizer_reports_invalid_model() {
+    let params = Params {
+        model: Some("unknown".to_string()),
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error =
+        prepare_tokenizer(&params, &mut reporter, &mut timings).unwrap_err();
+
+    assert!(error.starts_with("ERROR: Unsupported model: unknown."));
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.is_empty());
+    assert!(diagnostic.is_empty());
+    assert!(timings.tokenizer_load.is_zero());
+}
+
+#[test]
+fn test_prepare_tokenizer_announces_selected_model() {
+    let params = Params {
+        model: Some("gpt4".to_string()),
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let (model, _) =
+        prepare_tokenizer(&params, &mut reporter, &mut timings).unwrap();
+
+    assert_eq!(model, Model::GPT4);
+    let (normal, diagnostic) = reporter.into_parts();
+    assert_eq!(normal, b"-> Loading tokenizer for GPT-4\n");
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
 fn test_exclude_takes_precedence_over_extend_exclude() {
     // Setup CLI args with both exclude and extend-exclude
     let args = Flags::parse_from([
@@ -123,17 +256,6 @@ fn test_no_exclude_patterns() {
 
     assert!(params.exclude.is_none());
     assert!(params.extend_exclude.is_none());
-}
-
-#[test]
-fn test_repo_clone_error() {
-    let temp_dir = tempdir().unwrap();
-    let args = Flags::parse_from(["bundlerepo", "invalid_repo"]);
-    let config = Params::default();
-    let params = Params::from_args_and_config(&args, config);
-    let result =
-        repo::clone_repo(&params, "invalid_repo", None, temp_dir.path());
-    assert!(result.is_err());
 }
 
 #[test]

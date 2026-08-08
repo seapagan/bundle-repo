@@ -14,7 +14,7 @@ use tabled::{
     },
 };
 use tempfile::tempdir;
-use tokenizer::Model;
+use tokenizer::{Model, TokenizerType};
 
 mod cli;
 mod embedded;
@@ -38,26 +38,30 @@ struct SummaryTable {
 }
 
 fn load_config() -> Params {
+    let global_config_path =
+        home_dir().map(|home| home.join(".config/bundlerepo/config.toml"));
+    load_config_from_paths(
+        global_config_path.as_deref(),
+        Path::new(".bundlerepo.toml"),
+    )
+}
+
+fn load_config_from_paths(
+    global_config_path: Option<&Path>,
+    local_config_path: &Path,
+) -> Params {
     let mut config_builder = Config::builder();
 
-    // Get the home directory and construct the global config path
-    if let Some(home_dir) = home_dir() {
-        let global_config_path =
-            home_dir.join(".config/bundlerepo/config.toml");
-
-        // Add global config as the base if it exists
-        if global_config_path.exists() {
-            config_builder = config_builder.add_source(File::new(
-                global_config_path.to_str().unwrap(),
-                FileFormat::Toml,
-            ));
-        }
+    if let Some(global_config_path) = global_config_path
+        && global_config_path.exists()
+    {
+        config_builder = config_builder.add_source(File::new(
+            global_config_path.to_str().unwrap(),
+            FileFormat::Toml,
+        ));
     }
 
-    // Check for local config file in the current directory
-    let local_config_path = Path::new(".bundlerepo.toml");
     if local_config_path.exists() {
-        // Add local config as an override
         config_builder = config_builder.add_source(File::new(
             local_config_path.to_str().unwrap(),
             FileFormat::Toml,
@@ -71,6 +75,69 @@ fn load_config() -> Params {
             Params::default()
         }
     }
+}
+
+fn report_success<N: std::io::Write, D: std::io::Write>(
+    params: &Params,
+    model: Model,
+    metrics: (usize, u64, usize),
+    reporter: &mut progress::ProgressReporter<N, D>,
+) -> std::io::Result<()> {
+    if params.stdout {
+        return Ok(());
+    }
+
+    if params.clipboard {
+        reporter.normal_line("-> Successfully copied XML to clipboard")?;
+    } else {
+        reporter.normal_line(&format!(
+            "-> Successfully wrote XML to '{}'",
+            xml_output::effective_output_file(params).display()
+        ))?;
+    }
+
+    let (number_of_files, total_size, token_count) = metrics;
+    let summary_data = vec![
+        SummaryTable {
+            metric: "Total Files processed:".to_string(),
+            value: number_of_files.to_string(),
+        },
+        SummaryTable {
+            metric: "Total output size (bytes):".to_string(),
+            value: total_size.to_string(),
+        },
+        SummaryTable {
+            metric: format!("Token count ({}):", model.display_name()),
+            value: token_count.to_string(),
+        },
+    ];
+
+    let table = Table::new(summary_data)
+        .with(Remove::row(Rows::first()))
+        .with(Style::empty())
+        .with(Modify::list(Columns::first(), Alignment::right()))
+        .to_string();
+
+    reporter.normal_text(&format!("\nSummary:\n{table}\n\n"))
+}
+
+fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(
+    params: &Params,
+    reporter: &mut progress::ProgressReporter<N, D>,
+    timings: &mut timings::ProcessingTimings,
+) -> Result<(Model, TokenizerType), String> {
+    let model = params.model.as_ref().unwrap().parse::<Model>()?;
+    reporter
+        .phase(&format!("Loading tokenizer for {}", model.display_name()))
+        .unwrap();
+
+    let tokenizer_start = Instant::now();
+    let tokenizer = model.to_tokenizer().map_err(|error| {
+        format!("Error: Failed to create tokenizer: {error}")
+    })?;
+    timings.tokenizer_load = tokenizer_start.elapsed();
+
+    Ok((model, tokenizer))
 }
 
 fn main() {
@@ -102,32 +169,14 @@ fn main() {
         params.stdout,
     );
 
-    // Parse the tokenizer Model from the CLI argument. We will build the
-    // tokenizer from this and also use it to display the model name in the
-    // summary.
-    let model = match params.model.clone().unwrap().parse::<Model>() {
-        Ok(model) => model,
-        Err(e) => {
-            reporter.error(&e).unwrap();
-            exit(1);
-        }
-    };
-
-    // Create the tokenizer from the parsed model
-    reporter
-        .phase(&format!("Loading tokenizer for {}", model.display_name()))
-        .unwrap();
-    let tokenizer_start = Instant::now();
-    let tokenizer = match model.to_tokenizer() {
-        Ok(tokenizer) => tokenizer,
-        Err(e) => {
-            reporter
-                .error(&format!("Error: Failed to create tokenizer: {e}"))
-                .unwrap();
-            exit(1);
-        }
-    };
-    timings.tokenizer_load = tokenizer_start.elapsed();
+    let (model, tokenizer) =
+        match prepare_tokenizer(&params, &mut reporter, &mut timings) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                reporter.error(&error).unwrap();
+                exit(1);
+            }
+        };
 
     // Create a temporary directory for cloning the repository
     let temp_dir = tempdir().unwrap();
@@ -170,51 +219,8 @@ fn main() {
         &mut reporter,
         &mut timings,
     ) {
-        Ok((number_of_files, total_size, token_count)) => {
-            if !params.stdout {
-                // Print the summary only if not using stdout
-                if params.clipboard {
-                    reporter
-                        .normal_line("-> Successfully copied XML to clipboard")
-                        .unwrap();
-                } else {
-                    reporter
-                        .normal_line(&format!(
-                            "-> Successfully wrote XML to '{}'",
-                            xml_output::effective_output_file(&params)
-                                .display()
-                        ))
-                        .unwrap();
-                }
-                let summary_data = vec![
-                    SummaryTable {
-                        metric: "Total Files processed:".to_string(),
-                        value: number_of_files.to_string(),
-                    },
-                    SummaryTable {
-                        metric: "Total output size (bytes):".to_string(),
-                        value: total_size.to_string(),
-                    },
-                    SummaryTable {
-                        metric: format!(
-                            "Token count ({}):",
-                            model.display_name()
-                        ),
-                        value: token_count.to_string(),
-                    },
-                ];
-
-                // Build and print the table
-                let table = Table::new(summary_data)
-                    .with(Remove::row(Rows::first()))
-                    .with(Style::empty())
-                    .with(Modify::list(Columns::first(), Alignment::right()))
-                    .to_string();
-
-                reporter
-                    .normal_text(&format!("\nSummary:\n{table}\n\n"))
-                    .unwrap();
-            }
+        Ok(metrics) => {
+            report_success(&params, model, metrics, &mut reporter).unwrap();
             if timing_enabled {
                 let _ = timings.write_records(&mut std::io::stderr().lock());
             }

@@ -63,35 +63,42 @@ pub fn clone_repo(
             }
             Ok(repo_folder)
         }
-        Err(e) => {
-            let error_message = match (e.class(), e.code()) {
-                (ErrorClass::Reference, ErrorCode::NotFound) => {
-                    if let Some(branch_name) = &flags.branch {
-                        format!(
-                            "The specified branch '{branch_name}' does not exist in the repository."
-                        )
-                    } else {
-                        format!("Failed to clone: {}", e)
-                    }
-                }
-                (ErrorClass::Net, _) => format!(
-                    "Network error: The repository '{}' might not exist or you may not have permission to access it.",
-                    repo_input
-                ),
-                (ErrorClass::Http, _)
-                    if e.message().contains(
-                        "too many redirects or authentication replays",
-                    ) =>
-                {
-                    format!(
-                        "The repository '{}' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option.",
-                        repo_input
-                    )
-                }
-                _ => format!("Failed to clone: {}", e),
-            };
-            Err(git2::Error::from_str(&error_message))
+        Err(error) => Err(git2::Error::from_str(&clone_error_message(
+            repo_input,
+            flags.branch.as_deref(),
+            &error,
+        ))),
+    }
+}
+
+fn clone_error_message(
+    repo_input: &str,
+    branch_name: Option<&str>,
+    error: &git2::Error,
+) -> String {
+    match (error.class(), error.code()) {
+        (ErrorClass::Reference, ErrorCode::NotFound) => {
+            if let Some(branch_name) = branch_name {
+                format!(
+                    "The specified branch '{branch_name}' does not exist in the repository."
+                )
+            } else {
+                format!("Failed to clone: {error}")
+            }
         }
+        (ErrorClass::Net, _) => format!(
+            "Network error: The repository '{repo_input}' might not exist or you may not have permission to access it."
+        ),
+        (ErrorClass::Http, _)
+            if error
+                .message()
+                .contains("too many redirects or authentication replays") =>
+        {
+            format!(
+                "The repository '{repo_input}' does not exist or requires authentication.\nIf it's a private repository, please provide a valid token using the --token option."
+            )
+        }
+        _ => format!("Failed to clone: {error}"),
     }
 }
 
@@ -134,36 +141,5 @@ fn get_current_branch_name(repo: &Repository) -> Result<String, git2::Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use git2::{Oid, Signature};
-    use tempfile::tempdir;
-
-    fn create_commit(repo: &Repository) -> Oid {
-        let tree_id = repo.index().unwrap().write_tree().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let signature = Signature::now("Test", "test@example.com").unwrap();
-        repo.commit(Some("HEAD"), &signature, &signature, "test", &tree, &[])
-            .unwrap()
-    }
-
-    #[test]
-    fn test_current_branch_name() {
-        let temp_dir = tempdir().unwrap();
-        let repo = Repository::init(temp_dir.path()).unwrap();
-        repo.set_head("refs/heads/test-branch").unwrap();
-        create_commit(&repo);
-
-        assert_eq!(get_current_branch_name(&repo).unwrap(), "test-branch");
-    }
-
-    #[test]
-    fn test_detached_head_name() {
-        let temp_dir = tempdir().unwrap();
-        let repo = Repository::init(temp_dir.path()).unwrap();
-        let commit_id = create_commit(&repo);
-        repo.set_head_detached(commit_id).unwrap();
-
-        assert_eq!(get_current_branch_name(&repo).unwrap(), "detached HEAD");
-    }
-}
+#[path = "../tests/crate/repo.rs"]
+mod tests;
