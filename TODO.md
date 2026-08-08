@@ -1,8 +1,6 @@
 # Planned Improvements
 
 - add more output formats - Text, Markdown, maybe others.
-- improve the test suite to ensure the tool works as expected in a variety of
-  scenarios.
 - include the resolved output path in file-creation errors. Attach the context
   at the `File::create` boundary so stdout, clipboard, and earlier XML-generation
   failures remain accurately described.
@@ -19,9 +17,7 @@
   always good to have comments in the returned code from the LLM. Needs more
   thought. **If we add this, remember to re-add the note on comment removal to
   the output file `<notes>` node.**
-- ensure that the tool works on Windows, Linux, and macOS. It does work great on
-  all 3 at this current code state, but we need to develop a test suite and get
-  the CI pipeline working to ensure that it continues to work on all 3.
+- add native macOS CI coverage so continued macOS compatibility is verified.
 - allow to work with non-git repositories (local only obviously).
 - extend the model-aware token counting backends beyond the current GPT,
   DeepSeek, and GLM support. Future work includes official local tokenizers for
