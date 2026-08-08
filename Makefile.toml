@@ -84,8 +84,8 @@ description = "Check Rust formatting"
 command = "cargo"
 args = ["fmt", "--check"]
 
-[tasks.maintainability-clippy]
-description = "Run advisory Clippy maintainability checks"
+[tasks.quality]
+description = "Run advisory maintainability checks"
 command = "cargo"
 args = [
   "clippy",
@@ -175,7 +175,7 @@ dependencies = [
   "format",
   "unix-check",
   "unix-clippy",
-  "maintainability-clippy",
+  "quality",
   "unix-test",
   "unix-build",
   "release-embedded-assets-test",
@@ -212,7 +212,7 @@ dependencies = [
   "format",
   "windows-check",
   "windows-clippy",
-  "maintainability-clippy",
+  "quality",
   "windows-test",
   "windows-build",
   "release-embedded-assets-test",

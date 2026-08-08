@@ -101,7 +101,7 @@ jobs:
         run: cargo make unix-clippy
 
       - name: Check native Linux maintainability
-        run: cargo make maintainability-clippy
+        run: cargo make quality
 
       - name: Run native Linux tests with coverage
         run: >-
@@ -210,7 +210,7 @@ jobs:
         run: cargo make windows-clippy
 
       - name: Check native Windows maintainability
-        run: cargo make maintainability-clippy
+        run: cargo make quality
 
       - name: Run native Windows tests with coverage
         run: >-
