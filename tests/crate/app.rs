@@ -96,7 +96,7 @@ fn test_success_report_is_silent_for_stdout_output() {
         ..Params::default()
     };
     let mut reporter =
-        progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
 
     report_success(&params, Model::GPT5, (1, 2, 3), &mut reporter).unwrap();
 

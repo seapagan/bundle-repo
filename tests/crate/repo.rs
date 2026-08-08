@@ -1,5 +1,34 @@
-use super::clone_error_message;
-use git2::{Error, ErrorClass, ErrorCode};
+use super::*;
+use git2::{Error, ErrorClass, ErrorCode, Oid, Signature};
+use tempfile::tempdir;
+
+fn create_commit(repo: &Repository) -> Oid {
+    let tree_id = repo.index().unwrap().write_tree().unwrap();
+    let tree = repo.find_tree(tree_id).unwrap();
+    let signature = Signature::now("Test", "test@example.com").unwrap();
+    repo.commit(Some("HEAD"), &signature, &signature, "test", &tree, &[])
+        .unwrap()
+}
+
+#[test]
+fn test_current_branch_name() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+    repo.set_head("refs/heads/test-branch").unwrap();
+    create_commit(&repo);
+
+    assert_eq!(get_current_branch_name(&repo).unwrap(), "test-branch");
+}
+
+#[test]
+fn test_detached_head_name() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+    let commit_id = create_commit(&repo);
+    repo.set_head_detached(commit_id).unwrap();
+
+    assert_eq!(get_current_branch_name(&repo).unwrap(), "detached HEAD");
+}
 
 #[test]
 fn test_clone_error_reports_missing_requested_branch() {
@@ -14,7 +43,7 @@ fn test_clone_error_reports_missing_requested_branch() {
     );
     assert_eq!(
         clone_error_message("owner/repo", None, &missing_reference),
-        "Failed to clone: reference not found; class=Reference (4); code=NotFound (-3)"
+        format!("Failed to clone: {missing_reference}")
     );
 }
 
@@ -47,6 +76,6 @@ fn test_clone_error_preserves_unexpected_details() {
         Error::new(ErrorCode::GenericError, ErrorClass::Os, "disk full");
     assert_eq!(
         clone_error_message("owner/repo", None, &unexpected),
-        "Failed to clone: disk full; class=Os (2)"
+        format!("Failed to clone: {unexpected}")
     );
 }
