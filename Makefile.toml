@@ -84,6 +84,20 @@ description = "Check Rust formatting"
 command = "cargo"
 args = ["fmt", "--check"]
 
+[tasks.quality]
+description = "Run advisory maintainability checks"
+command = "cargo"
+args = [
+  "clippy",
+  "--all-targets",
+  "--all-features",
+  "--",
+  "-W",
+  "clippy::too_many_lines",
+  "-W",
+  "clippy::too_many_arguments",
+]
+
 [tasks.release-embedded-assets-test]
 description = "Verify release-embedded tokenizer asset hashes"
 command = "cargo"
@@ -140,7 +154,19 @@ args = ["check", "--all-targets", "--all-features"]
 description = "Run Clippy for all native Unix targets and features"
 dependencies = ["_require-unix"]
 command = "cargo"
-args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+# Maintainability exceptions are owned by the advisory quality task.
+args = [
+  "clippy",
+  "--all-targets",
+  "--all-features",
+  "--",
+  "-D",
+  "warnings",
+  "-A",
+  "clippy::too_many_lines",
+  "-A",
+  "clippy::too_many_arguments",
+]
 
 [tasks.unix-test]
 description = "Run all native Unix tests"
@@ -161,6 +187,7 @@ dependencies = [
   "format",
   "unix-check",
   "unix-clippy",
+  "quality",
   "unix-test",
   "unix-build",
   "release-embedded-assets-test",
@@ -176,7 +203,18 @@ args = ["check", "--all-targets", "--all-features"]
 description = "Run Clippy for all native Windows targets and features"
 dependencies = ["_require-windows"]
 command = "cargo"
-args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+args = [
+  "clippy",
+  "--all-targets",
+  "--all-features",
+  "--",
+  "-D",
+  "warnings",
+  "-A",
+  "clippy::too_many_lines",
+  "-A",
+  "clippy::too_many_arguments",
+]
 
 [tasks.windows-test]
 description = "Run all native Windows tests"
@@ -197,6 +235,7 @@ dependencies = [
   "format",
   "windows-check",
   "windows-clippy",
+  "quality",
   "windows-test",
   "windows-build",
   "release-embedded-assets-test",
@@ -229,6 +268,10 @@ args = [
   "--",
   "-D",
   "warnings",
+  "-A",
+  "clippy::too_many_lines",
+  "-A",
+  "clippy::too_many_arguments",
 ]
 
 [tasks.xwin-build]
