@@ -178,19 +178,19 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
     args: &cli::Flags,
     params: &Params,
     repository_path: &Path,
-    clone_parent: &Path,
     reporter: &mut progress::ProgressReporter<N, D>,
     timings: &mut timings::ProcessingTimings,
 ) -> Result<(), ApplicationError> {
     let (model, tokenizer) = prepare_tokenizer(params, reporter, timings)
         .map_err(ApplicationError::Tokenizer)?;
+    let temp_dir = tempdir().unwrap();
 
     let repo_folder = if let Some(ref repo_input) = args.repo {
         repo::clone_repo(
             params,
             repo_input,
             params.token.as_deref(),
-            clone_parent,
+            temp_dir.path(),
         )
         .map_err(ApplicationError::Clone)?
     } else {
@@ -251,12 +251,10 @@ fn main() {
         params.stdout,
     );
 
-    let temp_dir = tempdir().unwrap();
     match run_application(
         &args,
         &params,
         Path::new("."),
-        temp_dir.path(),
         &mut reporter,
         &mut timings,
     ) {

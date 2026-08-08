@@ -280,7 +280,6 @@ fn test_application_runs_local_repository_and_reports_success() {
         ..Params::default()
     };
     let args = Flags::parse_from(["program"]);
-    let clone_parent = tempdir().unwrap();
     let mut reporter =
         progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
     let mut timings = timings::ProcessingTimings::default();
@@ -289,7 +288,6 @@ fn test_application_runs_local_repository_and_reports_success() {
         &args,
         &params,
         temp_dir.path(),
-        clone_parent.path(),
         &mut reporter,
         &mut timings,
     )
@@ -308,7 +306,6 @@ fn test_application_runs_local_repository_and_reports_success() {
 
 #[test]
 fn test_application_maps_tokenizer_failure_to_exit_code() {
-    let temp_dir = tempdir().unwrap();
     let params = Params {
         model: Some("unknown".to_string()),
         ..Params::default()
@@ -321,8 +318,7 @@ fn test_application_maps_tokenizer_failure_to_exit_code() {
     let error = run_application(
         &args,
         &params,
-        temp_dir.path(),
-        temp_dir.path(),
+        Path::new("."),
         &mut reporter,
         &mut timings,
     )
@@ -349,7 +345,6 @@ fn test_application_maps_clone_failure_to_exit_code() {
         &args,
         &params,
         temp_dir.path(),
-        temp_dir.path(),
         &mut reporter,
         &mut timings,
     )
@@ -371,7 +366,6 @@ fn test_application_maps_discovery_failure_to_exit_code() {
     let error = run_application(
         &args,
         &params,
-        temp_dir.path(),
         temp_dir.path(),
         &mut reporter,
         &mut timings,
@@ -404,7 +398,6 @@ fn test_application_maps_output_failure_to_exit_code() {
     let error = run_application(
         &args,
         &params,
-        temp_dir.path(),
         temp_dir.path(),
         &mut reporter,
         &mut timings,

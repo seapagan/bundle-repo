@@ -58,6 +58,38 @@ fn test_exclusion_matcher_resolves_precedence_and_literals() {
     assert!(extended.matches(".gitignore"));
 }
 
+#[test]
+fn test_custom_exclude_replaces_defaults_through_file_listing() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(
+        &temp_dir,
+        &["ordinary.txt", "custom.tmp", "Cargo.lock"],
+    );
+    let exclude = vec!["custom.tmp".to_string()];
+
+    let files = list_files_in_repo(temp_dir.path(), None, Some(&exclude));
+
+    assert_eq!(files.len(), 2);
+    assert!(files.contains(&"ordinary.txt".to_string()));
+    assert!(files.contains(&"Cargo.lock".to_string()));
+    assert!(!files.contains(&"custom.tmp".to_string()));
+}
+
+#[test]
+fn test_extend_exclude_augments_defaults_through_file_listing() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(
+        &temp_dir,
+        &["ordinary.txt", "custom.tmp", "Cargo.lock"],
+    );
+    let extend_exclude = vec!["custom.tmp".to_string()];
+
+    let files =
+        list_files_in_repo(temp_dir.path(), Some(&extend_exclude), None);
+
+    assert_eq!(files, vec!["ordinary.txt"]);
+}
+
 #[cfg(windows)]
 #[test]
 fn test_windows_exclude_accepts_backslash_paths() {
