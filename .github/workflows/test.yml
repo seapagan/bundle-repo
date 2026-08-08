@@ -100,6 +100,9 @@ jobs:
       - name: Lint native Linux targets
         run: cargo make unix-clippy
 
+      - name: Check native Linux maintainability
+        run: cargo make maintainability-clippy
+
       - name: Run native Linux tests with coverage
         run: >-
           cargo llvm-cov nextest
@@ -205,6 +208,9 @@ jobs:
 
       - name: Lint native Windows targets
         run: cargo make windows-clippy
+
+      - name: Check native Windows maintainability
+        run: cargo make maintainability-clippy
 
       - name: Run native Windows tests with coverage
         run: >-
