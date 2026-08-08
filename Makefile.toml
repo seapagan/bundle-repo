@@ -84,6 +84,20 @@ description = "Check Rust formatting"
 command = "cargo"
 args = ["fmt", "--check"]
 
+[tasks.quality]
+description = "Run advisory maintainability checks"
+command = "cargo"
+args = [
+  "clippy",
+  "--all-targets",
+  "--all-features",
+  "--",
+  "-W",
+  "clippy::too_many_lines",
+  "-W",
+  "clippy::too_many_arguments",
+]
+
 [tasks.release-embedded-assets-test]
 description = "Verify release-embedded tokenizer asset hashes"
 command = "cargo"
@@ -161,6 +175,7 @@ dependencies = [
   "format",
   "unix-check",
   "unix-clippy",
+  "quality",
   "unix-test",
   "unix-build",
   "release-embedded-assets-test",
@@ -197,6 +212,7 @@ dependencies = [
   "format",
   "windows-check",
   "windows-clippy",
+  "quality",
   "windows-test",
   "windows-build",
   "release-embedded-assets-test",
