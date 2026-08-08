@@ -1,9 +1,6 @@
 # Planned Improvements
 
 - add more output formats - Text, Markdown, maybe others.
-- include the resolved output path in file-creation errors. Attach the context
-  at the `File::create` boundary so stdout, clipboard, and earlier XML-generation
-  failures remain accurately described.
 - allow individual default-excluded files or categories to be included without
   replacing the default exclusion set; initially support licence files and
   `.gitignore`, then consider lockfiles, `.github/`, and tool configuration.

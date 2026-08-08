@@ -278,13 +278,25 @@ fn finish_output<N: Write, D: Write>(
             xml_bytes
         };
         let write_start = Instant::now();
-        let mut file = File::create(output_path)?;
+        let mut file = create_output_file(&output_path)?;
         file.write_all(&output_bytes)?;
         timings.output_write_or_copy += write_start.elapsed();
         output_bytes.len() as u64
     };
 
     Ok((number_of_files, total_size, token_count))
+}
+
+fn create_output_file(output_path: &Path) -> io::Result<File> {
+    File::create(output_path).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "failed to create output file '{}': {error}",
+                output_path.display()
+            ),
+        )
+    })
 }
 
 fn destination_phase(flags: &Params) -> String {
@@ -2054,6 +2066,30 @@ mod tests {
                 .unwrap();
             assert_eq!(decoded, expected_xml);
         }
+    }
+
+    #[test]
+    fn test_file_creation_error_reports_effective_output_path() {
+        let home = tempdir().unwrap();
+        let params = Params {
+            output_file: Some("~/missing/bundle.xml".to_string()),
+            gzip: true,
+            ..Params::default()
+        };
+        let output_path =
+            effective_output_file_with_home(&params, Some(home.path()));
+        let source_error = File::create(&output_path).unwrap_err();
+
+        let error = create_output_file(&output_path).unwrap_err();
+
+        assert_eq!(error.kind(), source_error.kind());
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "failed to create output file '{}': {source_error}",
+                home.path().join("missing/bundle.xml.gz").display()
+            )
+        );
     }
 
     #[test]
