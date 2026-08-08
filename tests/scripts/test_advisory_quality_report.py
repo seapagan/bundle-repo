@@ -252,9 +252,16 @@ class CombinedCommentTests(unittest.TestCase):
         shared = finding()
         comment = self.render([shared], [shared])
 
+        self.assertIn("## ⚠️ Maintainability checks", comment)
+        self.assertIn(
+            "Clippy reported advisory maintainability findings. "
+            "These do not block merging.",
+            comment,
+        )
         self.assertIn("### All platforms", comment)
         self.assertEqual(comment.count("`classify_and_decode`"), 1)
         self.assertIn("68/60 lines", comment)
+        self.assertNotIn("Advisory maintainability", comment)
 
     def test_linux_only_finding_has_platform_heading(self) -> None:
         comment = self.render([finding()], [])
@@ -282,7 +289,20 @@ class CombinedCommentTests(unittest.TestCase):
     def test_no_findings_has_no_platform_sections(self) -> None:
         comment = self.render([], [])
 
-        self.assertIn("## ✅ Advisory maintainability", comment)
+        self.assertEqual(
+            comment,
+            "<!-- bundlerepo-advisory-quality -->\n"
+            "\n"
+            "## ✅ Maintainability checks\n"
+            "\n"
+            "No advisory maintainability findings.\n"
+            "\n"
+            "All checked functions are within the configured thresholds:\n"
+            "\n"
+            "- function lines: 60\n"
+            "- arguments: 8\n",
+        )
+        self.assertNotIn("Advisory maintainability", comment)
         self.assertNotIn("\n### ", comment)
 
     def test_same_function_at_different_locations_is_not_merged(self) -> None:

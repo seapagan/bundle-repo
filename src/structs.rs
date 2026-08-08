@@ -232,69 +232,92 @@ impl Default for Params {
 impl From<Config> for Params {
     fn from(settings: Config) -> Self {
         let mut params = Params::default();
-
-        // Helper function to update field only if present in config
-        let update_if_present = |key: &str| -> Option<String> {
-            TomlValue::load_from_config(&settings, key).ok()
-        };
-
-        // Only update fields if they are present in config
-        if let Some(val) = update_if_present("output_file") {
-            params.output_file = Some(val);
-        }
-        if let Ok(val) = TomlValue::load_from_config(&settings, "stdout") {
-            params.stdout = val;
-        }
-        if let Some(val) = update_if_present("model") {
-            params.model = Some(val);
-        }
-        if let Ok(val) = TomlValue::load_from_config(&settings, "clipboard") {
-            params.clipboard = val;
-        }
-        if let Ok(val) = TomlValue::load_from_config(&settings, "line_numbers")
-        {
-            params.line_numbers = val;
-        }
-        if let Some(val) = update_if_present("token") {
-            params.token = Some(val);
-        }
-        if let Some(val) = update_if_present("branch") {
-            params.branch = Some(val);
-        }
-        if let Ok(val) =
-            TomlValue::load_from_config(&settings, "extend_exclude")
-        {
-            params.extend_exclude = val;
-        }
-        if let Ok(val) = TomlValue::load_from_config(&settings, "exclude") {
-            params.exclude = val;
-        }
-        if let Ok(val) = TomlValue::load_from_config(&settings, "utf8") {
-            params.utf8 = val;
-        }
-        if let Ok(val) = TomlValue::load_from_config(&settings, "gzip") {
-            params.gzip = val;
-        }
-        if let Ok(level @ 1..=9) =
-            TomlValue::load_from_config(&settings, "gzip_level")
-        {
-            params.gzip_level = level as u32;
-        }
+        params.output_file = configured_optional_or(
+            &settings,
+            "output_file",
+            params.output_file,
+        );
+        params.stdout = configured_or(&settings, "stdout", params.stdout);
+        params.model =
+            configured_optional_or(&settings, "model", params.model);
+        params.clipboard =
+            configured_or(&settings, "clipboard", params.clipboard);
+        params.line_numbers =
+            configured_or(&settings, "line_numbers", params.line_numbers);
+        params.token =
+            configured_optional_or(&settings, "token", params.token);
+        params.branch =
+            configured_optional_or(&settings, "branch", params.branch);
+        params.extend_exclude = configured_optional_or(
+            &settings,
+            "extend_exclude",
+            params.extend_exclude,
+        );
+        params.exclude =
+            configured_optional_or(&settings, "exclude", params.exclude);
+        params.utf8 = configured_or(&settings, "utf8", params.utf8);
+        params.gzip = configured_or(&settings, "gzip", params.gzip);
+        params.gzip_level =
+            configured_gzip_level(&settings, params.gzip_level);
         params
     }
 }
 
+fn configured_or<T: TomlValue>(settings: &Config, key: &str, default: T) -> T {
+    TomlValue::load_from_config(settings, key).unwrap_or(default)
+}
+
+fn configured_optional_or<T: TomlValue>(
+    settings: &Config,
+    key: &str,
+    default: Option<T>,
+) -> Option<T> {
+    TomlValue::load_from_config(settings, key).ok().or(default)
+}
+
+fn configured_gzip_level(settings: &Config, default: u32) -> u32 {
+    match TomlValue::load_from_config(settings, "gzip_level") {
+        Ok(level @ 1..=9) => level as u32,
+        _ => default,
+    }
+}
+
+fn gzip_options(args: &cli::Flags, config: &Params) -> (bool, u32) {
+    if args.no_gzip {
+        return (false, config.gzip_level);
+    }
+    match args.gzip {
+        Some(None) => (true, config.gzip_level),
+        Some(Some(level)) => (true, level),
+        None => (config.gzip, config.gzip_level),
+    }
+}
+
+fn extended_excludes(
+    args: &cli::Flags,
+    config: &Params,
+) -> Option<Vec<String>> {
+    if args.exclude.is_some() || config.exclude.is_some() {
+        return None;
+    }
+    match (&args.extend_exclude, &config.extend_exclude) {
+        (Some(cli_excludes), Some(config_excludes)) => {
+            Some([cli_excludes.clone(), config_excludes.clone()].concat())
+        }
+        (Some(cli_excludes), None) => Some(cli_excludes.clone()),
+        (None, Some(config_excludes)) => Some(config_excludes.clone()),
+        (None, None) => None,
+    }
+}
+
+fn utf8_enabled(args: &cli::Flags, configured: bool) -> bool {
+    !args.no_utf8 && (args.utf8 || configured)
+}
+
 impl Params {
     pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
-        let (gzip, gzip_level) = if args.no_gzip {
-            (false, config.gzip_level)
-        } else {
-            match args.gzip {
-                Some(None) => (true, config.gzip_level),
-                Some(Some(level)) => (true, level),
-                None => (config.gzip, config.gzip_level),
-            }
-        };
+        let (gzip, gzip_level) = gzip_options(args, &config);
+        let extend_exclude = extended_excludes(args, &config);
 
         Params {
             output_file: args
@@ -312,35 +335,9 @@ impl Params {
             line_numbers: args.lnumbers || config.line_numbers,
             token: args.token.clone().or(config.token),
             branch: args.branch.clone().or(config.branch),
-            extend_exclude: if args.exclude.is_some()
-                || config.exclude.is_some()
-            {
-                None
-            } else {
-                match (&args.extend_exclude, config.extend_exclude) {
-                    (Some(cli_excludes), Some(config_excludes)) => {
-                        Some([cli_excludes.clone(), config_excludes].concat())
-                    }
-                    (Some(cli_excludes), None) => Some(cli_excludes.clone()),
-                    (None, Some(config_excludes)) => Some(config_excludes),
-                    (None, None) => None,
-                }
-            },
-            exclude: match (&args.exclude, config.exclude) {
-                (Some(cli_excludes), Some(_config_excludes)) => {
-                    Some(cli_excludes.clone())
-                }
-                (Some(cli_excludes), None) => Some(cli_excludes.clone()),
-                (None, Some(config_excludes)) => Some(config_excludes),
-                (None, None) => None,
-            },
-            utf8: if args.no_utf8 {
-                false
-            } else if args.utf8 {
-                true
-            } else {
-                config.utf8
-            },
+            extend_exclude,
+            exclude: args.exclude.clone().or(config.exclude),
+            utf8: utf8_enabled(args, config.utf8),
             gzip,
             gzip_level,
         }

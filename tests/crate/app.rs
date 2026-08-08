@@ -242,6 +242,26 @@ fn test_extend_exclude_combines_cli_and_config() {
 }
 
 #[test]
+fn test_cli_extend_exclude_is_used_without_config_extension() {
+    let args = Flags::parse_from(["program", "--extend-exclude", "*.txt"]);
+    let config = create_test_config("");
+
+    let params = Params::from_args_and_config(&args, config);
+
+    assert_eq!(params.extend_exclude, Some(vec!["*.txt".to_string()]));
+}
+
+#[test]
+fn test_config_extend_exclude_is_used_without_cli_extension() {
+    let args = Flags::parse_from(["program"]);
+    let config = create_test_config("extend_exclude = [\"*.toml\"]");
+
+    let params = Params::from_args_and_config(&args, config);
+
+    assert_eq!(params.extend_exclude, Some(vec!["*.toml".to_string()]));
+}
+
+#[test]
 fn test_config_exclude_disables_extend_exclude() {
     let args = Flags::parse_from(["program", "--extend-exclude", "*.txt"]);
 

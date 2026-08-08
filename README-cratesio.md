@@ -21,9 +21,9 @@ structure. At this time `xml` output is the only supported output format,
 however future versions may include additional formats.
 
 XML was chosen as the default output format since it is very well structured
-and LLM models can easily parse it (better than a plain-text dump - see this
-[link][why-xml] from Anthropic as to why XML is a superior format for feeding
-context and instructions into an LLM).
+and LLM models can easily parse it (better than a plain-text dump - see
+[Anthropic's guidance on using XML tags][why-xml] for why XML is a superior
+format for feeding context and instructions into an LLM).
 
 ```pre
 BundleRepo Version 0.6.0, © 2024-2026 Grant Ramsay <seapagan@gmail.com>
@@ -330,8 +330,7 @@ usage or billing.
 
 For **private repositories**, or to bypass usage restrictions, you can provide a
 GitHub token to access the repository. You can create a token by following the
-instructions
-[here](https://docs.github.com/en/github/authenticating-to-github/creating-a-personal-access-token).
+[GitHub instructions for creating a personal access token](https://docs.github.com/en/github/authenticating-to-github/creating-a-personal-access-token).
 
 Once you have the token, you can pass it to the tool using the `--token` flag:
 

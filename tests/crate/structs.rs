@@ -98,6 +98,10 @@ fn test_missing_values() {
         String::load_from_config(&config, "missing"),
         Err(ConfigError::Missing(_))
     ));
+    assert!(matches!(
+        f64::load_from_config(&config, "missing"),
+        Err(ConfigError::Missing(_))
+    ));
 }
 
 #[test]
