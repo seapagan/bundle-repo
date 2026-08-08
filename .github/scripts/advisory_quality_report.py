@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Extract advisory maintainability findings from Clippy output."""
 
 from __future__ import annotations
