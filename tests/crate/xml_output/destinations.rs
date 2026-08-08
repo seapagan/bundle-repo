@@ -424,3 +424,50 @@ fn test_uncompressed_stdout_preserves_canonical_bytes() {
     assert!(timings.compression.is_zero());
     assert!(!timings.output_write_or_copy.is_zero());
 }
+
+#[test]
+fn test_uncompressed_stdout_rejects_invalid_utf8_without_writing() {
+    let mut output = Vec::new();
+    let mut timings = ProcessingTimings::default();
+
+    let error =
+        write_stdout(&mut output, b"invalid \xff", false, 6, &mut timings)
+            .unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert!(output.is_empty());
+    assert!(timings.compression.is_zero());
+    assert!(timings.output_write_or_copy.is_zero());
+}
+
+#[test]
+fn test_finish_output_rejects_invalid_utf8_before_counting_or_writing() {
+    let temp_dir = tempdir().unwrap();
+    let output_path = temp_dir.path().join("invalid.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        ..Params::default()
+    };
+    let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = ProcessingTimings::default();
+
+    let error = finish_output(
+        &params,
+        1,
+        b"invalid \xff".to_vec(),
+        &tokenizer,
+        "GPT-4",
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert!(!output_path.exists());
+    assert!(timings.token_count.is_zero());
+    assert!(timings.output_write_or_copy.is_zero());
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.is_empty());
+    assert!(diagnostic.is_empty());
+}

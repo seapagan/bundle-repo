@@ -67,6 +67,16 @@ fn test_utf16_bom_is_decoded_only_when_enabled() {
 }
 
 #[test]
+fn test_utf16_decoding_rejects_implausible_control_density() {
+    let bytes = vec![0xff, 0xfe, 0x01, 0, b'A', 0];
+
+    assert_eq!(
+        process(bytes, true),
+        ProcessedFile::Binary(BinaryReason::ImplausibleDecodedData)
+    );
+}
+
+#[test]
 fn test_valid_utf8_bom_preserves_bom_and_allocation() {
     let mut bytes = b"\xef\xbb\xbfvalid UTF-8 text".to_vec();
     bytes.shrink_to_fit();
@@ -284,6 +294,16 @@ fn test_iso_2022_jp_fixture_still_decodes_after_narrow_probe() {
             source_encoding: "ISO-2022-JP",
             had_replacements: false,
         })
+    );
+}
+
+#[test]
+fn test_iso_2022_jp_decoding_rejects_implausible_control_density() {
+    let bytes = b"\x1b$B$\"\x1b(BA\x01";
+
+    assert_eq!(
+        process(bytes.to_vec(), true),
+        ProcessedFile::Binary(BinaryReason::ImplausibleDecodedData)
     );
 }
 
