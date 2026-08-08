@@ -18,6 +18,41 @@ fn create_test_config(toml_content: &str) -> Params {
 }
 
 #[test]
+fn test_local_config_overrides_global_config() {
+    let temp_dir = tempdir().unwrap();
+    let global_config = temp_dir.path().join("global.toml");
+    let local_config = temp_dir.path().join("local.toml");
+    fs::write(
+        &global_config,
+        "model = \"gpt4\"\nline_numbers = true\ngzip_level = 8\n",
+    )
+    .unwrap();
+    fs::write(
+        &local_config,
+        "model = \"gpt5\"\ngzip = true\ngzip_level = 3\n",
+    )
+    .unwrap();
+
+    let params = load_config_from_paths(Some(&global_config), &local_config);
+
+    assert_eq!(params.model.as_deref(), Some("gpt5"));
+    assert!(params.line_numbers);
+    assert!(params.gzip);
+    assert_eq!(params.gzip_level, 3);
+}
+
+#[test]
+fn test_invalid_config_falls_back_to_defaults() {
+    let temp_dir = tempdir().unwrap();
+    let local_config = temp_dir.path().join("invalid.toml");
+    fs::write(&local_config, "model = [").unwrap();
+
+    let params = load_config_from_paths(None, &local_config);
+
+    assert_eq!(params, Params::default());
+}
+
+#[test]
 fn test_exclude_takes_precedence_over_extend_exclude() {
     // Setup CLI args with both exclude and extend-exclude
     let args = Flags::parse_from([

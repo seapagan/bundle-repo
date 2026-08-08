@@ -38,26 +38,30 @@ struct SummaryTable {
 }
 
 fn load_config() -> Params {
+    let global_config_path =
+        home_dir().map(|home| home.join(".config/bundlerepo/config.toml"));
+    load_config_from_paths(
+        global_config_path.as_deref(),
+        Path::new(".bundlerepo.toml"),
+    )
+}
+
+fn load_config_from_paths(
+    global_config_path: Option<&Path>,
+    local_config_path: &Path,
+) -> Params {
     let mut config_builder = Config::builder();
 
-    // Get the home directory and construct the global config path
-    if let Some(home_dir) = home_dir() {
-        let global_config_path =
-            home_dir.join(".config/bundlerepo/config.toml");
-
-        // Add global config as the base if it exists
-        if global_config_path.exists() {
-            config_builder = config_builder.add_source(File::new(
-                global_config_path.to_str().unwrap(),
-                FileFormat::Toml,
-            ));
-        }
+    if let Some(global_config_path) = global_config_path
+        && global_config_path.exists()
+    {
+        config_builder = config_builder.add_source(File::new(
+            global_config_path.to_str().unwrap(),
+            FileFormat::Toml,
+        ));
     }
 
-    // Check for local config file in the current directory
-    let local_config_path = Path::new(".bundlerepo.toml");
     if local_config_path.exists() {
-        // Add local config as an override
         config_builder = config_builder.add_source(File::new(
             local_config_path.to_str().unwrap(),
             FileFormat::Toml,
