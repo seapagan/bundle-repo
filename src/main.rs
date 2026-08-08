@@ -14,7 +14,7 @@ use tabled::{
     },
 };
 use tempfile::tempdir;
-use tokenizer::Model;
+use tokenizer::{Model, TokenizerType};
 
 mod cli;
 mod embedded;
@@ -121,6 +121,25 @@ fn report_success<N: std::io::Write, D: std::io::Write>(
     reporter.normal_text(&format!("\nSummary:\n{table}\n\n"))
 }
 
+fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(
+    params: &Params,
+    reporter: &mut progress::ProgressReporter<N, D>,
+    timings: &mut timings::ProcessingTimings,
+) -> Result<(Model, TokenizerType), String> {
+    let model = params.model.as_ref().unwrap().parse::<Model>()?;
+    reporter
+        .phase(&format!("Loading tokenizer for {}", model.display_name()))
+        .unwrap();
+
+    let tokenizer_start = Instant::now();
+    let tokenizer = model.to_tokenizer().map_err(|error| {
+        format!("Error: Failed to create tokenizer: {error}")
+    })?;
+    timings.tokenizer_load = tokenizer_start.elapsed();
+
+    Ok((model, tokenizer))
+}
+
 fn main() {
     let args = cli::Flags::parse();
     let timing_enabled = timings::ProcessingTimings::enabled_from_env();
@@ -150,32 +169,14 @@ fn main() {
         params.stdout,
     );
 
-    // Parse the tokenizer Model from the CLI argument. We will build the
-    // tokenizer from this and also use it to display the model name in the
-    // summary.
-    let model = match params.model.clone().unwrap().parse::<Model>() {
-        Ok(model) => model,
-        Err(e) => {
-            reporter.error(&e).unwrap();
-            exit(1);
-        }
-    };
-
-    // Create the tokenizer from the parsed model
-    reporter
-        .phase(&format!("Loading tokenizer for {}", model.display_name()))
-        .unwrap();
-    let tokenizer_start = Instant::now();
-    let tokenizer = match model.to_tokenizer() {
-        Ok(tokenizer) => tokenizer,
-        Err(e) => {
-            reporter
-                .error(&format!("Error: Failed to create tokenizer: {e}"))
-                .unwrap();
-            exit(1);
-        }
-    };
-    timings.tokenizer_load = tokenizer_start.elapsed();
+    let (model, tokenizer) =
+        match prepare_tokenizer(&params, &mut reporter, &mut timings) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                reporter.error(&error).unwrap();
+                exit(1);
+            }
+        };
 
     // Create a temporary directory for cloning the repository
     let temp_dir = tempdir().unwrap();

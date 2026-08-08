@@ -106,6 +106,45 @@ fn test_success_report_is_silent_for_stdout_output() {
 }
 
 #[test]
+fn test_prepare_tokenizer_reports_invalid_model() {
+    let params = Params {
+        model: Some("unknown".to_string()),
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error =
+        prepare_tokenizer(&params, &mut reporter, &mut timings).unwrap_err();
+
+    assert!(error.starts_with("ERROR: Unsupported model: unknown."));
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.is_empty());
+    assert!(diagnostic.is_empty());
+    assert!(timings.tokenizer_load.is_zero());
+}
+
+#[test]
+fn test_prepare_tokenizer_announces_selected_model() {
+    let params = Params {
+        model: Some("gpt4".to_string()),
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let (model, _) =
+        prepare_tokenizer(&params, &mut reporter, &mut timings).unwrap();
+
+    assert_eq!(model, Model::GPT4);
+    let (normal, diagnostic) = reporter.into_parts();
+    assert_eq!(normal, b"-> Loading tokenizer for GPT-4\n");
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
 fn test_exclude_takes_precedence_over_extend_exclude() {
     // Setup CLI args with both exclude and extend-exclude
     let args = Flags::parse_from([
