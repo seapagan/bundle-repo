@@ -1,5 +1,6 @@
 use super::*;
 use git2::{Error, ErrorClass, ErrorCode, Oid, Signature};
+use std::fs;
 use tempfile::tempdir;
 
 fn create_commit(repo: &Repository) -> Oid {
@@ -28,6 +29,35 @@ fn test_detached_head_name() {
     repo.set_head_detached(commit_id).unwrap();
 
     assert_eq!(get_current_branch_name(&repo).unwrap(), "detached HEAD");
+}
+
+#[test]
+fn test_repository_check_discovers_from_explicit_nested_path() {
+    let temp_dir = tempdir().unwrap();
+    let repo = Repository::init(temp_dir.path()).unwrap();
+    repo.set_head("refs/heads/test-branch").unwrap();
+    create_commit(&repo);
+    let nested_path = temp_dir.path().join("nested/directory");
+    fs::create_dir_all(&nested_path).unwrap();
+    let params = Params {
+        stdout: true,
+        ..Params::default()
+    };
+
+    assert!(check_repository_at(&nested_path, &params).is_ok());
+}
+
+#[test]
+fn test_repository_check_rejects_explicit_non_repository_path() {
+    let temp_dir = tempdir().unwrap();
+    let params = Params {
+        stdout: true,
+        ..Params::default()
+    };
+
+    let error = check_repository_at(temp_dir.path(), &params).unwrap_err();
+
+    assert_eq!(error.message(), "Not a git repository");
 }
 
 #[test]
