@@ -64,4 +64,3 @@ opt-level = 2
 [dev-dependencies]
 fs_extra = "1.3"
 sha2 = "0.11"
-temp-env = "0.3.6"

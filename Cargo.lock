@@ -230,7 +230,6 @@ dependencies = [
  "serde",
  "sha2 0.11.0",
  "tabled",
- "temp-env",
  "tempfile",
  "tiktoken-rs",
  "tokenizers",
@@ -2118,15 +2117,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "temp-env"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96374855068f47402c3121c6eed88d29cb1de8f3ab27090e273e420bdabcf050"
-dependencies = [
- "parking_lot",
 ]
 
 [[package]]
