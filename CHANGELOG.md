@@ -13,20 +13,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 **New Features**
 
+- Chore: add advisory Clippy maintainability checks ([#101](https://github.com/seapagan/bundle-repo/pull/101)) by [seapagan](https://github.com/seapagan)
+- Fix: report effective output path on creation failure ([#95](https://github.com/seapagan/bundle-repo/pull/95)) by [seapagan](https://github.com/seapagan)
+- Fix: generate well-formed XML with CDATA ([#94](https://github.com/seapagan/bundle-repo/pull/94)) by [seapagan](https://github.com/seapagan)
 - Perf: optimize dependencies in dev builds ([#93](https://github.com/seapagan/bundle-repo/pull/93)) by [seapagan](https://github.com/seapagan)
 - Chore: adopt Rust 2024 and enforce MSRV ([#92](https://github.com/seapagan/bundle-repo/pull/92)) by [seapagan](https://github.com/seapagan)
 - Feat: add optional legacy text transcoding ([#86](https://github.com/seapagan/bundle-repo/pull/86)) by [seapagan](https://github.com/seapagan)
 - Feat: modernize tokenizer support ([#82](https://github.com/seapagan/bundle-repo/pull/82)) by [seapagan](https://github.com/seapagan)
 - Feat: add configurable gzip output ([#67](https://github.com/seapagan/bundle-repo/pull/67)) by [seapagan](https://github.com/seapagan)
 
+**Testing**
+
+- Test: improve production coverage ([#98](https://github.com/seapagan/bundle-repo/pull/98)) by [seapagan](https://github.com/seapagan)
+
 **CI / CD Pipeline**
 
+- Publish combined coverage to Codacy ([#96](https://github.com/seapagan/bundle-repo/pull/96)) by [seapagan](https://github.com/seapagan)
 - Add/Update cross platform quality gates ([#73](https://github.com/seapagan/bundle-repo/pull/73)) by [seapagan](https://github.com/seapagan)
 
 **Bug Fixes**
 
 - Fix: rename the BINARY_NAME  in release.yml ([#85](https://github.com/seapagan/bundle-repo/pull/85)) by [seapagan](https://github.com/seapagan)
 - Fix: expand home-relative output paths ([#80](https://github.com/seapagan/bundle-repo/pull/80)) by [seapagan](https://github.com/seapagan)
+
+**Refactoring**
+
+- Refactor: clean up Codacy findings ([#102](https://github.com/seapagan/bundle-repo/pull/102)) by [seapagan](https://github.com/seapagan)
+- Refactor: improve production coverage architecture ([#99](https://github.com/seapagan/bundle-repo/pull/99)) by [seapagan](https://github.com/seapagan)
+- Test: reorganize crate unit tests ([#97](https://github.com/seapagan/bundle-repo/pull/97)) by [seapagan](https://github.com/seapagan)
 
 **Dependency Updates**
 

@@ -2,14 +2,17 @@
 filelist.xml
 packed-repo.xml
 packed-repo.xml.gz
+*.patch
 local_notes
 repopack-output.xml
 .changelog_generator.toml
 .bundlerepo.toml
 tarpaulin-report.html
 
-# Python bytecode
+# Python related
 *.py[cod]
+.mypy_cache/
+.ruff_cache/
 
 # AI stuff
 .codex/
