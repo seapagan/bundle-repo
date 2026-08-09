@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import tarfile
 from dataclasses import asdict, dataclass
@@ -12,22 +13,14 @@ from typing import Any
 
 PACKAGE_LIMIT_BYTES = 9_500_000
 MARKER = "<!-- bundlerepo-package-checks -->"
-REQUIRED_PATHS = (
+REPOSITORY_ROOT = Path(__file__).parents[2]
+STATIC_REQUIRED_PATHS = (
     ".cargo_vcs_info.json",
     "Cargo.lock",
     "Cargo.toml",
     "Cargo.toml.orig",
     "LICENSE.txt",
     "README-cratesio.md",
-    "resources/tokenizers/SOURCES.md",
-    "resources/tokenizers/deepseek-r1.json",
-    "resources/tokenizers/deepseek-v3.json",
-    "resources/tokenizers/deepseek-v4.json",
-    "resources/tokenizers/glm-5.2.json",
-    "resources/tokenizers/licenses/DeepSeek-MIT.txt",
-    "resources/tokenizers/licenses/DeepSeek-V3-Model-License.txt",
-    "resources/tokenizers/licenses/GLM-5.2-MIT.txt",
-    "src/main.rs",
 )
 FORBIDDEN_PREFIXES = (
     ".github",
@@ -50,6 +43,70 @@ FORBIDDEN_PREFIXES = (
 
 class ArchiveError(Exception):
     """An operational failure that prevents trustworthy package analysis."""
+
+
+def tracked_distribution_path(entry: bytes) -> str:
+    """Validate one Git index entry and return its archive-form path."""
+    try:
+        metadata, raw_path = entry.split(b"\t", 1)
+        mode, _object_id, stage = metadata.split(b" ", 2)
+        path = raw_path.decode("utf-8")
+    except (UnicodeDecodeError, ValueError) as error:
+        raise ArchiveError("invalid tracked distribution entry from git") from error
+    if stage != b"0":
+        raise ArchiveError(f"unmerged tracked distribution entry: {path}")
+    if mode not in {b"100644", b"100755"}:
+        raise ArchiveError(
+            f"unsupported tracked distribution entry mode "
+            f"{mode.decode(errors='replace')}: {path}"
+        )
+    normalized = PurePosixPath(path).as_posix()
+    if (
+        normalized != path
+        or "\\" in path
+        or not path.startswith(("src/", "resources/"))
+    ):
+        raise ArchiveError(f"invalid tracked distribution path: {path!r}")
+    return normalized
+
+
+def repository_distribution_paths(repository: Path) -> tuple[str, ...]:
+    """Return tracked regular files in the distributable repository trees."""
+    command = (
+        "git",
+        "-C",
+        str(repository),
+        "ls-files",
+        "--stage",
+        "-z",
+        "--",
+        "src",
+        "resources",
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", b"")
+        message = detail.decode("utf-8", errors="replace").strip()
+        suffix = f": {message}" if message else ""
+        raise ArchiveError(
+            f"cannot inspect tracked distribution files in {repository}{suffix}"
+        ) from error
+
+    paths: set[str] = set()
+    for entry in completed.stdout.split(b"\0"):
+        if entry:
+            paths.add(tracked_distribution_path(entry))
+    return tuple(sorted(paths))
+
+
+def required_paths(repository: Path = REPOSITORY_ROOT) -> tuple[str, ...]:
+    """Combine special package files with repository-derived runtime files."""
+    return STATIC_REQUIRED_PATHS + repository_distribution_paths(repository)
 
 
 @dataclass(frozen=True)
@@ -160,6 +217,7 @@ def archive_contents(archive: Path) -> tuple[str, set[str], set[str]]:
 def analyse_archive(
     archive: Path,
     limit_bytes: int = PACKAGE_LIMIT_BYTES,
+    repository: Path = REPOSITORY_ROOT,
 ) -> PackageResult:
     """Measure an archive and evaluate all package-content policies."""
     if limit_bytes < 0:
@@ -171,7 +229,8 @@ def analyse_archive(
             f"cannot measure package archive {archive}: {error}"
         ) from error
     root, files, members = archive_contents(archive)
-    missing = tuple(path for path in REQUIRED_PATHS if path not in files)
+    required = required_paths(repository)
+    missing = tuple(path for path in required if path not in files)
     forbidden = tuple(
         sorted(
             path
@@ -189,7 +248,7 @@ def analyse_archive(
         limit_bytes=limit_bytes,
         headroom_bytes=max(limit_bytes - size_bytes, 0),
         exceeded_by_bytes=max(size_bytes - limit_bytes, 0),
-        required_paths=REQUIRED_PATHS,
+        required_paths=required,
         missing_paths=missing,
         forbidden_prefixes=FORBIDDEN_PREFIXES,
         forbidden_paths=forbidden,
