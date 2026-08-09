@@ -43,7 +43,7 @@ jobs:
           shared-key: package-publishability
 
       - name: Test package report helper
-        run: python -m unittest tests/scripts/test_package_report.py
+        run: python .github/scripts/test_package_report.py
 
       - name: Build verified package
         shell: bash

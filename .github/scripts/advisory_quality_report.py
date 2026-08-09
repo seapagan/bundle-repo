@@ -229,7 +229,8 @@ def render_combined_comment(results: list[PlatformResult]) -> str:
 
     grouped: dict[frozenset[str], list[Finding]] = {}
     for finding, platforms in finding_platforms.items():
-        grouped.setdefault(frozenset(platforms), []).append(finding)
+        platform_key = frozenset(platforms)
+        grouped.setdefault(platform_key, []).append(finding)
 
     lines = [
         "<!-- bundlerepo-advisory-quality -->",
@@ -257,9 +258,9 @@ def render_combined_comment(results: list[PlatformResult]) -> str:
             tuple(name.casefold() for name in sorted(platforms)),
         ),
     )
-    for platforms in group_order:
-        lines.extend(["", f"### {platform_heading(platforms, all_platforms)}", ""])
-        for finding in sorted(grouped[platforms], key=Finding.sort_key):
+    for platform_key in group_order:
+        lines.extend(["", f"### {platform_heading(platform_key, all_platforms)}", ""])
+        for finding in sorted(grouped[platform_key], key=Finding.sort_key):
             lines.append(
                 f"- `{finding.location}` — `{finding.function}` — "
                 f"`{finding.lint}` — {finding.detail}"

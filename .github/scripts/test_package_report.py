@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
+import package_report as REPORT
 import subprocess  # nosec B404
 import sys
 import tarfile
@@ -14,12 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).parents[2]
-SCRIPT = ROOT / ".github" / "scripts" / "package_report.py"
-SPEC = importlib.util.spec_from_file_location("package_report", SCRIPT)
-assert SPEC and SPEC.loader
-REPORT = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = REPORT
-SPEC.loader.exec_module(REPORT)
+SCRIPT = Path(__file__).with_name("package_report.py")
 
 DEFAULT_DISTRIBUTION_PATHS = (
     "resources/tokenizers/model.json",
@@ -66,7 +61,7 @@ def initialise_repository(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"fixture for {name}\n", encoding="utf-8")
     if tracked:
-        subprocess.run(
+        subprocess.run(  # nosec B603
             ("git", "-C", str(root), "add", "--", *tracked),
             check=True,
             capture_output=True,
@@ -85,7 +80,7 @@ class PackageAnalysisTests(unittest.TestCase):
         initialise_repository(self.repository)
         self.required = REPORT.required_paths(self.repository)
 
-    def analyse(self, files: tuple[str, ...] | None = None) -> object:
+    def analyse(self, files: tuple[str, ...] | None = None) -> REPORT.PackageResult:
         """Write and analyse one controlled package."""
         write_archive(self.archive, self.required if files is None else files)
         return REPORT.analyse_archive(
@@ -146,7 +141,7 @@ class PackageAnalysisTests(unittest.TestCase):
         added = "resources/tokenizers/new-model.json"
         path = self.repository / added
         path.write_text("new model\n", encoding="utf-8")
-        subprocess.run(
+        subprocess.run(  # nosec B603
             ("git", "-C", str(self.repository), "add", "--", added),
             check=True,
             capture_output=True,
@@ -298,7 +293,7 @@ class RepositoryDistributionTests(unittest.TestCase):
         path = self.repository / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"fixture for {name}\n", encoding="utf-8")
-        subprocess.run(
+        subprocess.run(  # nosec B603
             ("git", "-C", str(self.repository), "add", "--", name),
             check=True,
             capture_output=True,
@@ -367,7 +362,7 @@ class RepositoryDistributionTests(unittest.TestCase):
         output = b"120000 " + (b"0" * 40) + b" 0\tsrc/link.rs\0"
         completed = subprocess.CompletedProcess((), 0, stdout=output, stderr=b"")
 
-        with mock.patch.object(REPORT.subprocess, "run", return_value=completed):
+        with mock.patch("package_report.subprocess.run", return_value=completed):
             with self.assertRaisesRegex(
                 REPORT.ArchiveError,
                 "unsupported tracked distribution entry mode 120000: src/link.rs",
@@ -406,7 +401,7 @@ class RenderingTests(unittest.TestCase):
         size: int = 8_792_636,
         missing: tuple[str, ...] = (),
         forbidden: tuple[str, ...] = (),
-    ) -> object:
+    ) -> REPORT.PackageResult:
         """Build controlled report data."""
         limit = REPORT.PACKAGE_LIMIT_BYTES
         return REPORT.PackageResult(
