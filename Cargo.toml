@@ -1,6 +1,6 @@
 [package]
 name = "bundle_repo"
-version = "0.6.0"
+version = "0.7.0"
 description = "Pack a local or remote Git Repository to XML for LLM Consumption."
 readme = "README-cratesio.md"
 edition = "2024"
@@ -8,12 +8,7 @@ rust-version = "1.88"
 authors = ["Grant Ramsay <seapagan@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/seapagan/bundle-repo/"
-include = [
-  "src/**",
-  "resources/**",
-  "README-cratesio.md",
-  "LICENSE.txt",
-]
+include = ["src/**", "resources/**", "README-cratesio.md", "LICENSE.txt"]
 categories = [
   "command-line-utilities",
   "development-tools",

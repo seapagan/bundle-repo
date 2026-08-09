@@ -5,7 +5,7 @@ project since the first release, with the latest changes at the top.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased](https://github.com/seapagan/bundle-repo/tree/HEAD)
+## [0.7.0](https://github.com/seapagan/bundle-repo/releases/tag/0.7.0) (August 09, 2026)
 
 **Closed Issues**
 
@@ -28,6 +28,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 **CI / CD Pipeline**
 
+- Ci: add native macOS testing ([#105](https://github.com/seapagan/bundle-repo/pull/105)) by [seapagan](https://github.com/seapagan)
+- Ci: guard package publishability ([#104](https://github.com/seapagan/bundle-repo/pull/104)) by [seapagan](https://github.com/seapagan)
 - Publish combined coverage to Codacy ([#96](https://github.com/seapagan/bundle-repo/pull/96)) by [seapagan](https://github.com/seapagan)
 - Add/Update cross platform quality gates ([#73](https://github.com/seapagan/bundle-repo/pull/73)) by [seapagan](https://github.com/seapagan)
 
@@ -44,6 +46,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 **Dependency Updates**
 
+- Chore(deps): update taiki-e/install-action action to v2.85.11 ([#103](https://github.com/seapagan/bundle-repo/pull/103)) by [renovate[bot]](https://github.com/apps/renovate)
 - Chore(deps): update taiki-e/install-action action to v2.85.10 ([#91](https://github.com/seapagan/bundle-repo/pull/91)) by [renovate[bot]](https://github.com/apps/renovate)
 - Fix: support sha2 0.11 fixture hashes ([#90](https://github.com/seapagan/bundle-repo/pull/90)) by [seapagan](https://github.com/seapagan)
 - Chore(deps): update rust crate xml to v1.4.0 ([#89](https://github.com/seapagan/bundle-repo/pull/89)) by [renovate[bot]](https://github.com/apps/renovate)
@@ -53,10 +56,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Chore(deps): update rust crate ignore to v0.4.33 ([#81](https://github.com/seapagan/bundle-repo/pull/81)) by [renovate[bot]](https://github.com/apps/renovate)
 - Update Rust crate xml to v1 ([#79](https://github.com/seapagan/bundle-repo/pull/79)) by [renovate[bot]](https://github.com/apps/renovate)
 - Fix: support config 0.15.25 ([#78](https://github.com/seapagan/bundle-repo/pull/78)) by [seapagan](https://github.com/seapagan)
-- Update Rust crate tokenizers to 0.23 ([#77](https://github.com/seapagan/bundle-repo/pull/77)) by [renovate[bot]](https://github.com/apps/renovate)
-- *and 17 more dependency updates*
+- *and 18 more dependency updates*
 
-[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.6.0...HEAD) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.6.0...HEAD.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.6.0...HEAD.patch)
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.6.0...0.7.0) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.6.0...0.7.0.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.6.0...0.7.0.patch)
 
 ## [0.6.0](https://github.com/seapagan/bundle-repo/releases/tag/0.6.0) (February 28, 2025)
 
