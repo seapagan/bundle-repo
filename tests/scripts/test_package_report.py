@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
-import subprocess
+import subprocess  # nosec B404
 import sys
 import tarfile
 import tempfile
@@ -56,7 +56,7 @@ def initialise_repository(
     untracked: tuple[str, ...] = (),
 ) -> None:
     """Create a repository index with controlled tracked and local files."""
-    subprocess.run(
+    subprocess.run(  # nosec B603
         ("git", "init", "--quiet", str(root)),
         check=True,
         capture_output=True,
