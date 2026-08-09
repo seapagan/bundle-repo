@@ -157,7 +157,7 @@ jobs:
   macos:
     name: Native macOS (${{ matrix.architecture }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
@@ -192,6 +192,12 @@ jobs:
             echo "error: expected native host $EXPECTED_TARGET, got $actual_target" >&2
             exit 1
           fi
+
+      - name: Install macOS dependencies (x86_64)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          brew install openssl@3
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
 
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
