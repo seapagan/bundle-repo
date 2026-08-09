@@ -303,7 +303,7 @@ def render_markdown(result: PackageResult) -> str:
         [
             "",
             "> [!IMPORTANT]",
-            "> crates.io currently limits `.crate` uploads to **10 MB**. "
+            "> crates.io currently limits `.crate` uploads to **10 MiB**. "
             "This project's lower CI ceiling is intentional to preserve "
             "publishing headroom.",
         ]
@@ -324,6 +324,8 @@ def load_result(path: Path) -> PackageResult:
     """Load and validate structured analysis for the separate policy gate."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise TypeError("JSON root must be an object")
         fields = {
             key: value
             for key, value in data.items()

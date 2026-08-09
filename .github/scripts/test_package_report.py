@@ -10,6 +10,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
@@ -430,6 +431,12 @@ class RenderingTests(unittest.TestCase):
         self.assertIn("Headroom: **0.71 MB (7.4%)**", markdown)
         self.assertIn("Required package contents verified.", markdown)
 
+    def test_crates_io_limit_uses_binary_units(self) -> None:
+        markdown = REPORT.render_markdown(self.result())
+
+        self.assertIn("uploads to **10 MiB**", markdown)
+        self.assertNotIn("uploads to **10 MB**", markdown)
+
     def test_zero_limit_renders_zero_percent_headroom(self) -> None:
         markdown = REPORT.render_markdown(self.result(size=0, limit=0))
 
@@ -485,6 +492,23 @@ class RenderingTests(unittest.TestCase):
 
 class EnforcementTests(unittest.TestCase):
     """Confirm policy enforcement is separate from report generation."""
+
+    def test_non_object_report_fails_as_operational_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            structured = Path(directory) / "report.json"
+            structured.write_text("[]\n", encoding="utf-8")
+            argv = [str(SCRIPT), "enforce", str(structured)]
+            stderr = io.StringIO()
+
+            with mock.patch.object(sys, "argv", argv), redirect_stderr(stderr):
+                status = REPORT.main()
+
+            message = stderr.getvalue()
+            self.assertEqual(status, 2)
+            self.assertNotEqual(status, 1)
+            self.assertIn("package report error:", message)
+            self.assertIn("JSON root must be an object", message)
+            self.assertNotIn("Traceback", message)
 
     def test_policy_failure_report_exists_before_enforcement_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
