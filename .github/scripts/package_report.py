@@ -286,7 +286,11 @@ def render_markdown(result: PackageResult) -> str:
         f"**{decimal_mb(result.limit_bytes)}** limit",
     ]
     if result.size_ok:
-        percent = result.headroom_bytes / result.limit_bytes * 100
+        percent = (
+            result.headroom_bytes / result.limit_bytes * 100
+            if result.limit_bytes > 0
+            else 0.0
+        )
         lines.append(
             f"Headroom: **{decimal_mb(result.headroom_bytes)} ({percent:.1f}%)**"
         )

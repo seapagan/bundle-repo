@@ -399,11 +399,11 @@ class RenderingTests(unittest.TestCase):
         self,
         *,
         size: int = 8_792_636,
+        limit: int = REPORT.PACKAGE_LIMIT_BYTES,
         missing: tuple[str, ...] = (),
         forbidden: tuple[str, ...] = (),
     ) -> REPORT.PackageResult:
         """Build controlled report data."""
-        limit = REPORT.PACKAGE_LIMIT_BYTES
         return REPORT.PackageResult(
             archive="bundle_repo-0.6.0.crate",
             archive_root="bundle_repo-0.6.0",
@@ -428,6 +428,13 @@ class RenderingTests(unittest.TestCase):
         self.assertNotIn("## ✅ Package checks", markdown)
         self.assertIn("**8.79 MB** / **9.50 MB** limit", markdown)
         self.assertIn("Headroom: **0.71 MB (7.4%)**", markdown)
+        self.assertIn("Required package contents verified.", markdown)
+
+    def test_zero_limit_renders_zero_percent_headroom(self) -> None:
+        markdown = REPORT.render_markdown(self.result(size=0, limit=0))
+
+        self.assertIn("## Package checks ✅", markdown)
+        self.assertIn("Headroom: **0.00 MB (0.0%)**", markdown)
         self.assertIn("Required package contents verified.", markdown)
 
     def test_oversized_markdown_includes_exceeded_amount(self) -> None:
