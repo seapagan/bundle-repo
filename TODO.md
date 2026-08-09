@@ -18,6 +18,10 @@
   macOS-specific implementation paths are introduced. Generate it from one
   native macOS architecture unless architecture-specific implementation code
   warrants both; combined coverage remains Linux + Windows until then.
+- add a proper published documentation site, currently expected to use
+  Zensical. Implement real configuration and content, local build and serve
+  tasks, strict CI validation, and deployment together when the documentation
+  site feature is ready.
 - allow to work with non-git repositories (local only obviously).
 - extend the model-aware token counting backends beyond the current GPT,
   DeepSeek, and GLM support. Future work includes official local tokenizers for

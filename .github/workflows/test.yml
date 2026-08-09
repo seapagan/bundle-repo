@@ -77,11 +77,6 @@ jobs:
             cargo-nextest@0.9.140,
             cargo-llvm-cov@0.8.7
 
-      - name: Install Zensical
-        run: |
-          pipx install zensical==0.0.51
-          zensical --version
-
       - name: Install coverage infrastructure
         run: |
           sudo apt-get update
@@ -118,9 +113,6 @@ jobs:
 
       - name: Build Rust documentation
         run: cargo doc --no-deps
-
-      - name: Build published documentation
-        run: cargo make docs
 
       - name: Validate Linux coverage
         shell: bash
