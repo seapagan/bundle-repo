@@ -105,13 +105,49 @@ class PackageAnalysisTests(unittest.TestCase):
 
     def test_forbidden_content_is_reported(self) -> None:
         result = self.analyse(
-            REPORT.REQUIRED_PATHS + ("docs/index.md", ".github/workflows/test.yml")
+            REPORT.REQUIRED_PATHS
+            + (
+                "docs/index.md",
+                ".github/workflows/test.yml",
+                "tests/crate/cli.rs",
+                ".vscode/settings.json",
+                "README.md",
+                "Makefile.toml",
+            )
         )
 
         self.assertEqual(
             result.forbidden_paths,
-            (".github/workflows/test.yml", "docs/index.md"),
+            (
+                ".github/workflows/test.yml",
+                ".vscode/settings.json",
+                "Makefile.toml",
+                "README.md",
+                "docs/index.md",
+                "tests/crate/cli.rs",
+            ),
         )
+
+    def test_forbidden_policy_covers_repository_only_roots(self) -> None:
+        expected = {
+            ".github",
+            ".vscode",
+            "docs",
+            "tests",
+            ".gitattributes",
+            ".gitignore",
+            ".markdownlint.yaml",
+            ".rustfmt.toml",
+            "CHANGELOG.md",
+            "Makefile.toml",
+            "README.md",
+            "TODO.md",
+            "clippy.toml",
+            "deny.toml",
+            "renovate.json",
+        }
+
+        self.assertEqual(set(REPORT.FORBIDDEN_PREFIXES), expected)
 
     def test_empty_forbidden_directory_is_reported(self) -> None:
         write_archive(self.archive, directories=("docs",))

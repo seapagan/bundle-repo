@@ -29,7 +29,23 @@ REQUIRED_PATHS = (
     "resources/tokenizers/licenses/GLM-5.2-MIT.txt",
     "src/main.rs",
 )
-FORBIDDEN_PREFIXES = (".github", "docs")
+FORBIDDEN_PREFIXES = (
+    ".github",
+    ".vscode",
+    "docs",
+    "tests",
+    ".gitattributes",
+    ".gitignore",
+    ".markdownlint.yaml",
+    ".rustfmt.toml",
+    "CHANGELOG.md",
+    "Makefile.toml",
+    "README.md",
+    "TODO.md",
+    "clippy.toml",
+    "deny.toml",
+    "renovate.json",
+)
 
 
 class ArchiveError(Exception):
