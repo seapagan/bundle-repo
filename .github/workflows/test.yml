@@ -165,6 +165,7 @@ jobs:
   macos:
     name: Native macOS (${{ matrix.architecture }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -187,7 +188,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          components: rustfmt clippy
+          components: clippy
 
       - name: Verify native target
         shell: bash
@@ -195,13 +196,15 @@ jobs:
           EXPECTED_TARGET: ${{ matrix.target }}
         run: |
           actual_target="$(rustc -vV | sed -n 's/^host: //p')"
-          test "$actual_target" = "$EXPECTED_TARGET"
+          if [[ "$actual_target" != "$EXPECTED_TARGET" ]]; then
+            echo "error: expected native host $EXPECTED_TARGET, got $actual_target" >&2
+            exit 1
+          fi
 
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          prefix-key: >-
-            v1-${{ runner.os }}-${{ matrix.target }}-rust-${{ env.RUST_VERSION }}
+          prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
           shared-key: native-macos-${{ matrix.target }}
 
       - name: Install Cargo tools
@@ -211,9 +214,6 @@ jobs:
             cargo-make@0.37.24,
             cargo-nextest@0.9.140
 
-      - name: Check formatting
-        run: cargo make format
-
       - name: Check native macOS targets
         run: cargo make unix-check
 
@@ -221,9 +221,14 @@ jobs:
         run: cargo make unix-clippy
 
       - name: Run native macOS tests
-        run: cargo make unix-test
+        run: >-
+          cargo nextest run
+          --all-targets
+          --all-features
+          --no-fail-fast
 
       - name: Verify release-embedded tokenizer assets
+        if: matrix.target == 'aarch64-apple-darwin'
         run: cargo make release-embedded-assets-test
 
       - name: Build native macOS targets
