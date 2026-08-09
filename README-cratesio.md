@@ -52,6 +52,7 @@ Summary:
     - [Copy to Clipboard](#copy-to-clipboard)
     - [Add line numbers](#add-line-numbers)
   - [Choose Model for Token Count](#choose-model-for-token-count)
+    - [Migrating older OpenAI model settings](#migrating-older-openai-model-settings)
   - [GitHub Token](#github-token)
 - [Command Line Options](#command-line-options)
 - [Configuration File](#configuration-file)
@@ -59,6 +60,7 @@ Summary:
 - [Planned Improvements](#planned-improvements)
 - [XML Layout](#xml-layout)
 - [Beta Status](#beta-status)
+- [Source distribution](#source-distribution)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
 
@@ -597,6 +599,15 @@ contributions are welcome to improve and stabilize the tool.
 
 There is a pressing need to improve the test suite to ensure the tool works as
 expected in a variety of scenarios. This is a priority for the next release.
+
+## Source distribution
+
+The crates.io package is intentionally limited to the files required to build
+and install BundleRepo with Cargo. Development files, tests, fixtures, and
+repository tooling are not included.
+
+For the complete source tree, including the full test suite and development
+tooling, use the GitHub repository or one of GitHub's source archives.
 
 ## Acknowledgements
 

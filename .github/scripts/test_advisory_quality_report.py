@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
+import advisory_quality_report as REPORT
 import sys
 import tempfile
 import tomllib
@@ -11,12 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).parents[2]
-SCRIPT = ROOT / ".github" / "scripts" / "advisory_quality_report.py"
-SPEC = importlib.util.spec_from_file_location("advisory_quality_report", SCRIPT)
-assert SPEC and SPEC.loader
-REPORT = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = REPORT
-SPEC.loader.exec_module(REPORT)
+SCRIPT = Path(__file__).with_name("advisory_quality_report.py")
 
 TOO_MANY_LINES_DIAGNOSTIC = """\
 warning: this function has too many lines (68/60)
@@ -69,7 +64,7 @@ def finding(
     observed: int = 68,
     threshold: int = 60,
     unit: str = "lines",
-) -> object:
+) -> REPORT.Finding:
     """Build a controlled maintainability finding."""
     return REPORT.Finding(
         path=path,
@@ -234,7 +229,11 @@ class PlatformReportTests(unittest.TestCase):
 class CombinedCommentTests(unittest.TestCase):
     """Exercise deterministic grouping across structured platform results."""
 
-    def render(self, linux: list[object], windows: list[object]) -> str:
+    def render(
+        self,
+        linux: list[REPORT.Finding],
+        windows: list[REPORT.Finding],
+    ) -> str:
         """Round-trip controlled platform findings through JSON files."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -252,7 +251,8 @@ class CombinedCommentTests(unittest.TestCase):
         shared = finding()
         comment = self.render([shared], [shared])
 
-        self.assertIn("## ⚠️ Maintainability checks", comment)
+        self.assertIn("## Maintainability checks ⚠️", comment)
+        self.assertNotIn("## ⚠️ Maintainability checks", comment)
         self.assertIn(
             "Clippy reported advisory maintainability findings. "
             "These do not block merging.",
@@ -293,7 +293,7 @@ class CombinedCommentTests(unittest.TestCase):
             comment,
             "<!-- bundlerepo-advisory-quality -->\n"
             "\n"
-            "## ✅ Maintainability checks\n"
+            "## Maintainability checks ✅\n"
             "\n"
             "No advisory maintainability findings.\n"
             "\n"
@@ -302,6 +302,7 @@ class CombinedCommentTests(unittest.TestCase):
             "- function lines: 60\n"
             "- arguments: 8\n",
         )
+        self.assertNotIn("## ✅ Maintainability checks", comment)
         self.assertNotIn("Advisory maintainability", comment)
         self.assertNotIn("\n### ", comment)
 

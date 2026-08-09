@@ -8,7 +8,12 @@ rust-version = "1.88"
 authors = ["Grant Ramsay <seapagan@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/seapagan/bundle-repo/"
-exclude = [".github/*", "docs/*"]
+include = [
+  "src/**",
+  "resources/**",
+  "README-cratesio.md",
+  "LICENSE.txt",
+]
 categories = [
   "command-line-utilities",
   "development-tools",

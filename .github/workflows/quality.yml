@@ -115,7 +115,7 @@ jobs:
           path: quality-reports
 
       - name: Test advisory report aggregation
-        run: python -m unittest tests/scripts/test_advisory_quality_report.py
+        run: python .github/scripts/test_advisory_quality_report.py
 
       - name: Build sticky comment
         run: |
