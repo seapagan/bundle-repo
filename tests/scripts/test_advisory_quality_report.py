@@ -252,7 +252,8 @@ class CombinedCommentTests(unittest.TestCase):
         shared = finding()
         comment = self.render([shared], [shared])
 
-        self.assertIn("## ⚠️ Maintainability checks", comment)
+        self.assertIn("## Maintainability checks ⚠️", comment)
+        self.assertNotIn("## ⚠️ Maintainability checks", comment)
         self.assertIn(
             "Clippy reported advisory maintainability findings. "
             "These do not block merging.",
@@ -293,7 +294,7 @@ class CombinedCommentTests(unittest.TestCase):
             comment,
             "<!-- bundlerepo-advisory-quality -->\n"
             "\n"
-            "## ✅ Maintainability checks\n"
+            "## Maintainability checks ✅\n"
             "\n"
             "No advisory maintainability findings.\n"
             "\n"
@@ -302,6 +303,7 @@ class CombinedCommentTests(unittest.TestCase):
             "- function lines: 60\n"
             "- arguments: 8\n",
         )
+        self.assertNotIn("## ✅ Maintainability checks", comment)
         self.assertNotIn("Advisory maintainability", comment)
         self.assertNotIn("\n### ", comment)
 

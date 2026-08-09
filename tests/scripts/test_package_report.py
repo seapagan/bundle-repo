@@ -223,7 +223,8 @@ class RenderingTests(unittest.TestCase):
     def test_healthy_markdown_includes_size_headroom_and_percentage(self) -> None:
         markdown = REPORT.render_markdown(self.result())
 
-        self.assertIn("## ✅ Package checks", markdown)
+        self.assertIn("## Package checks ✅", markdown)
+        self.assertNotIn("## ✅ Package checks", markdown)
         self.assertIn("**8.79 MB** / **9.50 MB** limit", markdown)
         self.assertIn("Headroom: **0.71 MB (7.4%)**", markdown)
         self.assertIn("Required package contents verified.", markdown)
@@ -231,7 +232,8 @@ class RenderingTests(unittest.TestCase):
     def test_oversized_markdown_includes_exceeded_amount(self) -> None:
         markdown = REPORT.render_markdown(self.result(size=9_600_000))
 
-        self.assertIn("## ❌ Package checks", markdown)
+        self.assertIn("## Package checks ❌", markdown)
+        self.assertNotIn("## ❌ Package checks", markdown)
         self.assertIn("Exceeded by: **0.10 MB**", markdown)
         self.assertIn("exceeds the configured size ceiling", markdown)
 
@@ -243,7 +245,7 @@ class RenderingTests(unittest.TestCase):
             )
         )
 
-        self.assertIn("## ❌ Package checks", markdown)
+        self.assertIn("## Package checks ❌", markdown)
         self.assertIn("Package-content policy failed.", markdown)
         self.assertIn("- `Cargo.lock`", markdown)
         self.assertIn("- `docs/index.md`", markdown)
@@ -291,7 +293,7 @@ class EnforcementTests(unittest.TestCase):
                 status = REPORT.main()
 
             self.assertEqual(status, 1)
-            self.assertIn("## ❌ Package checks", markdown.read_text())
+            self.assertIn("## Package checks ❌", markdown.read_text())
             self.assertIn("Missing required paths", markdown.read_text())
 
 

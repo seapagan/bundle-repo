@@ -205,7 +205,7 @@ def render_markdown(result: PackageResult) -> str:
     lines = [
         MARKER,
         "",
-        f"## {heading} Package checks",
+        f"## Package checks {heading}",
         "",
         f"Published package: **{decimal_mb(result.size_bytes)}** / "
         f"**{decimal_mb(result.limit_bytes)}** limit",

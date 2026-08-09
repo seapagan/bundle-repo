@@ -234,7 +234,7 @@ def render_combined_comment(results: list[PlatformResult]) -> str:
     lines = [
         "<!-- bundlerepo-advisory-quality -->",
         "",
-        f"## {'⚠️' if finding_platforms else '✅'} Maintainability checks",
+        f"## Maintainability checks {'⚠️' if finding_platforms else '✅'}",
         "",
     ]
     if finding_platforms:
