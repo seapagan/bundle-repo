@@ -77,11 +77,6 @@ jobs:
             cargo-nextest@0.9.140,
             cargo-llvm-cov@0.8.7
 
-      - name: Install Zensical
-        run: |
-          pipx install zensical==0.0.51
-          zensical --version
-
       - name: Install coverage infrastructure
         run: |
           sudo apt-get update
@@ -118,9 +113,6 @@ jobs:
 
       - name: Build Rust documentation
         run: cargo doc --no-deps
-
-      - name: Build published documentation
-        run: cargo make docs
 
       - name: Validate Linux coverage
         shell: bash
@@ -161,6 +153,87 @@ jobs:
           path: coverage-linux.lcov
           if-no-files-found: error
           retention-days: 1
+
+  macos:
+    name: Native macOS (${{ matrix.architecture }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: Apple Silicon
+            os: macos-15
+            target: aarch64-apple-darwin
+          - architecture: Intel
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+
+      - name: Verify native target
+        shell: bash
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          actual_target="$(rustc -vV | sed -n 's/^host: //p')"
+          if [[ "$actual_target" != "$EXPECTED_TARGET" ]]; then
+            echo "error: expected native host $EXPECTED_TARGET, got $actual_target" >&2
+            exit 1
+          fi
+
+      - name: Install macOS dependencies (x86_64)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          brew install openssl@3
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v1-${{ runner.os }}-rust-${{ env.RUST_VERSION }}
+          shared-key: native-macos-${{ matrix.target }}
+
+      - name: Install Cargo tools
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: >-
+            cargo-make@0.37.24,
+            cargo-nextest@0.9.140
+
+      - name: Check native macOS targets
+        run: cargo make unix-check
+
+      - name: Lint native macOS targets
+        run: cargo make unix-clippy
+
+      - name: Run native macOS tests
+        run: >-
+          cargo nextest run
+          --all-targets
+          --all-features
+          --no-fail-fast
+
+      - name: Verify release-embedded tokenizer assets
+        # Embedded tokenizer verification is OS-specific but
+        # architecture-independent; run it once on macOS to avoid a duplicate
+        # release-profile build on Intel.
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: cargo make release-embedded-assets-test
+
+      - name: Build native macOS targets
+        run: cargo make unix-build
 
   windows:
     name: Native Windows

@@ -299,13 +299,3 @@ dependencies = ["_require-linux", "verify-unix", "verify-xwin"]
 description = "Update CHANGELOG.md with the latest merged PR's and closed Issues"
 command = "github-changelog-md"
 args = ["${@}"]
-
-# [tasks.docs]
-# description = "Build and validate the Zensical documentation site"
-# command = "zensical"
-# args = ["build", "--clean", "--strict"]
-
-# [tasks.docs-serve]
-# description = "Serve the Zensical documentation site locally"
-# command = "zensical"
-# args = ["serve"]
