@@ -220,6 +220,9 @@ jobs:
           --no-fail-fast
 
       - name: Verify release-embedded tokenizer assets
+        # Embedded tokenizer verification is OS-specific but
+        # architecture-independent; run it once on macOS to avoid a duplicate
+        # release-profile build on Intel.
         if: matrix.target == 'aarch64-apple-darwin'
         run: cargo make release-embedded-assets-test
 
