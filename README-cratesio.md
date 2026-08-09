@@ -598,6 +598,15 @@ contributions are welcome to improve and stabilize the tool.
 There is a pressing need to improve the test suite to ensure the tool works as
 expected in a variety of scenarios. This is a priority for the next release.
 
+### Source distribution
+
+The crates.io package is intentionally limited to the files required to build
+and install BundleRepo with Cargo. Development files, tests, fixtures, and
+repository tooling are not included.
+
+For the complete source tree, including the full test suite and development
+tooling, use the GitHub repository or one of GitHub's source archives.
+
 ## Acknowledgements
 
 **Bundle Repo** is a rewrite from scratch of the original [Repomix (formerly

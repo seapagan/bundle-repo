@@ -22,15 +22,17 @@
   assets exist. Provider token-counting APIs, fallback estimates, and generated
   output metadata remain separate design work.
 - choose a tokenizer asset distribution and package-capacity strategy. The
-  clean-main generated `.crate` baseline is 8,792,636 bytes (8.79 MB in
-  decimal units) against crates.io's current 10 MB compressed package limit.
-  PR CI now builds and verifies the real package, checks required and excluded
-  contents, and enforces a project ceiling of 9,500,000 bytes (9.50 MB). That
-  baseline leaves 707,364 bytes (0.71 MB) of project-ceiling headroom. All
-  embedded tokenizer source assets are included in the published crate, and
-  the release binary contains the compressed form of every tokenizer family
-  even though each invocation uses only one. GLM expands to roughly 20 MB and
-  is JSON-parsed when selected.
+  generated `.crate` baseline is 8,753,140 bytes (8.75 MB in decimal units)
+  against crates.io's current 10 MB compressed package limit. The published
+  `.crate` intentionally uses a minimal allow-list: tests, fixtures, and
+  development tooling remain in the GitHub source tree and are excluded from
+  the installation distribution. PR CI builds and verifies the real package,
+  checks required and excluded contents, and enforces the unchanged project
+  ceiling of 9,500,000 bytes (9.50 MB). This baseline leaves 746,860 bytes
+  (0.75 MB) of project-ceiling headroom. The embedded tokenizer JSON assets
+  still dominate the archive, and the release binary contains the compressed
+  form of every tokenizer family even though each invocation uses only one.
+  GLM expands to roughly 20 MB and is JSON-parsed when selected.
 
   **Do not add another embedded tokenizer family until a package-size and
   tokenizer-distribution strategy has been selected.** Future investigation
