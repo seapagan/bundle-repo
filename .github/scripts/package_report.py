@@ -298,6 +298,7 @@ def render_markdown(result: PackageResult) -> str:
     lines.extend(
         [
             "",
+            "> [!IMPORTANT]",
             "> crates.io currently limits `.crate` uploads to **10 MB**. "
             "This project's lower CI ceiling is intentional to preserve "
             "publishing headroom.",
