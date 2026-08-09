@@ -162,6 +162,73 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  macos:
+    name: Native macOS (${{ matrix.architecture }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: Apple Silicon
+            os: macos-15
+            target: aarch64-apple-darwin
+          - architecture: Intel
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt clippy
+
+      - name: Verify native target
+        shell: bash
+        env:
+          EXPECTED_TARGET: ${{ matrix.target }}
+        run: |
+          actual_target="$(rustc -vV | sed -n 's/^host: //p')"
+          test "$actual_target" = "$EXPECTED_TARGET"
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: >-
+            v1-${{ runner.os }}-${{ matrix.target }}-rust-${{ env.RUST_VERSION }}
+          shared-key: native-macos-${{ matrix.target }}
+
+      - name: Install Cargo tools
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: >-
+            cargo-make@0.37.24,
+            cargo-nextest@0.9.140
+
+      - name: Check formatting
+        run: cargo make format
+
+      - name: Check native macOS targets
+        run: cargo make unix-check
+
+      - name: Lint native macOS targets
+        run: cargo make unix-clippy
+
+      - name: Run native macOS tests
+        run: cargo make unix-test
+
+      - name: Verify release-embedded tokenizer assets
+        run: cargo make release-embedded-assets-test
+
+      - name: Build native macOS targets
+        run: cargo make unix-build
+
   windows:
     name: Native Windows
     runs-on: windows-latest
