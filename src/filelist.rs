@@ -1,7 +1,10 @@
 use ignore::WalkBuilder;
 use regex::Regex;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+
+use crate::progress::ProgressReporter;
 
 const DEFAULT_EXCLUDE_PATTERNS: [&str; 8] = [
     r"(?i)\.gitignore",
@@ -47,9 +50,10 @@ struct ExclusionMatcher {
 }
 
 impl ExclusionMatcher {
-    fn new(
+    fn new<N: Write, D: Write>(
         extend_exclude: Option<&[String]>,
         exclude: Option<&[String]>,
+        reporter: &mut ProgressReporter<N, D>,
     ) -> Self {
         let patterns = if let Some(patterns) = exclude {
             patterns
@@ -76,9 +80,11 @@ impl ExclusionMatcher {
                 .into_iter()
                 .map(|pattern| {
                     Regex::new(&pattern).unwrap_or_else(|error| {
-                        eprintln!(
-                            "Warning: Invalid regex pattern '{pattern}': {error}"
-                        );
+                        reporter
+                            .always_visible_diagnostic(&format!(
+                                "Warning: Invalid regex pattern '{pattern}': {error}"
+                            ))
+                            .unwrap();
                         Regex::new(r"^$").unwrap()
                     })
                 })
@@ -93,13 +99,14 @@ impl ExclusionMatcher {
     }
 }
 
-pub fn list_files_in_repo(
+pub fn list_files_in_repo<N: Write, D: Write>(
     repo_path: &Path,
     extend_exclude: Option<&[String]>,
     exclude: Option<&[String]>,
+    reporter: &mut ProgressReporter<N, D>,
 ) -> Vec<String> {
     let mut file_list = Vec::new();
-    let exclusions = ExclusionMatcher::new(extend_exclude, exclude);
+    let exclusions = ExclusionMatcher::new(extend_exclude, exclude, reporter);
 
     let walker = WalkBuilder::new(repo_path)
         .hidden(false)
@@ -127,7 +134,9 @@ pub fn list_files_in_repo(
 
                 file_list.push(relative_path);
             }
-            Err(err) => eprintln!("Error: {}", err),
+            Err(err) => reporter
+                .always_visible_diagnostic(&format!("Error: {err}"))
+                .unwrap(),
         }
     }
 

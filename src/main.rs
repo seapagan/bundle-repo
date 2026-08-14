@@ -39,7 +39,7 @@ struct SummaryTable {
     value: String,
 }
 
-fn load_config() -> Params {
+fn load_config() -> (Params, Option<String>) {
     let global_config_path =
         home_dir().map(|home| home.join(".config/bundlerepo/config.toml"));
     load_config_from_paths(
@@ -51,7 +51,7 @@ fn load_config() -> Params {
 fn load_config_from_paths(
     global_config_path: Option<&Path>,
     local_config_path: &Path,
-) -> Params {
+) -> (Params, Option<String>) {
     let mut config_builder = Config::builder();
 
     if let Some(global_config_path) = global_config_path
@@ -71,11 +71,8 @@ fn load_config_from_paths(
     }
 
     match config_builder.build() {
-        Ok(config) => config.into(),
-        Err(e) => {
-            eprintln!("Error loading config: {}", e);
-            Params::default()
-        }
+        Ok(config) => (config.into(), None),
+        Err(error) => (Params::default(), Some(error.to_string())),
     }
 }
 
@@ -90,12 +87,14 @@ fn report_success<N: std::io::Write, D: std::io::Write>(
     }
 
     if params.clipboard {
-        reporter.normal_line("-> Successfully copied XML to clipboard")?;
+        reporter.success(" copied XML to clipboard")?;
     } else {
-        reporter.normal_line(&format!(
-            "-> Successfully wrote XML to '{}'",
-            xml_output::effective_output_file(params).display()
-        ))?;
+        let output_path = xml_output::effective_output_file(params);
+        reporter.success_with_accent(
+            " wrote XML to '",
+            &output_path.display().to_string(),
+            "'",
+        )?;
     }
 
     let (number_of_files, total_size, token_count) = metrics;
@@ -120,7 +119,7 @@ fn report_success<N: std::io::Write, D: std::io::Write>(
         .with(Modify::list(Columns::first(), Alignment::right()))
         .to_string();
 
-    reporter.normal_text(&format!("\nSummary:\n{table}\n\n"))
+    reporter.summary(&table)
 }
 
 fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(
@@ -130,7 +129,7 @@ fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(
 ) -> Result<(Model, TokenizerType), String> {
     let model = params.model.as_ref().unwrap().parse::<Model>()?;
     reporter
-        .phase(&format!("Loading tokenizer for {}", model.display_name()))
+        .phase_with_accent("Loading tokenizer for ", model.display_name(), "")
         .unwrap();
 
     let tokenizer_start = Instant::now();
@@ -192,10 +191,11 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
             repo_input,
             params.token.as_deref(),
             temp_dir.path(),
+            reporter,
         )
         .map_err(ApplicationError::Clone)?
     } else {
-        repo::check_repository_at(repository_path, params)
+        repo::check_repository_at(repository_path, reporter)
             .map_err(ApplicationError::CurrentDirectory)?;
         repository_path.to_path_buf()
     };
@@ -204,6 +204,7 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
         &repo_folder,
         params.extend_exclude.as_deref(),
         params.exclude.as_deref(),
+        reporter,
     );
     let file_tree = filelist::group_files_by_directory(file_list);
 
@@ -234,19 +235,28 @@ fn main() {
     }
 
     // Load config values
-    let config = load_config();
+    let (config, config_error) = load_config();
     let params = Params::from_args_and_config(&args, config);
+    let mut reporter = progress::ProgressReporter::terminal(params.stdout);
+
+    if let Some(error) = config_error {
+        reporter
+            .error(&format!("Error loading config: {error}"))
+            .unwrap();
+    }
 
     if let Err(error) = xml_output::validate_output_options(&params) {
-        eprintln!("Error: {error}");
+        reporter.error(&format!("Error: {error}")).unwrap();
         exit(1);
     }
 
-    if !params.stdout {
-        cli::show_header();
-    }
-
-    let mut reporter = progress::ProgressReporter::terminal(params.stdout);
+    reporter
+        .header(
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_AUTHORS"),
+            env!("CARGO_PKG_DESCRIPTION"),
+        )
+        .unwrap();
 
     match run_application(
         &args,

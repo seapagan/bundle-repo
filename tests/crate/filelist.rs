@@ -12,13 +12,23 @@ fn create_test_files(temp_dir: &TempDir, files: &[&str]) {
     }
 }
 
+fn list_files(
+    repo_path: &Path,
+    extend_exclude: Option<&[String]>,
+    exclude: Option<&[String]>,
+) -> Vec<String> {
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
+    list_files_in_repo(repo_path, extend_exclude, exclude, &mut reporter)
+}
+
 #[test]
 fn test_list_files_basic() {
     let temp_dir = TempDir::new().unwrap();
     let test_files = ["file1.txt", "src/file2.rs", "src/nested/file3.rs"];
     create_test_files(&temp_dir, &test_files);
 
-    let files = list_files_in_repo(temp_dir.path(), None, None);
+    let files = list_files(temp_dir.path(), None, None);
 
     assert_eq!(files.len(), 3);
     assert!(files.contains(&"file1.txt".to_string()));
@@ -32,7 +42,7 @@ fn test_list_files_with_exclude() {
     let test_files = ["file1.txt", "src/file2.rs", "test.lock", ".gitignore"];
     create_test_files(&temp_dir, &test_files);
 
-    let files = list_files_in_repo(temp_dir.path(), None, None);
+    let files = list_files(temp_dir.path(), None, None);
 
     assert_eq!(files.len(), 2);
     assert!(files.contains(&"file1.txt".to_string()));
@@ -46,13 +56,16 @@ fn test_exclusion_matcher_resolves_precedence_and_literals() {
     let extend = vec!["extended+.txt".to_string()];
     let exclude = vec!["src/[generated].rs".to_string()];
 
-    let replacement = ExclusionMatcher::new(Some(&extend), Some(&exclude));
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let replacement =
+        ExclusionMatcher::new(Some(&extend), Some(&exclude), &mut reporter);
     assert!(replacement.matches("SRC/[GENERATED].RS"));
     assert!(!replacement.matches("src/g.rs"));
     assert!(!replacement.matches("extended+.txt"));
     assert!(!replacement.matches(".gitignore"));
 
-    let extended = ExclusionMatcher::new(Some(&extend), None);
+    let extended = ExclusionMatcher::new(Some(&extend), None, &mut reporter);
     assert!(extended.matches("extended+.txt"));
     assert!(!extended.matches("extendeddddd.txt"));
     assert!(extended.matches(".gitignore"));
@@ -67,7 +80,7 @@ fn test_custom_exclude_replaces_defaults_through_file_listing() {
     );
     let exclude = vec!["custom.tmp".to_string()];
 
-    let files = list_files_in_repo(temp_dir.path(), None, Some(&exclude));
+    let files = list_files(temp_dir.path(), None, Some(&exclude));
 
     assert_eq!(files.len(), 2);
     assert!(files.contains(&"ordinary.txt".to_string()));
@@ -84,8 +97,7 @@ fn test_extend_exclude_augments_defaults_through_file_listing() {
     );
     let extend_exclude = vec!["custom.tmp".to_string()];
 
-    let files =
-        list_files_in_repo(temp_dir.path(), Some(&extend_exclude), None);
+    let files = list_files(temp_dir.path(), Some(&extend_exclude), None);
 
     assert_eq!(files, vec!["ordinary.txt"]);
 }
@@ -98,7 +110,7 @@ fn test_windows_exclude_accepts_backslash_paths() {
     create_test_files(&temp_dir, &test_files);
 
     let exclude = vec![r"src\file2.rs".to_string()];
-    let files = list_files_in_repo(temp_dir.path(), None, Some(&exclude));
+    let files = list_files(temp_dir.path(), None, Some(&exclude));
 
     assert_eq!(files, vec!["file1.txt"]);
 }
@@ -124,7 +136,7 @@ fn test_default_exclude_patterns() {
     ];
     create_test_files(&temp_dir, &test_files);
 
-    let files = list_files_in_repo(temp_dir.path(), None, None);
+    let files = list_files(temp_dir.path(), None, None);
 
     // Only file1.txt should remain, all others should be excluded by default patterns
     assert_eq!(files.len(), 1);

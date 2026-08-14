@@ -4,7 +4,9 @@ use colored_text::{Colorize, RenderTarget, StyledText};
 
 #[derive(Clone, Copy)]
 enum SemanticStyle {
+    Heading,
     Phase,
+    Success,
     Warning,
     Error,
     Accent,
@@ -39,6 +41,32 @@ impl Presentation {
         format!("{} {message}", self.normal("->", SemanticStyle::Phase))
     }
 
+    pub(crate) fn header(
+        &self,
+        version: &str,
+        authors: &str,
+        description: &str,
+    ) -> String {
+        let heading = self.normal(
+            &format!("BundleRepo Version {version}"),
+            SemanticStyle::Heading,
+        );
+        format!("\n{heading}, © 2024-2026 {authors}\n\n{description}\n\n")
+    }
+
+    pub(crate) fn phase_with_accent(
+        &self,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> String {
+        format!(
+            "{} {before}{}{after}",
+            self.normal("->", SemanticStyle::Phase),
+            self.normal(accent, SemanticStyle::Accent),
+        )
+    }
+
     pub(crate) fn conversion(&self, path: &str, encoding: &str) -> String {
         format!(
             "{} Converted '{}' from {} to UTF-8",
@@ -69,6 +97,90 @@ impl Presentation {
         )
     }
 
+    pub(crate) fn success(&self, remainder: &str) -> String {
+        format!(
+            "{} {}{remainder}",
+            self.normal("->", SemanticStyle::Success),
+            self.normal("Successfully", SemanticStyle::Success),
+        )
+    }
+
+    pub(crate) fn success_with_accent(
+        &self,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> String {
+        format!(
+            "{} {}{before}{}{after}",
+            self.normal("->", SemanticStyle::Success),
+            self.normal("Successfully", SemanticStyle::Success),
+            self.normal(accent, SemanticStyle::Accent),
+        )
+    }
+
+    pub(crate) fn clone_success(
+        &self,
+        repository_url: &str,
+        branch: Option<&str>,
+    ) -> String {
+        let branch = branch.map_or_else(String::new, |branch| {
+            format!(
+                " (branch: {})",
+                self.normal(branch, SemanticStyle::Accent)
+            )
+        });
+        self.success_with_accent(
+            " cloned repository '",
+            repository_url,
+            &format!("'{branch}"),
+        )
+    }
+
+    pub(crate) fn repository_found(&self, path: &str, branch: &str) -> String {
+        format!(
+            "{} Found a git repository in the current directory: '{}' (branch: {})",
+            self.normal("->", SemanticStyle::Phase),
+            self.normal(path, SemanticStyle::Accent),
+            self.normal(branch, SemanticStyle::Accent),
+        )
+    }
+
+    pub(crate) fn warning_with_accent(
+        &self,
+        prefix: &str,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> String {
+        format!(
+            "{}{before}{}{after}",
+            self.diagnostic(prefix, SemanticStyle::Warning),
+            self.diagnostic(accent, SemanticStyle::Accent),
+        )
+    }
+
+    pub(crate) fn error_with_accent(
+        &self,
+        prefix: &str,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> String {
+        format!(
+            "{}{before}{}{after}",
+            self.diagnostic(prefix, SemanticStyle::Error),
+            self.diagnostic(accent, SemanticStyle::Accent),
+        )
+    }
+
+    pub(crate) fn summary(&self, table: &str) -> String {
+        format!(
+            "\n{}\n{table}\n\n",
+            self.normal("Summary:", SemanticStyle::Heading)
+        )
+    }
+
     pub(crate) fn warning(&self, message: &str) -> String {
         self.diagnostic_prefix(message, &["warning:", "Warning:"])
     }
@@ -77,7 +189,6 @@ impl Presentation {
         self.diagnostic_prefix(message, &["Error:", "ERROR:", "X"])
     }
 
-    #[cfg(test)]
     pub(crate) fn diagnostic_message(&self, message: &str) -> String {
         if message.starts_with("warning:") || message.starts_with("Warning:") {
             self.warning(message)
@@ -114,7 +225,9 @@ impl Presentation {
 
     fn styled(text: &str, style: SemanticStyle) -> StyledText {
         match style {
+            SemanticStyle::Heading => text.cyan().bold(),
             SemanticStyle::Phase | SemanticStyle::Accent => text.cyan(),
+            SemanticStyle::Success => text.green().bold(),
             SemanticStyle::Warning => text.yellow().bold(),
             SemanticStyle::Error => text.red().bold(),
         }

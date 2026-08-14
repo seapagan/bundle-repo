@@ -41,3 +41,25 @@ fn test_plain_diagnostic_prefixes_preserve_exact_text() {
         "unprefixed diagnostic"
     );
 }
+
+#[test]
+fn test_plain_header_success_and_summary_preserve_exact_text() {
+    let presentation = Presentation::plain();
+
+    assert_eq!(
+        presentation.header("1.2.3", "A. Person", "Description"),
+        "\nBundleRepo Version 1.2.3, \u{00A9} 2024-2026 A. Person\n\nDescription\n\n"
+    );
+    assert_eq!(
+        presentation.success(" copied XML to clipboard"),
+        "-> Successfully copied XML to clipboard"
+    );
+    assert_eq!(
+        presentation.success_with_accent(" wrote XML to '", "output.xml", "'"),
+        "-> Successfully wrote XML to 'output.xml'"
+    );
+    assert_eq!(
+        presentation.summary(" Total Files processed:  1"),
+        "\nSummary:\n Total Files processed:  1\n\n"
+    );
+}

@@ -73,7 +73,7 @@ fn count_tokens<N: Write, D: Write>(
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> io::Result<usize> {
-    reporter.phase(&format!("Counting tokens with {model_name}"))?;
+    reporter.phase_with_accent("Counting tokens with ", model_name, "")?;
     let token_start = Instant::now();
     let token_count = tokenizer
         .count_tokens(xml_content)
@@ -89,13 +89,22 @@ fn write_destination<N: Write, D: Write>(
     timings: &mut ProcessingTimings,
 ) -> io::Result<u64> {
     if flags.clipboard {
-        reporter.phase(&destination_phase(flags))?;
+        reporter.phase("Copying result to clipboard")?;
         let content_length = xml_content.len();
         return write_clipboard(&xml_content, content_length, timings);
     }
 
     let output_path = effective_output_file(flags);
-    reporter.phase(&destination_phase(flags))?;
+    let action = if flags.gzip {
+        "Compressing and writing result to '"
+    } else {
+        "Writing result to '"
+    };
+    reporter.phase_with_accent(
+        action,
+        &output_path.display().to_string(),
+        "'",
+    )?;
     write_file(flags, &output_path, xml_content.into_bytes(), timings)
 }
 
@@ -146,6 +155,7 @@ pub(super) fn create_output_file(output_path: &Path) -> io::Result<File> {
     })
 }
 
+#[cfg(test)]
 pub(super) fn destination_phase(flags: &Params) -> String {
     if flags.clipboard {
         "Copying result to clipboard".to_string()

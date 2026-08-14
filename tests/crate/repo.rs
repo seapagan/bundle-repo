@@ -39,25 +39,28 @@ fn test_repository_check_discovers_from_explicit_nested_path() {
     create_commit(&repo);
     let nested_path = temp_dir.path().join("nested/directory");
     fs::create_dir_all(&nested_path).unwrap();
-    let params = Params {
-        stdout: true,
-        ..Params::default()
-    };
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
 
-    assert!(check_repository_at(&nested_path, &params).is_ok());
+    assert!(check_repository_at(&nested_path, &mut reporter).is_ok());
 }
 
 #[test]
 fn test_repository_check_rejects_explicit_non_repository_path() {
     let temp_dir = tempdir().unwrap();
-    let params = Params {
-        stdout: true,
-        ..Params::default()
-    };
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
 
-    let error = check_repository_at(temp_dir.path(), &params).unwrap_err();
+    let error =
+        check_repository_at(temp_dir.path(), &mut reporter).unwrap_err();
 
     assert_eq!(error.message(), "Not a git repository");
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.is_empty());
+    assert_eq!(
+        diagnostic,
+        b"X  No git repository found in the current directory.\n"
+    );
 }
 
 #[test]
@@ -67,10 +70,17 @@ fn test_clone_repo_rejects_invalid_repository_input() {
         stdout: true,
         ..Params::default()
     };
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
 
-    let error =
-        clone_repo(&params, "not a repository", None, destination_dir.path())
-            .unwrap_err();
+    let error = clone_repo(
+        &params,
+        "not a repository",
+        None,
+        destination_dir.path(),
+        &mut reporter,
+    )
+    .unwrap_err();
 
     assert_eq!(error.message(), "Invalid repository shorthand");
 }

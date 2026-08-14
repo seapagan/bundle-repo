@@ -171,15 +171,6 @@ pub fn version_info() -> String {
     )
 }
 
-pub fn show_header() {
-    println!(
-        "\nBundleRepo Version {}, \u{00A9} 2024-2026 {}",
-        env!("CARGO_PKG_VERSION"),
-        env!("CARGO_PKG_AUTHORS")
-    );
-    println!("\n{}\n", env!("CARGO_PKG_DESCRIPTION"))
-}
-
 #[cfg(test)]
 #[path = "../tests/crate/cli.rs"]
 mod tests;

@@ -23,6 +23,67 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         self.normal_line(&self.presentation.phase(message))
     }
 
+    pub(crate) fn header(
+        &mut self,
+        version: &str,
+        authors: &str,
+        description: &str,
+    ) -> io::Result<()> {
+        self.normal_text(&self.presentation.header(
+            version,
+            authors,
+            description,
+        ))
+    }
+
+    pub(crate) fn phase_with_accent(
+        &mut self,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> io::Result<()> {
+        self.normal_line(
+            &self.presentation.phase_with_accent(before, accent, after),
+        )
+    }
+
+    pub(crate) fn success(&mut self, remainder: &str) -> io::Result<()> {
+        self.normal_line(&self.presentation.success(remainder))
+    }
+
+    pub(crate) fn success_with_accent(
+        &mut self,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> io::Result<()> {
+        self.normal_line(
+            &self.presentation.success_with_accent(before, accent, after),
+        )
+    }
+
+    pub(crate) fn clone_success(
+        &mut self,
+        repository_url: &str,
+        branch: Option<&str>,
+    ) -> io::Result<()> {
+        self.normal_line(
+            &self.presentation.clone_success(repository_url, branch),
+        )
+    }
+
+    pub(crate) fn repository_found(
+        &mut self,
+        path: &str,
+        branch: &str,
+    ) -> io::Result<()> {
+        self.normal_line(&self.presentation.repository_found(path, branch))
+    }
+
+    pub(crate) fn summary(&mut self, table: &str) -> io::Result<()> {
+        self.normal_text(&self.presentation.summary(table))
+    }
+
     pub(crate) fn conversion(
         &mut self,
         path: &str,
@@ -62,8 +123,18 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         Ok(())
     }
 
-    pub(crate) fn warning(&mut self, message: &str) -> io::Result<()> {
-        self.warning_rendered(&self.presentation.warning(message))
+    pub(crate) fn warning_with_accent(
+        &mut self,
+        prefix: &str,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> io::Result<()> {
+        self.warning_rendered(
+            &self
+                .presentation
+                .warning_with_accent(prefix, before, accent, after),
+        )
     }
 
     fn warning_rendered(&mut self, message: &str) -> io::Result<()> {
@@ -77,7 +148,6 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         writeln!(self.diagnostic, "{}", self.presentation.error(message))
     }
 
-    #[cfg(test)]
     pub(crate) fn always_visible_diagnostic(
         &mut self,
         message: &str,
@@ -86,6 +156,21 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
             self.diagnostic,
             "{}",
             self.presentation.diagnostic_message(message)
+        )
+    }
+
+    pub(crate) fn always_visible_error_with_accent(
+        &mut self,
+        prefix: &str,
+        before: &str,
+        accent: &str,
+        after: &str,
+    ) -> io::Result<()> {
+        writeln!(
+            self.diagnostic,
+            "{}",
+            self.presentation
+                .error_with_accent(prefix, before, accent, after)
         )
     }
 

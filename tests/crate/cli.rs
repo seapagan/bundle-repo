@@ -262,20 +262,28 @@ fn test_short_flags() {
 }
 
 #[test]
-fn test_show_header() {
-    // The header should contain these values
-    let version = env!("CARGO_PKG_VERSION");
-    let authors = env!("CARGO_PKG_AUTHORS");
-    let desc = env!("CARGO_PKG_DESCRIPTION");
+fn test_header_preserves_exact_plain_text() {
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    reporter
+        .header(
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_AUTHORS"),
+            env!("CARGO_PKG_DESCRIPTION"),
+        )
+        .unwrap();
 
-    // Verify the values exist and aren't empty
-    assert!(!version.is_empty());
-    assert!(!authors.is_empty());
-    assert!(!desc.is_empty());
-
-    // We can't easily test the actual stdout output, but we can verify
-    // the function doesn't panic
-    show_header();
+    let (normal, diagnostic) = reporter.into_parts();
+    assert_eq!(
+        String::from_utf8(normal).unwrap(),
+        format!(
+            "\nBundleRepo Version {}, \u{00A9} 2024-2026 {}\n\n{}\n\n",
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_AUTHORS"),
+            env!("CARGO_PKG_DESCRIPTION"),
+        )
+    );
+    assert!(diagnostic.is_empty());
 }
 
 #[test]

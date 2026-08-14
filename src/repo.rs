@@ -2,20 +2,20 @@ use git2::{
     Cred, ErrorClass, ErrorCode, FetchOptions, RemoteCallbacks, Repository,
 };
 use regex::Regex;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use url::Url;
 
-use crate::structs::Params;
+use crate::{progress::ProgressReporter, structs::Params};
 
-pub fn clone_repo(
+pub fn clone_repo<N: Write, D: Write>(
     flags: &Params,
     repo_input: &str,
     token: Option<&str>,
     temp_dir_path: &Path,
+    reporter: &mut ProgressReporter<N, D>,
 ) -> Result<PathBuf, git2::Error> {
-    if !flags.stdout {
-        println!("-> Cloning repository...");
-    }
+    reporter.phase("Cloning repository...").unwrap();
 
     let repo_url = if is_valid_url(repo_input) {
         repo_input.to_string()
@@ -44,23 +44,19 @@ pub fn clone_repo(
 
     if let Some(branch_name) = &flags.branch {
         builder.branch(branch_name);
-        if !flags.stdout {
-            println!("-> Checking out branch: {}", branch_name);
-        }
+        reporter
+            .phase_with_accent("Checking out branch: ", branch_name, "")
+            .unwrap();
     }
 
     match builder.clone(&repo_url, &repo_folder) {
         Ok(_) => {
-            if !flags.stdout {
-                println!(
-                    "-> Successfully cloned repository '{}'{}",
+            reporter
+                .clone_success(
                     repo_url.trim_end_matches(".git"),
-                    flags.branch.as_ref().map_or(String::new(), |b| format!(
-                        " (branch: {})",
-                        b
-                    ))
-                );
-            }
+                    flags.branch.as_deref(),
+                )
+                .unwrap();
             Ok(repo_folder)
         }
         Err(error) => Err(git2::Error::from_str(&clone_error_message(
@@ -111,24 +107,24 @@ pub fn is_valid_shorthand(input: &str) -> bool {
     re.is_match(input)
 }
 
-pub(crate) fn check_repository_at(
+pub(crate) fn check_repository_at<N: Write, D: Write>(
     path: &Path,
-    flags: &Params,
+    reporter: &mut ProgressReporter<N, D>,
 ) -> Result<(), git2::Error> {
     match Repository::discover(path) {
         Ok(repo) => {
-            if !flags.stdout {
-                let repo_path = repo.path().parent().unwrap().display();
-                let branch_name = get_current_branch_name(&repo)?;
-                println!(
-                    "-> Found a git repository in the current directory: '{}' (branch: {})",
-                    repo_path, branch_name
-                );
-            }
+            let repo_path =
+                repo.path().parent().unwrap().display().to_string();
+            let branch_name = get_current_branch_name(&repo)?;
+            reporter.repository_found(&repo_path, &branch_name).unwrap();
             Ok(())
         }
         Err(_) => {
-            eprintln!("X  No git repository found in the current directory.");
+            reporter
+                .always_visible_diagnostic(
+                    "X  No git repository found in the current directory.",
+                )
+                .unwrap();
             Err(git2::Error::from_str("Not a git repository"))
         }
     }

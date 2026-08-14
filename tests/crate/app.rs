@@ -44,8 +44,10 @@ fn test_local_config_overrides_global_config() {
     )
     .unwrap();
 
-    let params = load_config_from_paths(Some(&global_config), &local_config);
+    let (params, error) =
+        load_config_from_paths(Some(&global_config), &local_config);
 
+    assert!(error.is_none());
     assert_eq!(params.model.as_deref(), Some("gpt5"));
     assert!(params.line_numbers);
     assert!(params.gzip);
@@ -64,9 +66,11 @@ fn test_invalid_config_falls_back_to_defaults() {
     .unwrap();
     fs::write(&local_config, "model = [").unwrap();
 
-    let params = load_config_from_paths(Some(&global_config), &local_config);
+    let (params, error) =
+        load_config_from_paths(Some(&global_config), &local_config);
 
     assert_eq!(params, Params::default());
+    assert!(error.unwrap().contains("invalid"));
 }
 
 #[test]
