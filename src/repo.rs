@@ -115,8 +115,9 @@ pub(crate) fn check_repository_at<N: Write, D: Write>(
         Ok(repo) => {
             let repo_path =
                 repo.path().parent().unwrap().display().to_string();
-            let branch_name = get_current_branch_name(&repo)?;
-            reporter.repository_found(&repo_path, &branch_name).unwrap();
+            reporter.repository_found(&repo_path, || {
+                get_current_branch_name(&repo)
+            })?;
             Ok(())
         }
         Err(_) => {

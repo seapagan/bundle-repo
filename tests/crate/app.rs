@@ -70,7 +70,9 @@ fn test_invalid_config_falls_back_to_defaults() {
         load_config_from_paths(Some(&global_config), &local_config);
 
     assert_eq!(params, Params::default());
-    assert!(error.unwrap().contains("invalid"));
+    let error = error.unwrap();
+    assert!(error.contains("TOML parse error"));
+    assert!(error.contains("expected `]`"));
 }
 
 #[test]

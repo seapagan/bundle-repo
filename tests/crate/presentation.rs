@@ -37,8 +37,33 @@ fn test_plain_diagnostic_prefixes_preserve_exact_text() {
         "Error: unable to write output"
     );
     assert_eq!(
+        presentation.error("X  Failed to write XML"),
+        "X  Failed to write XML"
+    );
+    assert_eq!(
+        presentation.error("Xylophone diagnostic"),
+        "Xylophone diagnostic"
+    );
+    assert_eq!(
         presentation.error("unprefixed diagnostic"),
         "unprefixed diagnostic"
+    );
+}
+
+#[test]
+fn test_error_prefix_matching_uses_exact_markers() {
+    let presentation = Presentation::ansi16();
+
+    assert_eq!(
+        presentation.error("Xylophone diagnostic"),
+        "Xylophone diagnostic"
+    );
+    if std::env::var_os("NO_COLOR").is_some() {
+        return;
+    }
+    assert_eq!(
+        presentation.error("X  Failed to write XML"),
+        "\x1b[1;31mX  \x1b[0mFailed to write XML"
     );
 }
 

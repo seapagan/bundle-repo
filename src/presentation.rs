@@ -220,7 +220,7 @@ impl Presentation {
     }
 
     pub(crate) fn error(&self, message: &str) -> String {
-        self.diagnostic_prefix(message, &["Error:", "ERROR:", "X"])
+        self.diagnostic_prefix(message, &["Error:", "ERROR:", "X  "])
     }
 
     pub(crate) fn diagnostic_message(&self, message: &str) -> String {

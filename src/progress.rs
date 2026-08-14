@@ -72,12 +72,22 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         )
     }
 
-    pub(crate) fn repository_found(
+    pub(crate) fn repository_found<E, F>(
         &mut self,
         path: &str,
-        branch: &str,
-    ) -> io::Result<()> {
-        self.normal_line(&self.presentation.repository_found(path, branch))
+        branch: F,
+    ) -> Result<(), E>
+    where
+        F: FnOnce() -> Result<String, E>,
+    {
+        if !self.quiet {
+            let branch = branch()?;
+            self.normal_line(
+                &self.presentation.repository_found(path, &branch),
+            )
+            .unwrap();
+        }
+        Ok(())
     }
 
     pub(crate) fn summary(

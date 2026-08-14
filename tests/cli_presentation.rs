@@ -153,8 +153,27 @@ fn stderr_errors_use_stderr_colour_policy() {
     assert_eq!(coloured.status.code(), Some(4));
     assert!(!contains_bytes(&plain.stdout, b"X "));
     assert!(!contains_bytes(&coloured.stdout, b"X "));
-    assert!(contains_bytes(&coloured.stderr, b"\x1b[1;31mX\x1b[0m"));
+    assert!(contains_bytes(&coloured.stderr, b"\x1b[1;31mX  \x1b[0m"));
     assert_eq!(strip_sgr(&coloured.stderr), plain.stderr);
+}
+
+#[test]
+fn config_load_errors_use_the_error_prefix_style() {
+    let repository = initialize_repository("example content");
+    fs::write(repository.path().join(".bundlerepo.toml"), "model = [")
+        .unwrap();
+    let output = run_to_file(
+        repository.path(),
+        &output_path(repository.path()),
+        &[("FORCE_COLOR", "1")],
+    );
+
+    assert!(output.status.success());
+    assert!(contains_bytes(
+        &output.stderr,
+        b"\x1b[1;31mError:\x1b[0m loading config:"
+    ));
+    assert!(strip_sgr(&output.stderr).starts_with(b"Error: loading config:"));
 }
 
 #[test]
@@ -213,6 +232,25 @@ fn stdout_xml_never_contains_presentation() {
     assert!(!contains_bytes(&output.stdout, b"BundleRepo"));
     assert!(!contains_bytes(&output.stdout, b"Summary:"));
     assert!(output.stderr.is_empty());
+    for event in ParserConfig::new().create_reader(output.stdout.as_slice()) {
+        event.unwrap();
+    }
+}
+
+#[test]
+fn stdout_bundles_files_from_repository_with_unborn_head() {
+    let repository = tempfile::tempdir().unwrap();
+    Repository::init(repository.path()).unwrap();
+    fs::write(repository.path().join("example.txt"), "unborn content")
+        .unwrap();
+
+    let output = command(repository.path()).arg("--stdout").output().unwrap();
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(output.stdout.starts_with(b"<?xml version=\"1.0\""));
+    assert!(contains_bytes(&output.stdout, b"example.txt"));
+    assert!(contains_bytes(&output.stdout, b"unborn content"));
     for event in ParserConfig::new().create_reader(output.stdout.as_slice()) {
         event.unwrap();
     }

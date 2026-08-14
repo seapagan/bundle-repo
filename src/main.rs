@@ -246,7 +246,7 @@ fn main() {
 
     if let Some(error) = config_error {
         reporter
-            .error(&format!("Error loading config: {error}"))
+            .error(&format!("Error: loading config: {error}"))
             .unwrap();
     }
 
