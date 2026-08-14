@@ -87,10 +87,16 @@ fn test_success_report_names_file_and_metrics() {
 
     let (normal, diagnostic) = reporter.into_parts();
     let normal = String::from_utf8(normal).unwrap();
-    assert!(normal.starts_with("-> Successfully wrote XML to 'result.xml'\n"));
-    assert!(normal.contains("Total Files processed:  3"));
-    assert!(normal.contains("Total output size (bytes):  2048"));
-    assert!(normal.contains("Token count (GPT-4o):  512"));
+    assert_eq!(
+        normal,
+        concat!(
+            "-> Successfully wrote XML to 'result.xml'\n\n",
+            "Summary:\n",
+            "     Total Files processed:  3    \n",
+            " Total output size (bytes):  2048 \n",
+            "      Token count (GPT-4o):  512  \n\n"
+        )
+    );
     assert!(diagnostic.is_empty());
 }
 

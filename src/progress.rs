@@ -80,8 +80,12 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         self.normal_line(&self.presentation.repository_found(path, branch))
     }
 
-    pub(crate) fn summary(&mut self, table: &str) -> io::Result<()> {
-        self.normal_text(&self.presentation.summary(table))
+    pub(crate) fn summary(
+        &mut self,
+        table: &str,
+        values: &[String],
+    ) -> io::Result<()> {
+        self.normal_text(&self.presentation.summary(table, values))
     }
 
     pub(crate) fn conversion(

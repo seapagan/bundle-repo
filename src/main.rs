@@ -98,18 +98,23 @@ fn report_success<N: std::io::Write, D: std::io::Write>(
     }
 
     let (number_of_files, total_size, token_count) = metrics;
+    let summary_values = [
+        number_of_files.to_string(),
+        total_size.to_string(),
+        token_count.to_string(),
+    ];
     let summary_data = vec![
         SummaryTable {
             metric: "Total Files processed:".to_string(),
-            value: number_of_files.to_string(),
+            value: summary_values[0].clone(),
         },
         SummaryTable {
             metric: "Total output size (bytes):".to_string(),
-            value: total_size.to_string(),
+            value: summary_values[1].clone(),
         },
         SummaryTable {
             metric: format!("Token count ({}):", model.display_name()),
-            value: token_count.to_string(),
+            value: summary_values[2].clone(),
         },
     ];
 
@@ -119,7 +124,7 @@ fn report_success<N: std::io::Write, D: std::io::Write>(
         .with(Modify::list(Columns::first(), Alignment::right()))
         .to_string();
 
-    reporter.summary(&table)
+    reporter.summary(&table, &summary_values)
 }
 
 fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(

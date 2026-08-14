@@ -10,6 +10,7 @@ enum SemanticStyle {
     Warning,
     Error,
     Accent,
+    SummaryValue,
 }
 
 pub(crate) struct Presentation {
@@ -30,6 +31,18 @@ impl Presentation {
         let capabilities = TerminalCapabilities {
             is_terminal: false,
             color_level: ColorLevel::NoColor,
+        };
+        Self {
+            normal_target: RenderTarget::Capabilities(capabilities),
+            diagnostic_target: RenderTarget::Capabilities(capabilities),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn ansi16() -> Self {
+        let capabilities = TerminalCapabilities {
+            is_terminal: true,
+            color_level: ColorLevel::Ansi16,
         };
         Self {
             normal_target: RenderTarget::Capabilities(capabilities),
@@ -174,7 +187,28 @@ impl Presentation {
         )
     }
 
-    pub(crate) fn summary(&self, table: &str) -> String {
+    pub(crate) fn summary(&self, table: &str, values: &[String]) -> String {
+        let table = table
+            .lines()
+            .enumerate()
+            .map(|(index, row)| {
+                let Some(value) = values.get(index) else {
+                    return row.to_string();
+                };
+                let content_end = row.trim_end().len();
+                let (content, padding) = row.split_at(content_end);
+                content.strip_suffix(value).map_or_else(
+                    || row.to_string(),
+                    |label| {
+                        format!(
+                            "{label}{}{padding}",
+                            self.normal(value, SemanticStyle::SummaryValue)
+                        )
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         format!(
             "\n{}\n{table}\n\n",
             self.normal("Summary:", SemanticStyle::Heading)
@@ -227,6 +261,7 @@ impl Presentation {
         match style {
             SemanticStyle::Heading => text.cyan().bold(),
             SemanticStyle::Phase | SemanticStyle::Accent => text.cyan(),
+            SemanticStyle::SummaryValue => text.cyan().bold(),
             SemanticStyle::Success => text.green().bold(),
             SemanticStyle::Warning => text.yellow().bold(),
             SemanticStyle::Error => text.red().bold(),
