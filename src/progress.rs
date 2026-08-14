@@ -1,23 +1,26 @@
-use crate::text_processing::ConversionReport;
+use crate::{presentation::Presentation, text_processing::ConversionReport};
 use std::io::{self, Write};
 
 pub(crate) struct ProgressReporter<N, D> {
     normal: N,
     diagnostic: D,
     quiet: bool,
+    presentation: Presentation,
 }
 
 impl<N: Write, D: Write> ProgressReporter<N, D> {
+    #[cfg(test)]
     pub(crate) fn new(normal: N, diagnostic: D, quiet: bool) -> Self {
         Self {
             normal,
             diagnostic,
             quiet,
+            presentation: Presentation::plain(),
         }
     }
 
     pub(crate) fn phase(&mut self, message: &str) -> io::Result<()> {
-        self.normal_line(&format!("-> {message}"))
+        self.normal_line(&self.presentation.phase(message))
     }
 
     pub(crate) fn conversion(
@@ -25,15 +28,15 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         path: &str,
         report: &ConversionReport,
     ) -> io::Result<()> {
-        self.normal_line(&format!(
-            "-> Converted '{path}' from {} to UTF-8",
-            report.source_encoding
-        ))?;
+        self.normal_line(
+            &self.presentation.conversion(path, report.source_encoding),
+        )?;
         if report.had_replacements {
-            self.warning(&format!(
-                "warning: '{path}' decoded as {} with replacement characters; information was lost",
-                report.source_encoding
-            ))?;
+            self.warning_rendered(
+                &self
+                    .presentation
+                    .conversion_warning(path, report.source_encoding),
+            )?;
         }
         Ok(())
     }
@@ -42,9 +45,7 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
         &mut self,
         path: &str,
     ) -> io::Result<()> {
-        self.warning(&format!(
-            "warning: '{path}' contained malformed UTF-8 and was decoded with replacement characters; information was lost"
-        ))
+        self.warning_rendered(&self.presentation.malformed_utf8_warning(path))
     }
 
     pub(crate) fn normal_line(&mut self, message: &str) -> io::Result<()> {
@@ -62,6 +63,10 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
     }
 
     pub(crate) fn warning(&mut self, message: &str) -> io::Result<()> {
+        self.warning_rendered(&self.presentation.warning(message))
+    }
+
+    fn warning_rendered(&mut self, message: &str) -> io::Result<()> {
         if !self.quiet {
             writeln!(self.diagnostic, "{message}")?;
         }
@@ -69,12 +74,35 @@ impl<N: Write, D: Write> ProgressReporter<N, D> {
     }
 
     pub(crate) fn error(&mut self, message: &str) -> io::Result<()> {
-        writeln!(self.diagnostic, "{message}")
+        writeln!(self.diagnostic, "{}", self.presentation.error(message))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn always_visible_diagnostic(
+        &mut self,
+        message: &str,
+    ) -> io::Result<()> {
+        writeln!(
+            self.diagnostic,
+            "{}",
+            self.presentation.diagnostic_message(message)
+        )
     }
 
     #[cfg(test)]
     pub(crate) fn into_parts(self) -> (N, D) {
         (self.normal, self.diagnostic)
+    }
+}
+
+impl ProgressReporter<std::io::Stdout, std::io::Stderr> {
+    pub(crate) fn terminal(quiet: bool) -> Self {
+        Self {
+            normal: std::io::stdout(),
+            diagnostic: std::io::stderr(),
+            quiet,
+            presentation: Presentation::terminal(),
+        }
     }
 }
 
@@ -124,11 +152,17 @@ mod tests {
             .unwrap();
         reporter.error("genuine error").unwrap();
         reporter
+            .always_visible_diagnostic("Warning: visible diagnostic")
+            .unwrap();
+        reporter
             .malformed_utf8_replacement("malformed.txt")
             .unwrap();
 
         let (normal, diagnostic) = reporter.into_parts();
         assert!(normal.is_empty());
-        assert_eq!(diagnostic, b"genuine error\n");
+        assert_eq!(
+            diagnostic,
+            b"genuine error\nWarning: visible diagnostic\n"
+        );
     }
 }

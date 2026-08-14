@@ -20,6 +20,7 @@ use tokenizer::{Model, TokenizerType};
 mod cli;
 mod embedded;
 mod filelist;
+mod presentation;
 mod progress;
 mod repo;
 mod structs;
@@ -245,11 +246,7 @@ fn main() {
         cli::show_header();
     }
 
-    let mut reporter = progress::ProgressReporter::new(
-        std::io::stdout(),
-        std::io::stderr(),
-        params.stdout,
-    );
+    let mut reporter = progress::ProgressReporter::terminal(params.stdout);
 
     match run_application(
         &args,
