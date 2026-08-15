@@ -23,7 +23,7 @@ pub use destination::{effective_output_file, validate_output_options};
 
 #[cfg(test)]
 use destination::{
-    create_output_file, destination_phase, effective_output_file_with_home,
+    create_output_file, effective_output_file_with_home, report_destination,
     validate_output_options_for, write_stdout,
 };
 #[cfg(test)]

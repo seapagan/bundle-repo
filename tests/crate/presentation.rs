@@ -29,12 +29,20 @@ fn test_plain_diagnostic_prefixes_preserve_exact_text() {
     let presentation = Presentation::plain();
 
     assert_eq!(
+        presentation.warning("warning: Invalid regex pattern"),
+        "warning: Invalid regex pattern"
+    );
+    assert_eq!(
         presentation.warning("Warning: Invalid regex pattern"),
         "Warning: Invalid regex pattern"
     );
     assert_eq!(
         presentation.error("Error: unable to write output"),
         "Error: unable to write output"
+    );
+    assert_eq!(
+        presentation.error("ERROR: unable to write output"),
+        "ERROR: unable to write output"
     );
     assert_eq!(
         presentation.error("X  Failed to write XML"),
@@ -51,7 +59,7 @@ fn test_plain_diagnostic_prefixes_preserve_exact_text() {
 }
 
 #[test]
-fn test_error_prefix_matching_uses_exact_markers() {
+fn test_diagnostic_prefixes_use_warning_and_error_styles() {
     let presentation = Presentation::ansi16();
 
     assert_eq!(
@@ -61,6 +69,14 @@ fn test_error_prefix_matching_uses_exact_markers() {
     if std::env::var_os("NO_COLOR").is_some() {
         return;
     }
+    assert_eq!(
+        presentation.warning("Warning: Invalid regex pattern"),
+        "\x1b[1;33mWarning:\x1b[0m Invalid regex pattern"
+    );
+    assert_eq!(
+        presentation.error("Error: unable to write output"),
+        "\x1b[1;31mError:\x1b[0m unable to write output"
+    );
     assert_eq!(
         presentation.error("X  Failed to write XML"),
         "\x1b[1;31mX  \x1b[0mFailed to write XML"

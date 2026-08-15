@@ -88,10 +88,23 @@ fn write_destination<N: Write, D: Write>(
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> io::Result<u64> {
+    report_destination(flags, reporter)?;
+
     if flags.clipboard {
-        reporter.phase("Copying result to clipboard")?;
         let content_length = xml_content.len();
         return write_clipboard(&xml_content, content_length, timings);
+    }
+
+    let output_path = effective_output_file(flags);
+    write_file(flags, &output_path, xml_content.into_bytes(), timings)
+}
+
+pub(super) fn report_destination<N: Write, D: Write>(
+    flags: &Params,
+    reporter: &mut ProgressReporter<N, D>,
+) -> io::Result<()> {
+    if flags.clipboard {
+        return reporter.phase("Copying result to clipboard");
     }
 
     let output_path = effective_output_file(flags);
@@ -100,12 +113,7 @@ fn write_destination<N: Write, D: Write>(
     } else {
         "Writing result to '"
     };
-    reporter.phase_with_accent(
-        action,
-        &output_path.display().to_string(),
-        "'",
-    )?;
-    write_file(flags, &output_path, xml_content.into_bytes(), timings)
+    reporter.phase_with_accent(action, &output_path.display().to_string(), "'")
 }
 
 fn write_clipboard(
@@ -153,23 +161,6 @@ pub(super) fn create_output_file(output_path: &Path) -> io::Result<File> {
             ),
         )
     })
-}
-
-#[cfg(test)]
-pub(super) fn destination_phase(flags: &Params) -> String {
-    if flags.clipboard {
-        "Copying result to clipboard".to_string()
-    } else if flags.gzip {
-        format!(
-            "Compressing and writing result to '{}'",
-            effective_output_file(flags).display()
-        )
-    } else {
-        format!(
-            "Writing result to '{}'",
-            effective_output_file(flags).display()
-        )
-    }
 }
 
 pub fn effective_output_file(flags: &Params) -> PathBuf {

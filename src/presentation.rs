@@ -216,11 +216,19 @@ impl Presentation {
     }
 
     pub(crate) fn warning(&self, message: &str) -> String {
-        self.diagnostic_prefix(message, &["warning:", "Warning:"])
+        self.diagnostic_prefix(
+            message,
+            &["warning:", "Warning:"],
+            SemanticStyle::Warning,
+        )
     }
 
     pub(crate) fn error(&self, message: &str) -> String {
-        self.diagnostic_prefix(message, &["Error:", "ERROR:", "X  "])
+        self.diagnostic_prefix(
+            message,
+            &["Error:", "ERROR:", "X  "],
+            SemanticStyle::Error,
+        )
     }
 
     pub(crate) fn diagnostic_message(&self, message: &str) -> String {
@@ -239,18 +247,16 @@ impl Presentation {
         Self::styled(text, style).render(self.diagnostic_target)
     }
 
-    fn diagnostic_prefix(&self, message: &str, prefixes: &[&str]) -> String {
+    fn diagnostic_prefix(
+        &self,
+        message: &str,
+        prefixes: &[&str],
+        style: SemanticStyle,
+    ) -> String {
         prefixes
             .iter()
             .find_map(|prefix| {
                 message.strip_prefix(prefix).map(|remainder| {
-                    let style = if prefix.starts_with('w')
-                        || prefix.starts_with('W')
-                    {
-                        SemanticStyle::Warning
-                    } else {
-                        SemanticStyle::Error
-                    };
                     format!("{}{remainder}", self.diagnostic(prefix, style))
                 })
             })
