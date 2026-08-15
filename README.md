@@ -41,10 +41,12 @@ Summary:
        Token count (GPT-5):  21,344,532
 ```
 
-Summary grouping and decimal separators follow the effective numeric locale.
-Digit glyphs remain ASCII `0`–`9`. Explicit `C`/`POSIX` locales remain
-ungrouped, and unavailable or invalid locale data falls back to deterministic
-English formatting.
+On Unix, summary grouping and decimal separators follow the POSIX numeric
+locale selected by `LC_ALL`, then `LC_NUMERIC`, then `LANG`. On Apple targets,
+the native system locale is used when none of those variables supplies a
+locale. Windows uses only the native system locale. Digit glyphs remain ASCII
+`0`–`9`. Explicit `C`/`POSIX` locales remain ungrouped, and unavailable or
+invalid locale data falls back to deterministic English formatting.
 
 - [Compatibility](#compatibility)
 - [Features](#features)
