@@ -47,6 +47,11 @@ chardetng = "1.0.0"
 dirs-next = "2.0.0"
 encoding_rs = "0.8.33"
 flate2 = "1.1.9"
+icu_decimal = { version = "2.3.0", features = ["alloc"] }
+icu_locale_core = "2.3.0"
+
+[target.'cfg(any(windows, target_vendor = "apple"))'.dependencies]
+sys-locale = "0.3.2"
 
 [features]
 default = []
