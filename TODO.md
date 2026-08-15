@@ -66,9 +66,6 @@
   store information about the repository, such as the name, description, extra
   instructions, etc. Would use the TOML config file.
 - ignore `dotfiles` by default, but allow the user to include them if they want.
-- Add secret-checking to the tool, to ensure that no secrets are included in the
-  output XML file. Hopefully this can be done with a library, but may need to
-  write our own checks.
 - Generalise the XML `<repository_skipped>` / `<skipped>` mechanism introduced by
   secret scanning so other unrepresentable or unavailable repository items can
   be reported explicitly instead of failing silently or aborting the whole
