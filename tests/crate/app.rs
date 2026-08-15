@@ -371,9 +371,104 @@ fn test_application_runs_local_repository_and_reports_success() {
     let (normal, diagnostic) = reporter.into_parts();
     let normal = String::from_utf8(normal).unwrap();
     assert!(normal.contains("-> Loading tokenizer for GPT-5"));
+    assert!(normal.contains("-> Loading secret scanner"));
     assert!(normal.contains("-> Reading files and generating XML"));
     assert!(normal.contains("-> Successfully wrote XML to"));
     assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_application_redacts_secrets_by_default() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("secret.txt"),
+        format!("token = {secret}"),
+    )
+    .unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = fs::read_to_string(output_path).unwrap();
+    assert!(!xml.contains(&secret));
+    assert!(xml.contains("[Secret removed: GitHub Personal Access Token]"));
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(!String::from_utf8(normal).unwrap().contains(&secret));
+    assert!(!String::from_utf8(diagnostic).unwrap().contains(&secret));
+    assert_eq!(timings.text_files_scanned, 1);
+    assert!(timings.findings_redacted >= 1);
+}
+
+#[test]
+fn test_application_secret_scan_opt_out_restores_original_content() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("secret.txt"),
+        format!("token = {secret}"),
+    )
+    .unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        secret_scan: false,
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program", "--no-secret-scan"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    assert!(fs::read_to_string(output_path).unwrap().contains(&secret));
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(
+        !String::from_utf8(normal)
+            .unwrap()
+            .contains("Loading secret scanner")
+    );
+    assert!(diagnostic.is_empty());
+    assert_eq!(timings.secret_scanner_load, std::time::Duration::ZERO);
+    assert_eq!(timings.secret_scanning, std::time::Duration::ZERO);
+    assert_eq!(timings.text_files_scanned, 0);
+}
+
+#[test]
+fn test_secret_scanner_error_has_stable_exit_code_and_generic_message() {
+    let error = ApplicationError::SecretScanner(
+        "secret scanner returned an invalid span".to_string(),
+    );
+    assert_eq!(error.exit_code(), 5);
+    assert_eq!(
+        error.to_string(),
+        "Error: secret scanning failed: secret scanner returned an invalid span"
+    );
 }
 
 #[test]

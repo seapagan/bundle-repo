@@ -201,6 +201,7 @@ fn serialize_single_file(content: &[u8], line_numbers: bool) -> Vec<u8> {
         &flags,
         &tree,
         temp_dir.path(),
+        None,
         &mut reporter,
         &mut ProcessingTimings::default(),
     )

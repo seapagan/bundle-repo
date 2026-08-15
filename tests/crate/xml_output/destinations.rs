@@ -79,8 +79,14 @@ fn test_destination_phase_messages_cover_all_destinations() {
 #[test]
 fn test_gzip_file_round_trip_and_metrics() {
     let temp_dir = tempdir().unwrap();
-    fs::write(temp_dir.path().join("test.txt"), "Test content").unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("test.txt"),
+        format!("token = {secret}"),
+    )
+    .unwrap();
     let tokenizer = Model::GPT4.to_tokenizer().unwrap();
+    let scanner = SecretScanner::from_bundled().unwrap();
 
     let file_tree = || {
         let mut tree = FileTree::default();
@@ -93,11 +99,34 @@ fn test_gzip_file_round_trip_and_metrics() {
         output_file: Some(plain_path.to_string_lossy().into_owned()),
         ..Params::default()
     };
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = ProcessingTimings::default();
     let (_, plain_size, plain_tokens) =
-        output_repo_as_xml(&plain, file_tree(), temp_dir.path(), &tokenizer)
-            .unwrap();
+        output_repo_as_xml_with_scanner_and_timings(
+            &plain,
+            file_tree(),
+            temp_dir.path(),
+            &tokenizer,
+            "GPT-4",
+            Some(&scanner),
+            &mut reporter,
+            &mut timings,
+        )
+        .unwrap();
     let expected_xml = fs::read(&plain_path).unwrap();
     assert_eq!(plain_size, expected_xml.len() as u64);
+    assert!(
+        !expected_xml
+            .windows(secret.len())
+            .any(|window| window == secret.as_bytes())
+    );
+    assert!(
+        expected_xml
+            .windows(b"[Secret removed: GitHub Personal Access Token]".len())
+            .any(|window| {
+                window == b"[Secret removed: GitHub Personal Access Token]"
+            })
+    );
 
     for level in [1, 9] {
         let requested_path =
@@ -109,13 +138,18 @@ fn test_gzip_file_round_trip_and_metrics() {
             ..Params::default()
         };
 
-        let (_, compressed_size, compressed_tokens) = output_repo_as_xml(
-            &compressed,
-            file_tree(),
-            temp_dir.path(),
-            &tokenizer,
-        )
-        .unwrap();
+        let (_, compressed_size, compressed_tokens) =
+            output_repo_as_xml_with_scanner_and_timings(
+                &compressed,
+                file_tree(),
+                temp_dir.path(),
+                &tokenizer,
+                "GPT-4",
+                Some(&scanner),
+                &mut reporter,
+                &mut timings,
+            )
+            .unwrap();
         let effective_path = format!("{}.gz", requested_path.display());
         let gzip_bytes = fs::read(&effective_path).unwrap();
         assert_eq!(&gzip_bytes[..2], &[0x1f, 0x8b]);
@@ -339,6 +373,7 @@ fn test_all_testable_destinations_use_canonical_serialization_bytes() {
         &Params::default(),
         &expected_tree,
         temp_dir.path(),
+        None,
         &mut reporter,
         &mut ProcessingTimings::default(),
     )

@@ -24,6 +24,7 @@ mod number_format;
 mod presentation;
 mod progress;
 mod repo;
+mod secret_scanning;
 mod structs;
 #[cfg(test)]
 #[path = "../tests/crate/test_fixtures.rs"]
@@ -154,6 +155,7 @@ enum ApplicationError {
     Clone(git2::Error),
     CurrentDirectory(git2::Error),
     Output(std::io::Error),
+    SecretScanner(String),
 }
 
 impl ApplicationError {
@@ -163,6 +165,7 @@ impl ApplicationError {
             Self::Clone(_) => 2,
             Self::CurrentDirectory(_) => 3,
             Self::Output(_) => 4,
+            Self::SecretScanner(_) => 5,
         }
     }
 }
@@ -177,6 +180,9 @@ impl fmt::Display for ApplicationError {
             Self::Output(error) => {
                 write!(formatter, "X  Failed to write XML: {error}")
             }
+            Self::SecretScanner(error) => {
+                write!(formatter, "Error: secret scanning failed: {error}")
+            }
         }
     }
 }
@@ -190,6 +196,7 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
 ) -> Result<(), ApplicationError> {
     let (model, tokenizer) = prepare_tokenizer(params, reporter, timings)
         .map_err(ApplicationError::Tokenizer)?;
+    let scanner = prepare_secret_scanner(params, reporter, timings)?;
     let temp_dir = tempdir().unwrap();
 
     let repo_folder = if let Some(ref repo_input) = args.repo {
@@ -216,16 +223,17 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
     let file_tree = filelist::group_files_by_directory(file_list);
 
     reporter.phase("Reading files and generating XML").unwrap();
-    let metrics = xml_output::output_repo_as_xml_with_timings(
+    let metrics = xml_output::output_repo_as_xml_with_scanner_and_timings(
         params,
         file_tree,
         &repo_folder,
         &tokenizer,
         model.display_name(),
+        scanner.as_ref(),
         reporter,
         timings,
     )
-    .map_err(ApplicationError::Output)?;
+    .map_err(classify_output_error)?;
     if params.stdout {
         return Ok(());
     }
@@ -233,6 +241,34 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
     report_success(params, model, metrics, &formatter, reporter).unwrap();
 
     Ok(())
+}
+
+fn prepare_secret_scanner<N: std::io::Write, D: std::io::Write>(
+    params: &Params,
+    reporter: &mut progress::ProgressReporter<N, D>,
+    timings: &mut timings::ProcessingTimings,
+) -> Result<Option<secret_scanning::SecretScanner>, ApplicationError> {
+    if !params.secret_scan {
+        return Ok(None);
+    }
+    reporter.phase("Loading secret scanner").unwrap();
+    let started = Instant::now();
+    let scanner = secret_scanning::SecretScanner::from_bundled();
+    timings.secret_scanner_load += started.elapsed();
+    scanner
+        .map(Some)
+        .map_err(|error| ApplicationError::SecretScanner(error.to_string()))
+}
+
+fn classify_output_error(error: std::io::Error) -> ApplicationError {
+    let secret_scanner_error = error
+        .get_ref()
+        .is_some_and(|source| source.is::<secret_scanning::SecretScanError>());
+    if secret_scanner_error {
+        ApplicationError::SecretScanner(error.to_string())
+    } else {
+        ApplicationError::Output(error)
+    }
 }
 
 fn main() {

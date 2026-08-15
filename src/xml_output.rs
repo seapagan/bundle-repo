@@ -1,5 +1,6 @@
 use crate::filelist::{FileTree, FolderNode};
 use crate::progress::ProgressReporter;
+use crate::secret_scanning::SecretScanner;
 #[cfg(test)]
 use crate::structs::DEFAULT_OUTPUT_FILE;
 use crate::structs::Params;
@@ -58,6 +59,7 @@ pub fn output_repo_as_xml(
     )
 }
 
+#[cfg(test)]
 pub fn output_repo_as_xml_with_timings<N: Write, D: Write>(
     flags: &Params,
     file_tree: FileTree,
@@ -67,13 +69,30 @@ pub fn output_repo_as_xml_with_timings<N: Write, D: Write>(
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> Result<(usize, u64, usize), std::io::Error> {
+    output_repo_as_xml_with_scanner_and_timings(
+        flags, file_tree, base_path, tokenizer, model_name, None, reporter,
+        timings,
+    )
+}
+
+pub fn output_repo_as_xml_with_scanner_and_timings<N: Write, D: Write>(
+    flags: &Params,
+    file_tree: FileTree,
+    base_path: &Path,
+    tokenizer: &TokenizerType,
+    model_name: &str,
+    scanner: Option<&SecretScanner>,
+    reporter: &mut ProgressReporter<N, D>,
+    timings: &mut ProcessingTimings,
+) -> Result<(usize, u64, usize), std::io::Error> {
     validate_output_options(flags)?;
     let classification_before = timings.file_classification_and_read;
     let utf8_before = timings.utf8_validation_or_transcode;
+    let secret_scanning_before = timings.secret_scanning;
     let xml_start = Instant::now();
 
     let xml_bytes = serialize_repository_xml(
-        flags, &file_tree, base_path, reporter, timings,
+        flags, &file_tree, base_path, scanner, reporter, timings,
     )?;
     let classification_elapsed = timings
         .file_classification_and_read
@@ -83,10 +102,15 @@ pub fn output_repo_as_xml_with_timings<N: Write, D: Write>(
         .utf8_validation_or_transcode
         .checked_sub(utf8_before)
         .unwrap_or_default();
+    let secret_scanning_elapsed = timings
+        .secret_scanning
+        .checked_sub(secret_scanning_before)
+        .unwrap_or_default();
     timings.xml_generation += xml_start
         .elapsed()
         .checked_sub(classification_elapsed)
         .and_then(|duration| duration.checked_sub(utf8_elapsed))
+        .and_then(|duration| duration.checked_sub(secret_scanning_elapsed))
         .unwrap_or_default();
 
     finish_output(
@@ -104,6 +128,7 @@ fn serialize_repository_xml<N: Write, D: Write>(
     flags: &Params,
     file_tree: &FileTree,
     base_path: &Path,
+    scanner: Option<&SecretScanner>,
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> io::Result<Vec<u8>> {
@@ -130,6 +155,7 @@ fn serialize_repository_xml<N: Write, D: Write>(
         &file_tree.file_paths,
         base_path,
         flags,
+        scanner,
         reporter,
         timings,
     )?;
@@ -266,6 +292,7 @@ fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
     file_paths: &[String],
     base_path: &Path,
     flags: &Params,
+    scanner: Option<&SecretScanner>,
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> Result<(), std::io::Error> {
@@ -283,7 +310,8 @@ fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
         let file_size = metadata(&full_path)?.len();
         match read_classify_and_decode(&full_path, flags.utf8, timings) {
             Ok(ProcessedFile::Text(decoded)) => write_processed_text_file(
-                writer, file_path, file_size, decoded, flags, reporter,
+                writer, file_path, file_size, decoded, flags, scanner,
+                reporter, timings,
             )?,
             Ok(ProcessedFile::Binary(_)) => {
                 write_placeholder_file_entry(
@@ -319,13 +347,24 @@ fn write_processed_text_file<W: Write, N: Write, D: Write>(
     size: u64,
     mut decoded: DecodedText,
     flags: &Params,
+    scanner: Option<&SecretScanner>,
     reporter: &mut ProgressReporter<N, D>,
+    timings: &mut ProcessingTimings,
 ) -> io::Result<()> {
     if let Some(ref conversion) = decoded.conversion {
         reporter.conversion(path, conversion)?;
     }
     if decoded.utf8_had_replacements {
         reporter.malformed_utf8_replacement(path)?;
+    }
+    if let Some(scanner) = scanner {
+        let started = Instant::now();
+        let redaction = scanner.redact_text(&decoded.text);
+        timings.secret_scanning += started.elapsed();
+        timings.text_files_scanned += 1;
+        let redaction = redaction.map_err(io::Error::other)?;
+        timings.findings_redacted += redaction.findings;
+        decoded.text = redaction.text;
     }
     if let Some(invalid) = first_invalid_xml10_char(&decoded.text) {
         let code_point = format_code_point(invalid.character);
