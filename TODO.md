@@ -23,6 +23,11 @@
   tasks, strict CI validation, and deployment together when the documentation
   site feature is ready.
 - allow to work with non-git repositories (local only obviously).
+- treat Git repositories with an unborn `HEAD` as valid working-tree inputs in
+  normal operation as well as `--stdout`, while retaining sensible
+  repository-found status. A focused fix should consider the symbolic initial
+  branch when available and preserve existing normal-branch and detached-HEAD
+  behaviour.
 - extend the model-aware token counting backends beyond the current GPT,
   DeepSeek, and GLM support. Future work includes official local tokenizers for
   Gemini, Claude, Qwen, and other provider families where suitable tokenizer

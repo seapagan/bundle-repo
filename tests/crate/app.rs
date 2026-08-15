@@ -44,8 +44,10 @@ fn test_local_config_overrides_global_config() {
     )
     .unwrap();
 
-    let params = load_config_from_paths(Some(&global_config), &local_config);
+    let (params, error) =
+        load_config_from_paths(Some(&global_config), &local_config);
 
+    assert!(error.is_none());
     assert_eq!(params.model.as_deref(), Some("gpt5"));
     assert!(params.line_numbers);
     assert!(params.gzip);
@@ -64,9 +66,13 @@ fn test_invalid_config_falls_back_to_defaults() {
     .unwrap();
     fs::write(&local_config, "model = [").unwrap();
 
-    let params = load_config_from_paths(Some(&global_config), &local_config);
+    let (params, error) =
+        load_config_from_paths(Some(&global_config), &local_config);
 
     assert_eq!(params, Params::default());
+    let error = error.unwrap();
+    assert!(error.contains("TOML parse error"));
+    assert!(error.contains("expected `]`"));
 }
 
 #[test]
@@ -83,10 +89,16 @@ fn test_success_report_names_file_and_metrics() {
 
     let (normal, diagnostic) = reporter.into_parts();
     let normal = String::from_utf8(normal).unwrap();
-    assert!(normal.starts_with("-> Successfully wrote XML to 'result.xml'\n"));
-    assert!(normal.contains("Total Files processed:  3"));
-    assert!(normal.contains("Total output size (bytes):  2048"));
-    assert!(normal.contains("Token count (GPT-4o):  512"));
+    assert_eq!(
+        normal,
+        concat!(
+            "-> Successfully wrote XML to 'result.xml'\n\n",
+            "Summary:\n",
+            "     Total Files processed:  3    \n",
+            " Total output size (bytes):  2048 \n",
+            "      Token count (GPT-4o):  512  \n\n"
+        )
+    );
     assert!(diagnostic.is_empty());
 }
 

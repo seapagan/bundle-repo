@@ -40,24 +40,40 @@ fn test_quiet_reporter_keeps_plain_and_gzip_stdout_bytes_clean() {
 
 #[test]
 fn test_destination_phase_messages_cover_all_destinations() {
-    let file = Params {
-        output_file: Some("result.xml".to_string()),
-        ..Params::default()
-    };
-    assert_eq!(destination_phase(&file), "Writing result to 'result.xml'");
+    let cases = [
+        (
+            Params {
+                output_file: Some("result.xml".to_string()),
+                ..Params::default()
+            },
+            "-> Writing result to 'result.xml'\n",
+        ),
+        (
+            Params {
+                output_file: Some("result.xml".to_string()),
+                gzip: true,
+                ..Params::default()
+            },
+            "-> Compressing and writing result to 'result.xml.gz'\n",
+        ),
+        (
+            Params {
+                clipboard: true,
+                ..Params::default()
+            },
+            "-> Copying result to clipboard\n",
+        ),
+    ];
 
-    let gzip = Params { gzip: true, ..file };
-    assert_eq!(
-        destination_phase(&gzip),
-        "Compressing and writing result to 'result.xml.gz'"
-    );
+    for (params, expected) in cases {
+        let mut reporter =
+            ProgressReporter::new(Vec::new(), Vec::new(), false);
+        report_destination(&params, &mut reporter).unwrap();
 
-    let clipboard = Params {
-        clipboard: true,
-        gzip: false,
-        ..Params::default()
-    };
-    assert_eq!(destination_phase(&clipboard), "Copying result to clipboard");
+        let (normal, diagnostic) = reporter.into_parts();
+        assert_eq!(String::from_utf8(normal).unwrap(), expected);
+        assert!(diagnostic.is_empty());
+    }
 }
 
 #[test]

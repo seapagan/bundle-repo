@@ -23,7 +23,7 @@ pub use destination::{effective_output_file, validate_output_options};
 
 #[cfg(test)]
 use destination::{
-    create_output_file, destination_phase, effective_output_file_with_home,
+    create_output_file, effective_output_file_with_home, report_destination,
     validate_output_options_for, write_stdout,
 };
 #[cfg(test)]
@@ -295,11 +295,12 @@ fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
             }
             Err(err) => {
                 let error_message = err.to_string();
-                reporter.error(&format!(
-                    "Error reading file '{}': {}",
-                    full_path.display(),
-                    error_message
-                ))?;
+                reporter.always_visible_error_with_accent(
+                    "Error",
+                    " reading file '",
+                    &full_path.display().to_string(),
+                    &format!("': {error_message}"),
+                )?;
                 write_read_error_file_entry(
                     writer,
                     file_path,
@@ -328,9 +329,14 @@ fn write_processed_text_file<W: Write, N: Write, D: Write>(
     }
     if let Some(invalid) = first_invalid_xml10_char(&decoded.text) {
         let code_point = format_code_point(invalid.character);
-        reporter.warning(&format!(
-            "warning: '{path}' content was omitted because XML 1.0 cannot represent character {code_point}"
-        ))?;
+        reporter.warning_with_accent(
+            "warning:",
+            " '",
+            path,
+            &format!(
+                "' content was omitted because XML 1.0 cannot represent character {code_point}"
+            ),
+        )?;
         let comment = format!(
             "Text content omitted: XML 1.0 cannot represent character {}",
             code_point,

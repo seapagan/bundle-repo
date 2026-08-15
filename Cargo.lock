@@ -217,6 +217,7 @@ dependencies = [
  "arboard",
  "chardetng",
  "clap",
+ "colored_text",
  "config",
  "dirs-next",
  "encoding_rs",
@@ -351,6 +352,12 @@ name = "colorchoice"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fd119d74b830634cea2a0f58bbd0d54540518a14397557951e79340abc28c0"
+
+[[package]]
+name = "colored_text"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "745f8a64d62b40a725042e502af674abe0fb85726224780f1b2ff70552a4914c"
 
 [[package]]
 name = "compact_str"

@@ -48,6 +48,7 @@ Summary:
   - [Output](#output)
     - [Output to File](#output-to-file)
     - [Output to stdout](#output-to-stdout)
+    - [Terminal colour](#terminal-colour)
     - [Compress with gzip](#compress-with-gzip)
     - [Copy to Clipboard](#copy-to-clipboard)
     - [Add line numbers](#add-line-numbers)
@@ -231,6 +232,18 @@ This will print the XML output to the terminal, which can then be redirected to
 a file or piped to another application.
 
 In this case, the `--file` flag is ignored and no file is written to disk.
+
+#### Terminal colour
+
+BundleRepo uses restrained semantic colour for human-facing status messages.
+It selects colour from each output stream's terminal capabilities and leaves
+redirected presentation plain by default. Set `NO_COLOR` to disable colour or
+`FORCE_COLOR` to request it for captured output. BundleRepo has no CLI colour
+flag.
+
+BundleRepo does not write terminal styling into generated files, clipboard
+data, or XML and gzip bytes from `--stdout`. Structured phase-timing records
+stay plain.
 
 #### Compress with gzip
 
