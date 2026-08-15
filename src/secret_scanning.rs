@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt;
 
 const CONTENT_SCAN_PATH: &str = "repository-content";
+const PATH_COMPONENT_SCAN_PATH: &str = "repository-path-component";
 const MAX_LABEL_LEN: usize = 80;
 
 #[cfg(test)]
@@ -17,6 +18,50 @@ pub(crate) struct SecretScanner {
 pub(crate) struct SecretRedaction {
     pub(crate) text: String,
     pub(crate) findings: usize,
+    pub(crate) secret_type: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SkippedItemKind {
+    File,
+    Subtree,
+}
+
+impl SkippedItemKind {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Subtree => "subtree",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SkipReason {
+    SecretInPath { secret_type: Option<String> },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SkippedRepositoryItem {
+    pub(crate) kind: SkippedItemKind,
+    pub(crate) safe_path: String,
+    pub(crate) reason: SkipReason,
+}
+
+pub(crate) struct RepositoryPathScan {
+    pub(crate) included: Vec<String>,
+    pub(crate) skipped: Vec<SkippedRepositoryItem>,
+    pub(crate) findings: usize,
+}
+
+impl RepositoryPathScan {
+    pub(crate) fn unscanned(paths: Vec<String>) -> Self {
+        Self {
+            included: paths,
+            skipped: Vec::new(),
+            findings: 0,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -72,8 +117,75 @@ impl SecretScanner {
         &self,
         text: &str,
     ) -> Result<SecretRedaction, SecretScanError> {
-        let result =
-            self.scanner.scan_content_detailed(CONTENT_SCAN_PATH, text);
+        self.redact(CONTENT_SCAN_PATH, text)
+    }
+
+    pub(crate) fn scan_repository_paths(
+        &self,
+        paths: Vec<String>,
+    ) -> Result<RepositoryPathScan, SecretScanError> {
+        let mut included = Vec::with_capacity(paths.len());
+        let mut skipped = Vec::new();
+        let mut findings = 0;
+
+        for path in paths {
+            if covered_by_subtree(&path, &skipped) {
+                continue;
+            }
+            let components = path.split('/').collect::<Vec<_>>();
+            let mut safe_components = Vec::with_capacity(components.len());
+            let mut affected = None;
+            for (index, component) in components.iter().enumerate() {
+                let redaction =
+                    self.redact(PATH_COMPONENT_SCAN_PATH, component)?;
+                findings += redaction.findings;
+                safe_components.push(redaction.text);
+                if redaction.findings > 0 {
+                    affected = Some((index, redaction.secret_type));
+                    break;
+                }
+            }
+
+            let Some((index, secret_type)) = affected else {
+                included.push(path);
+                continue;
+            };
+            let kind = if index + 1 == components.len() {
+                SkippedItemKind::File
+            } else {
+                SkippedItemKind::Subtree
+            };
+            let pending = PendingSkipped {
+                original_prefix: components[..=index].join("/"),
+                item: SkippedRepositoryItem {
+                    kind,
+                    safe_path: safe_components.join("/"),
+                    reason: SkipReason::SecretInPath { secret_type },
+                },
+            };
+            record_skipped(&mut skipped, pending);
+        }
+
+        let mut skipped = skipped
+            .into_iter()
+            .map(|pending| pending.item)
+            .collect::<Vec<_>>();
+        skipped.sort_by(|left, right| {
+            skipped_sort_key(left).cmp(&skipped_sort_key(right))
+        });
+        Ok(RepositoryPathScan {
+            included,
+            skipped,
+            findings,
+        })
+    }
+
+    fn redact(
+        &self,
+        scanner_path: &str,
+        text: &str,
+    ) -> Result<SecretRedaction, SecretScanError> {
+        let result = self.scanner.scan_content_detailed(scanner_path, text);
         if result.findings_truncated {
             return Err(SecretScanError::TruncatedFindings);
         }
@@ -91,8 +203,14 @@ impl SecretScanner {
                 rule_id: finding.rule_id,
             })
             .collect();
-        let text = redact_findings(text, spans)?;
-        Ok(SecretRedaction { text, findings })
+        let ranges = normalized_ranges(text, spans)?;
+        let secret_type = common_secret_type(&ranges);
+        let text = redact_ranges(text, ranges);
+        Ok(SecretRedaction {
+            text,
+            findings,
+            secret_type,
+        })
     }
 
     #[cfg(test)]
@@ -104,6 +222,46 @@ impl SecretScanner {
             .map(|finding| finding.rule_id)
             .collect()
     }
+}
+
+struct PendingSkipped {
+    original_prefix: String,
+    item: SkippedRepositoryItem,
+}
+
+fn covered_by_subtree(path: &str, skipped: &[PendingSkipped]) -> bool {
+    skipped.iter().any(|pending| {
+        pending.item.kind == SkippedItemKind::Subtree
+            && path_is_at_or_below(path, &pending.original_prefix)
+    })
+}
+
+fn record_skipped(skipped: &mut Vec<PendingSkipped>, pending: PendingSkipped) {
+    if pending.item.kind == SkippedItemKind::Subtree {
+        skipped.retain(|existing| {
+            !path_is_at_or_below(
+                &existing.original_prefix,
+                &pending.original_prefix,
+            )
+        });
+    }
+    skipped.push(pending);
+}
+
+fn path_is_at_or_below(path: &str, prefix: &str) -> bool {
+    path == prefix
+        || path
+            .strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn skipped_sort_key(
+    item: &SkippedRepositoryItem,
+) -> (&str, &str, Option<&str>) {
+    let secret_type = match &item.reason {
+        SkipReason::SecretInPath { secret_type } => secret_type.as_deref(),
+    };
+    (item.safe_path.as_str(), item.kind.as_str(), secret_type)
 }
 
 struct SafeFinding {
@@ -119,13 +277,18 @@ struct RedactionRange {
     secret_type: Option<String>,
 }
 
+#[cfg(test)]
 fn redact_findings(
     text: &str,
     findings: Vec<SafeFinding>,
 ) -> Result<String, SecretScanError> {
     let ranges = normalized_ranges(text, findings)?;
+    Ok(redact_ranges(text, ranges))
+}
+
+fn redact_ranges(text: &str, ranges: Vec<RedactionRange>) -> String {
     if ranges.is_empty() {
-        return Ok(text.to_string());
+        return text.to_string();
     }
 
     let mut output = String::with_capacity(text.len());
@@ -137,7 +300,15 @@ fn redact_findings(
         cursor = range.end;
     }
     output.push_str(&text[cursor..]);
-    Ok(output)
+    output
+}
+
+fn common_secret_type(ranges: &[RedactionRange]) -> Option<String> {
+    let first = ranges.first()?.secret_type.as_ref()?;
+    ranges
+        .iter()
+        .all(|range| range.secret_type.as_ref() == Some(first))
+        .then(|| first.clone())
 }
 
 fn normalized_ranges(

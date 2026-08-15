@@ -220,12 +220,14 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
         params.exclude.as_deref(),
         reporter,
     );
-    let file_tree = filelist::group_files_by_directory(file_list);
+    let path_scan =
+        scan_repository_paths(file_list, scanner.as_ref(), reporter, timings)?;
+    let file_tree = filelist::group_files_by_directory(path_scan.included);
 
     reporter.phase("Reading files and generating XML").unwrap();
-    let metrics = xml_output::output_repo_as_xml_with_scanner_and_timings(
+    let metrics = xml_output::output_repo_as_xml_with_inventory_and_timings(
         params,
-        file_tree,
+        xml_output::RepositoryInventory::new(file_tree, path_scan.skipped),
         &repo_folder,
         &tokenizer,
         model.display_name(),
@@ -241,6 +243,28 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
     report_success(params, model, metrics, &formatter, reporter).unwrap();
 
     Ok(())
+}
+
+fn scan_repository_paths<N: std::io::Write, D: std::io::Write>(
+    file_list: Vec<String>,
+    scanner: Option<&secret_scanning::SecretScanner>,
+    reporter: &mut progress::ProgressReporter<N, D>,
+    timings: &mut timings::ProcessingTimings,
+) -> Result<secret_scanning::RepositoryPathScan, ApplicationError> {
+    let Some(scanner) = scanner else {
+        return Ok(secret_scanning::RepositoryPathScan::unscanned(file_list));
+    };
+    reporter
+        .phase("Scanning repository paths for secrets")
+        .unwrap();
+    let started = Instant::now();
+    let scan = scanner.scan_repository_paths(file_list);
+    timings.secret_scanning += started.elapsed();
+    let scan = scan
+        .map_err(|error| ApplicationError::SecretScanner(error.to_string()))?;
+    timings.findings_redacted += scan.findings;
+    timings.path_items_skipped += scan.skipped.len();
+    Ok(scan)
 }
 
 fn prepare_secret_scanner<N: std::io::Write, D: std::io::Write>(

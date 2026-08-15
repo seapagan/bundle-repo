@@ -183,6 +183,89 @@ fn test_large_content_is_scanned_through_the_end() {
 }
 
 #[test]
+fn test_repository_paths_omit_files_and_deduplicate_subtrees() {
+    let secret = github_pat();
+    let root_file = format!("{secret}.env");
+    let nested_file = format!("safe/{secret}.txt");
+    let subtree_file = format!("fixtures/{secret}/first.txt");
+    let subtree_descendant = format!("fixtures/{secret}/nested/second.txt");
+    let scan = scanner()
+        .scan_repository_paths(vec![
+            subtree_descendant,
+            "safe/included.txt".to_string(),
+            nested_file,
+            subtree_file,
+            root_file,
+        ])
+        .unwrap();
+
+    assert_eq!(scan.included, ["safe/included.txt"]);
+    assert_eq!(scan.skipped.len(), 3);
+    assert_eq!(
+        scan.skipped
+            .iter()
+            .map(|item| (item.kind, item.safe_path.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                SkippedItemKind::File,
+                "[Secret removed: GitHub Personal Access Token].env",
+            ),
+            (
+                SkippedItemKind::Subtree,
+                "fixtures/[Secret removed: GitHub Personal Access Token]",
+            ),
+            (
+                SkippedItemKind::File,
+                "safe/[Secret removed: GitHub Personal Access Token].txt",
+            ),
+        ]
+    );
+    assert!(scan.findings >= 3);
+    assert!(
+        scan.skipped
+            .iter()
+            .all(|item| !item.safe_path.contains(&secret))
+    );
+}
+
+#[test]
+fn test_repository_path_with_conflicting_types_omits_type() {
+    let github = github_pat();
+    let gitlab = gitlab_pat();
+    let path = format!("fixtures/{github}-{gitlab}.txt");
+
+    let scan = scanner().scan_repository_paths(vec![path]).unwrap();
+
+    assert!(scan.included.is_empty());
+    assert_eq!(scan.skipped.len(), 1);
+    let item = &scan.skipped[0];
+    assert_eq!(item.kind, SkippedItemKind::File);
+    assert!(!item.safe_path.contains(&github));
+    assert!(!item.safe_path.contains(&gitlab));
+    assert!(matches!(
+        item.reason,
+        SkipReason::SecretInPath { secret_type: None }
+    ));
+}
+
+#[test]
+fn test_repository_path_diagnostics_are_deterministic() {
+    let secret = github_pat();
+    let paths = vec![
+        format!("z/{secret}.txt"),
+        "included.txt".to_string(),
+        format!("a/{secret}/child.txt"),
+    ];
+
+    let first = scanner().scan_repository_paths(paths.clone()).unwrap();
+    let second = scanner().scan_repository_paths(paths).unwrap();
+
+    assert_eq!(first.included, second.included);
+    assert_eq!(first.skipped, second.skipped);
+}
+
+#[test]
 fn test_repeated_scans_produce_identical_output() {
     let secret = github_pat();
     let text = format!("token = {secret}");

@@ -1,4 +1,5 @@
 use super::*;
+use crate::xml_output::destination::write_destination_with_clipboard;
 
 #[test]
 fn test_quiet_reporter_keeps_plain_and_gzip_stdout_bytes_clean() {
@@ -76,6 +77,29 @@ fn test_destination_phase_messages_cover_all_destinations() {
     }
 }
 
+fn output_scanned_file(
+    params: &Params,
+    base_path: &Path,
+    tokenizer: &TokenizerType,
+    scanner: &SecretScanner,
+) -> (u64, usize) {
+    let mut tree = FileTree::default();
+    tree.file_paths.push("test.txt".to_string());
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let (_, size, tokens) = output_repo_as_xml_with_scanner_and_timings(
+        params,
+        tree,
+        base_path,
+        tokenizer,
+        "GPT-4",
+        Some(scanner),
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+    (size, tokens)
+}
+
 #[test]
 fn test_gzip_file_round_trip_and_metrics() {
     let temp_dir = tempdir().unwrap();
@@ -88,44 +112,20 @@ fn test_gzip_file_round_trip_and_metrics() {
     let tokenizer = Model::GPT4.to_tokenizer().unwrap();
     let scanner = SecretScanner::from_bundled().unwrap();
 
-    let file_tree = || {
-        let mut tree = FileTree::default();
-        tree.file_paths.push("test.txt".to_string());
-        tree
-    };
-
     let plain_path = temp_dir.path().join("plain.xml");
     let plain = Params {
         output_file: Some(plain_path.to_string_lossy().into_owned()),
         ..Params::default()
     };
-    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), false);
-    let mut timings = ProcessingTimings::default();
-    let (_, plain_size, plain_tokens) =
-        output_repo_as_xml_with_scanner_and_timings(
-            &plain,
-            file_tree(),
-            temp_dir.path(),
-            &tokenizer,
-            "GPT-4",
-            Some(&scanner),
-            &mut reporter,
-            &mut timings,
-        )
-        .unwrap();
+    let (plain_size, plain_tokens) =
+        output_scanned_file(&plain, temp_dir.path(), &tokenizer, &scanner);
     let expected_xml = fs::read(&plain_path).unwrap();
+    let expected_text = std::str::from_utf8(&expected_xml).unwrap();
     assert_eq!(plain_size, expected_xml.len() as u64);
+    assert!(!expected_text.contains(&secret));
     assert!(
-        !expected_xml
-            .windows(secret.len())
-            .any(|window| window == secret.as_bytes())
-    );
-    assert!(
-        expected_xml
-            .windows(b"[Secret removed: GitHub Personal Access Token]".len())
-            .any(|window| {
-                window == b"[Secret removed: GitHub Personal Access Token]"
-            })
+        expected_text
+            .contains("[Secret removed: GitHub Personal Access Token]")
     );
 
     for level in [1, 9] {
@@ -138,18 +138,12 @@ fn test_gzip_file_round_trip_and_metrics() {
             ..Params::default()
         };
 
-        let (_, compressed_size, compressed_tokens) =
-            output_repo_as_xml_with_scanner_and_timings(
-                &compressed,
-                file_tree(),
-                temp_dir.path(),
-                &tokenizer,
-                "GPT-4",
-                Some(&scanner),
-                &mut reporter,
-                &mut timings,
-            )
-            .unwrap();
+        let (compressed_size, compressed_tokens) = output_scanned_file(
+            &compressed,
+            temp_dir.path(),
+            &tokenizer,
+            &scanner,
+        );
         let effective_path = format!("{}.gz", requested_path.display());
         let gzip_bytes = fs::read(&effective_path).unwrap();
         assert_eq!(&gzip_bytes[..2], &[0x1f, 0x8b]);
@@ -372,6 +366,7 @@ fn test_all_testable_destinations_use_canonical_serialization_bytes() {
     let expected = serialize_repository_xml(
         &Params::default(),
         &expected_tree,
+        &[],
         temp_dir.path(),
         None,
         &mut reporter,
@@ -423,6 +418,56 @@ fn test_all_testable_destinations_use_canonical_serialization_bytes() {
 
     let clipboard_text = String::from_utf8(expected.clone()).unwrap();
     assert_eq!(clipboard_text.as_bytes(), expected);
+}
+
+#[test]
+fn test_clipboard_handoff_receives_safe_canonical_string() {
+    let temp_dir = tempdir().unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("secret.txt"),
+        format!("token = {secret}"),
+    )
+    .unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push("secret.txt".to_string());
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+    let safe_xml = String::from_utf8(xml).unwrap();
+    let params = Params {
+        clipboard: true,
+        ..Params::default()
+    };
+    let mut captured = None;
+
+    let size = write_destination_with_clipboard(
+        &params,
+        safe_xml.clone(),
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+        |content, content_length, _| {
+            captured = Some(content.to_string());
+            Ok(content_length as u64)
+        },
+    )
+    .unwrap();
+
+    assert_eq!(captured.as_deref(), Some(safe_xml.as_str()));
+    assert_eq!(size, safe_xml.len() as u64);
+    assert!(!safe_xml.contains(&secret));
+    assert!(
+        safe_xml.contains("[Secret removed: GitHub Personal Access Token]")
+    );
 }
 
 #[test]

@@ -1,6 +1,8 @@
 use crate::filelist::{FileTree, FolderNode};
 use crate::progress::ProgressReporter;
-use crate::secret_scanning::SecretScanner;
+use crate::secret_scanning::{
+    SecretScanner, SkipReason, SkippedRepositoryItem,
+};
 #[cfg(test)]
 use crate::structs::DEFAULT_OUTPUT_FILE;
 use crate::structs::Params;
@@ -36,6 +38,20 @@ use std::path::PathBuf;
 struct InvalidXml10Char {
     byte_index: usize,
     character: char,
+}
+
+pub(crate) struct RepositoryInventory {
+    file_tree: FileTree,
+    skipped: Vec<SkippedRepositoryItem>,
+}
+
+impl RepositoryInventory {
+    pub(crate) fn new(
+        file_tree: FileTree,
+        skipped: Vec<SkippedRepositoryItem>,
+    ) -> Self {
+        Self { file_tree, skipped }
+    }
 }
 
 /// Function to output the repository structure and files list to XML
@@ -75,6 +91,7 @@ pub fn output_repo_as_xml_with_timings<N: Write, D: Write>(
     )
 }
 
+#[cfg(test)]
 pub fn output_repo_as_xml_with_scanner_and_timings<N: Write, D: Write>(
     flags: &Params,
     file_tree: FileTree,
@@ -85,14 +102,40 @@ pub fn output_repo_as_xml_with_scanner_and_timings<N: Write, D: Write>(
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> Result<(usize, u64, usize), std::io::Error> {
+    output_repo_as_xml_with_inventory_and_timings(
+        flags,
+        RepositoryInventory::new(file_tree, Vec::new()),
+        base_path,
+        tokenizer,
+        model_name,
+        scanner,
+        reporter,
+        timings,
+    )
+}
+
+pub(crate) fn output_repo_as_xml_with_inventory_and_timings<
+    N: Write,
+    D: Write,
+>(
+    flags: &Params,
+    inventory: RepositoryInventory,
+    base_path: &Path,
+    tokenizer: &TokenizerType,
+    model_name: &str,
+    scanner: Option<&SecretScanner>,
+    reporter: &mut ProgressReporter<N, D>,
+    timings: &mut ProcessingTimings,
+) -> Result<(usize, u64, usize), std::io::Error> {
     validate_output_options(flags)?;
+    let RepositoryInventory { file_tree, skipped } = inventory;
     let classification_before = timings.file_classification_and_read;
     let utf8_before = timings.utf8_validation_or_transcode;
     let secret_scanning_before = timings.secret_scanning;
     let xml_start = Instant::now();
 
     let xml_bytes = serialize_repository_xml(
-        flags, &file_tree, base_path, scanner, reporter, timings,
+        flags, &file_tree, &skipped, base_path, scanner, reporter, timings,
     )?;
     let classification_elapsed = timings
         .file_classification_and_read
@@ -127,12 +170,14 @@ pub fn output_repo_as_xml_with_scanner_and_timings<N: Write, D: Write>(
 fn serialize_repository_xml<N: Write, D: Write>(
     flags: &Params,
     file_tree: &FileTree,
+    skipped: &[SkippedRepositoryItem],
     base_path: &Path,
     scanner: Option<&SecretScanner>,
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> io::Result<Vec<u8>> {
     validate_file_tree_xml_metadata(file_tree)?;
+    validate_skipped_xml_metadata(skipped)?;
 
     let mut writer = EmitterConfig::new()
         .perform_indent(true)
@@ -150,6 +195,7 @@ fn serialize_repository_xml<N: Write, D: Write>(
         .map_err(map_xml_error)?;
     write_file_summary(&mut writer, flags)?;
     write_repository_structure(&mut writer, &file_tree.folder_node)?;
+    write_repository_skipped(&mut writer, skipped)?;
     write_repository_files_to_xml(
         &mut writer,
         &file_tree.file_paths,
@@ -165,6 +211,19 @@ fn serialize_repository_xml<N: Write, D: Write>(
     write_characters(&mut writer, "\n", "document terminator")?;
 
     Ok(writer.into_inner().into_inner())
+}
+
+fn validate_skipped_xml_metadata(
+    skipped: &[SkippedRepositoryItem],
+) -> io::Result<()> {
+    for item in skipped {
+        validate_xml_attribute(&item.safe_path, "skipped repository path")?;
+        let SkipReason::SecretInPath { secret_type } = &item.reason;
+        if let Some(secret_type) = secret_type {
+            validate_xml_attribute(secret_type, "skipped secret type")?;
+        }
+    }
+    Ok(())
 }
 
 fn first_invalid_xml10_char(value: &str) -> Option<InvalidXml10Char> {
@@ -254,6 +313,39 @@ fn write_repository_structure<W: Write>(
         "This node contains the hierarchical structure of the repository's files and folders.",
     )?;
     write_folder_to_xml(writer, folder_node)?;
+    writer.write(XmlEvent::end_element()).map_err(map_xml_error)
+}
+
+fn write_repository_skipped<W: Write>(
+    writer: &mut EventWriter<W>,
+    skipped: &[SkippedRepositoryItem],
+) -> io::Result<()> {
+    if skipped.is_empty() {
+        return Ok(());
+    }
+    writer
+        .write(XmlEvent::start_element("repository_skipped"))
+        .map_err(map_xml_error)?;
+    write_text_element(
+        writer,
+        "summary",
+        "Repository items omitted because their canonical path could not be emitted safely.",
+    )?;
+    for item in skipped {
+        let SkipReason::SecretInPath { secret_type } = &item.reason;
+        let element = XmlEvent::start_element("skipped")
+            .attr("kind", item.kind.as_str())
+            .attr("reason", "secret-in-path")
+            .attr("path", &item.safe_path);
+        let element = match secret_type {
+            Some(secret_type) => element.attr("secret-type", secret_type),
+            None => element,
+        };
+        writer.write(element).map_err(map_xml_error)?;
+        writer
+            .write(XmlEvent::end_element())
+            .map_err(map_xml_error)?;
+    }
     writer.write(XmlEvent::end_element()).map_err(map_xml_error)
 }
 
@@ -487,7 +579,7 @@ fn write_file_summary<W: Write>(
     write_text_element(
         writer,
         "file_format",
-        "The content is organized as follows:\n1. This summary section\n2. Repository structure: A hierarchical listing of all folders and files in the repository.\n3. Repository files: Each file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent.",
+        "The content is organized as follows:\n1. This summary section\n2. Repository structure: A hierarchical listing of safely emitted folders and files.\n3. Repository skipped (optional): Safe diagnostics for files or subtrees omitted because a secret was detected in their path.\n4. Repository files: Each emitted file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent.",
     )?;
 
     let line_number_instruction = if flags.line_numbers {
@@ -507,7 +599,7 @@ fn write_file_summary<W: Write>(
     write_text_element(
         writer,
         "notes",
-        "- Some files may have been excluded based on .gitignore rules and bundlerepo's\n  configuration.\n- Binary files and text that XML 1.0 cannot represent are not included in this\n  packed representation. Please refer to the Repository Structure section for\n  a complete list of file paths, including omitted files.",
+        "- Some files may have been excluded based on .gitignore rules and bundlerepo's\n  configuration.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.",
     )?;
     write_text_element(
         writer,

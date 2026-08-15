@@ -18,6 +18,7 @@ pub(crate) struct ProcessingTimings {
     pub(crate) transcoded_bytes: u64,
     pub(crate) text_files_scanned: usize,
     pub(crate) findings_redacted: usize,
+    pub(crate) path_items_skipped: usize,
 }
 
 impl ProcessingTimings {
@@ -38,10 +39,11 @@ impl ProcessingTimings {
         )?;
         writeln!(
             sink,
-            "BUNDLEREPO_TIMING phase=secret_scanning nanos={} text_files_scanned={} findings_redacted={}",
+            "BUNDLEREPO_TIMING phase=secret_scanning nanos={} text_files_scanned={} findings_redacted={} path_items_skipped={}",
             self.secret_scanning.as_nanos(),
             self.text_files_scanned,
             self.findings_redacted,
+            self.path_items_skipped,
         )?;
         self.write_duration(
             sink,

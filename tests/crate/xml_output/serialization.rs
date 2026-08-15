@@ -283,6 +283,7 @@ fn test_xml_forbidden_text_warning_respects_quiet_reporter() {
         serialize_repository_xml(
             &Params::default(),
             &tree,
+            &[],
             temp_dir.path(),
             None,
             &mut reporter,
@@ -336,6 +337,7 @@ fn test_xml_sensitive_metadata_round_trips_in_structure_and_file_entries() {
     let xml = serialize_repository_xml(
         &Params::default(),
         &tree,
+        &[],
         temp_dir.path(),
         None,
         &mut reporter,
@@ -378,6 +380,7 @@ fn test_parse_file_selects_repository_content_entry_on_path_collision() {
     let xml = serialize_repository_xml(
         &Params::default(),
         &tree,
+        &[],
         temp_dir.path(),
         None,
         &mut reporter,
@@ -409,6 +412,7 @@ fn test_nested_repository_structure_round_trips_with_hierarchy() {
     let xml = serialize_repository_xml(
         &Params::default(),
         &tree,
+        &[],
         temp_dir.path(),
         None,
         &mut reporter,
@@ -447,6 +451,7 @@ fn test_lf_and_cr_metadata_round_trip_exactly() {
     let xml = serialize_repository_xml(
         &Params::default(),
         &tree,
+        &[],
         temp_dir.path(),
         None,
         &mut reporter,

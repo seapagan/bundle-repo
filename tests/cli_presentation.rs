@@ -261,6 +261,28 @@ fn stdout_redacts_secrets_without_stderr_leakage() {
 }
 
 #[test]
+fn stdout_omits_secret_bearing_paths_without_leakage() {
+    let secret = synthetic_github_pat();
+    let repository = initialize_repository("safe content");
+    fs::write(
+        repository.path().join(format!("fixture-{secret}.txt")),
+        "unsafe path",
+    )
+    .unwrap();
+    let output = command(repository.path()).arg("--stdout").output().unwrap();
+
+    assert!(output.status.success());
+    assert!(!contains_bytes(&output.stdout, secret.as_bytes()));
+    assert!(!contains_bytes(&output.stderr, secret.as_bytes()));
+    assert!(contains_bytes(&output.stdout, b"<repository_skipped>"));
+    assert!(contains_bytes(&output.stdout, b"reason=\"secret-in-path\""));
+    assert!(output.stderr.is_empty());
+    for event in ParserConfig::new().create_reader(output.stdout.as_slice()) {
+        event.unwrap();
+    }
+}
+
+#[test]
 fn stdout_bundles_files_from_repository_with_unborn_head() {
     let repository = tempfile::tempdir().unwrap();
     Repository::init(repository.path()).unwrap();

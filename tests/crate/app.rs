@@ -372,6 +372,7 @@ fn test_application_runs_local_repository_and_reports_success() {
     let normal = String::from_utf8(normal).unwrap();
     assert!(normal.contains("-> Loading tokenizer for GPT-5"));
     assert!(normal.contains("-> Loading secret scanner"));
+    assert!(normal.contains("-> Scanning repository paths for secrets"));
     assert!(normal.contains("-> Reading files and generating XML"));
     assert!(normal.contains("-> Successfully wrote XML to"));
     assert!(diagnostic.is_empty());
@@ -421,8 +422,9 @@ fn test_application_secret_scan_opt_out_restores_original_content() {
     let temp_dir = tempdir().unwrap();
     initialize_repository(temp_dir.path());
     let secret = crate::secret_scanning::synthetic_github_pat();
+    let secret_path = format!("{secret}.txt");
     fs::write(
-        temp_dir.path().join("secret.txt"),
+        temp_dir.path().join(&secret_path),
         format!("token = {secret}"),
     )
     .unwrap();
@@ -446,17 +448,59 @@ fn test_application_secret_scan_opt_out_restores_original_content() {
     )
     .unwrap();
 
-    assert!(fs::read_to_string(output_path).unwrap().contains(&secret));
+    let xml = fs::read_to_string(output_path).unwrap();
+    assert!(xml.contains(&secret));
+    assert!(xml.contains(&format!("path=\"{secret_path}\"")));
     let (normal, diagnostic) = reporter.into_parts();
-    assert!(
-        !String::from_utf8(normal)
-            .unwrap()
-            .contains("Loading secret scanner")
-    );
+    let normal = String::from_utf8(normal).unwrap();
+    assert!(!normal.contains("Loading secret scanner"));
+    assert!(!normal.contains("Scanning repository paths for secrets"));
+    assert_eq!(timings.path_items_skipped, 0);
     assert!(diagnostic.is_empty());
     assert_eq!(timings.secret_scanner_load, std::time::Duration::ZERO);
     assert_eq!(timings.secret_scanning, std::time::Duration::ZERO);
     assert_eq!(timings.text_files_scanned, 0);
+}
+
+#[test]
+fn test_application_omits_secret_bearing_paths() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    fs::write(temp_dir.path().join("included.txt"), "safe").unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(temp_dir.path().join(format!("{secret}.txt")), "unsafe")
+        .unwrap();
+    let secret_folder = temp_dir.path().join(format!("nested-{secret}"));
+    fs::create_dir(&secret_folder).unwrap();
+    fs::write(secret_folder.join("child.txt"), "unsafe").unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = fs::read_to_string(output_path).unwrap();
+    assert!(!xml.contains(&secret));
+    assert!(xml.contains("<repository_skipped>"));
+    assert!(xml.contains("kind=\"file\""));
+    assert!(xml.contains("kind=\"subtree\""));
+    assert_eq!(timings.path_items_skipped, 2);
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(!String::from_utf8(normal).unwrap().contains(&secret));
+    assert!(!String::from_utf8(diagnostic).unwrap().contains(&secret));
 }
 
 #[test]
