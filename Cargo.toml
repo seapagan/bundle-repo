@@ -42,6 +42,7 @@ arboard = { version = "3.4.1", default-features = false, features = [
   "windows-sys",
 ] }
 serde = { version = "1.0.214", features = ["derive"] }
+secrets_scanner = { version = "=0.2.3", default-features = false }
 config = "0.15.0"
 chardetng = "1.0.0"
 dirs-next = "2.0.0"

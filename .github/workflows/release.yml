@@ -103,6 +103,7 @@ jobs:
           mkdir -p "$archive_root/licenses"
           cp "target/$BINARY_TARGET/release/$BINARY_NAME" "$archive_root/"
           cp resources/tokenizers/licenses/*.txt "$archive_root/licenses/"
+          cp resources/licenses/*.txt "$archive_root/licenses/"
           tar -czf "$ARCHIVE_NAME" -C "$archive_root" .
 
       - name: Prepare binary (Windows)
@@ -119,6 +120,8 @@ jobs:
             "target/$env:BINARY_TARGET/release/$env:BINARY_NAME.exe" `
             -Destination $ArchiveRoot
           Copy-Item "resources/tokenizers/licenses/*.txt" `
+            -Destination (Join-Path $ArchiveRoot "licenses")
+          Copy-Item "resources/licenses/*.txt" `
             -Destination (Join-Path $ArchiveRoot "licenses")
           Compress-Archive -Path "$ArchiveRoot/*" `
             -DestinationPath $env:ARCHIVE_NAME
