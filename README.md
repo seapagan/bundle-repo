@@ -36,10 +36,14 @@ Pack a local or remote Git Repository to XML for LLM Consumption.
 -> Successfully wrote XML to 'packed-repo.xml'
 
 Summary:
-     Total Files processed:  13
- Total output size (bytes):  79068
-       Token count (GPT-5):  18766
+     Total Files processed:  57
+ Total output size (bytes):  61,997,276 (59.1 MiB)
+       Token count (GPT-5):  21,344,532
 ```
+
+Summary numbers follow the effective numeric locale; explicit `C`/`POSIX`
+locales remain ungrouped, and unavailable or invalid locale data falls back to
+deterministic English formatting.
 
 - [Compatibility](#compatibility)
 - [Features](#features)
