@@ -328,3 +328,45 @@ fn test_utf8_flag_values() {
     let result = Flags::try_parse_from(["program", "-u", "-U"]);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_secret_scan_flag_values() {
+    let enabled = Flags::parse_from(["program", "--secret-scan"]);
+    assert!(enabled.secret_scan);
+    assert!(!enabled.no_secret_scan);
+
+    let disabled = Flags::parse_from(["program", "--no-secret-scan"]);
+    assert!(!disabled.secret_scan);
+    assert!(disabled.no_secret_scan);
+
+    let default = Flags::parse_from(["program"]);
+    assert!(!default.secret_scan);
+    assert!(!default.no_secret_scan);
+}
+
+#[test]
+fn test_secret_scan_flags_conflict() {
+    assert!(
+        Flags::try_parse_from([
+            "program",
+            "--secret-scan",
+            "--no-secret-scan",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
+fn test_secret_scan_help_has_long_flags_only() {
+    use clap::CommandFactory;
+
+    let help = Flags::command().render_long_help().to_string();
+    assert!(help.contains("--secret-scan"));
+    assert!(help.contains("--no-secret-scan"));
+
+    for short in ['S', 'n'] {
+        assert!(
+            Flags::try_parse_from(["program", &format!("-{short}")]).is_err()
+        );
+    }
+}

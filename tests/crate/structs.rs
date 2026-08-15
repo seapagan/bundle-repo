@@ -105,6 +105,26 @@ fn test_missing_values() {
 }
 
 #[test]
+fn test_secret_scan_defaults_on() {
+    assert!(Params::default().secret_scan);
+}
+
+#[test]
+fn test_secret_scan_loads_from_config() {
+    for (configured, expected) in [("true", true), ("false", false)] {
+        let config = Config::builder()
+            .add_source(File::from_str(
+                &format!("secret_scan = {configured}"),
+                FileFormat::Toml,
+            ))
+            .build()
+            .unwrap();
+        let params: Params = config.into();
+        assert_eq!(params.secret_scan, expected);
+    }
+}
+
+#[test]
 fn test_params_default() {
     let params = Params::default();
     assert_eq!(params.output_file, Some("packed-repo.xml".to_string()));

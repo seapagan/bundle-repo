@@ -525,6 +525,29 @@ fn test_default_utf8_when_no_config_or_flags() {
 }
 
 #[test]
+fn test_secret_scan_precedence() {
+    let cases: [(&str, &[&str], bool); 6] = [
+        ("", &["program"], true),
+        ("secret_scan = false", &["program"], false),
+        ("secret_scan = true", &["program"], true),
+        ("secret_scan = false", &["program", "--secret-scan"], true),
+        (
+            "secret_scan = true",
+            &["program", "--no-secret-scan"],
+            false,
+        ),
+        ("", &["program", "--no-secret-scan"], false),
+    ];
+
+    for (toml, arguments, expected) in cases {
+        let config = create_test_config(toml);
+        let args = Flags::parse_from(arguments);
+        let params = Params::from_args_and_config(&args, config);
+        assert_eq!(params.secret_scan, expected);
+    }
+}
+
+#[test]
 fn test_utf8_precedence_controls_utf16_conversion() {
     let temp_dir = tempdir().unwrap();
     let fixture_path = temp_dir.path().join("utf-16le.txt");

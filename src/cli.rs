@@ -144,6 +144,22 @@ pub struct Flags {
         conflicts_with = "utf8",
     )]
     pub no_utf8: bool,
+
+    #[arg(
+        long = "secret-scan",
+        action = ArgAction::SetTrue,
+        conflicts_with = "no_secret_scan",
+        help = "Enable secret scanning, overriding configuration"
+    )]
+    pub secret_scan: bool,
+
+    #[arg(
+        long = "no-secret-scan",
+        action = ArgAction::SetTrue,
+        conflicts_with = "secret_scan",
+        help = "Disable secret scanning, overriding configuration"
+    )]
+    pub no_secret_scan: bool,
 }
 
 pub fn version_info() -> String {
