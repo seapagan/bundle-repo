@@ -41,9 +41,10 @@ Summary:
        Token count (GPT-5):  21,344,532
 ```
 
-Summary numbers follow the effective numeric locale; explicit `C`/`POSIX`
-locales remain ungrouped, and unavailable or invalid locale data falls back to
-deterministic English formatting.
+Summary grouping and decimal separators follow the effective numeric locale.
+Digit glyphs remain ASCII `0`–`9`. Explicit `C`/`POSIX` locales remain
+ungrouped, and unavailable or invalid locale data falls back to deterministic
+English formatting.
 
 - [Compatibility](#compatibility)
 - [Features](#features)
