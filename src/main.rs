@@ -20,6 +20,7 @@ use tokenizer::{Model, TokenizerType};
 mod cli;
 mod embedded;
 mod filelist;
+mod number_format;
 mod presentation;
 mod progress;
 mod repo;
@@ -80,6 +81,7 @@ fn report_success<N: std::io::Write, D: std::io::Write>(
     params: &Params,
     model: Model,
     metrics: (usize, u64, usize),
+    formatter: &number_format::NumberFormatter,
     reporter: &mut progress::ProgressReporter<N, D>,
 ) -> std::io::Result<()> {
     if params.stdout {
@@ -99,9 +101,9 @@ fn report_success<N: std::io::Write, D: std::io::Write>(
 
     let (number_of_files, total_size, token_count) = metrics;
     let summary_values = [
-        number_of_files.to_string(),
-        total_size.to_string(),
-        token_count.to_string(),
+        formatter.format_count(number_of_files),
+        formatter.format_output_size(total_size, params.gzip),
+        formatter.format_count(token_count),
     ];
     let summary_data = vec![
         SummaryTable {
@@ -224,7 +226,11 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
         timings,
     )
     .map_err(ApplicationError::Output)?;
-    report_success(params, model, metrics, reporter).unwrap();
+    if params.stdout {
+        return Ok(());
+    }
+    let formatter = number_format::NumberFormatter::system();
+    report_success(params, model, metrics, &formatter, reporter).unwrap();
 
     Ok(())
 }

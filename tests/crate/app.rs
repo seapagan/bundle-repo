@@ -83,9 +83,16 @@ fn test_success_report_names_file_and_metrics() {
     };
     let mut reporter =
         progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let formatter = number_format::NumberFormatter::from_locale("en-US");
 
-    report_success(&params, Model::GPT4o, (3, 2048, 512), &mut reporter)
-        .unwrap();
+    report_success(
+        &params,
+        Model::GPT4o,
+        (57, 61_997_276, 21_344_532),
+        &formatter,
+        &mut reporter,
+    )
+    .unwrap();
 
     let (normal, diagnostic) = reporter.into_parts();
     let normal = String::from_utf8(normal).unwrap();
@@ -94,9 +101,9 @@ fn test_success_report_names_file_and_metrics() {
         concat!(
             "-> Successfully wrote XML to 'result.xml'\n\n",
             "Summary:\n",
-            "     Total Files processed:  3    \n",
-            " Total output size (bytes):  2048 \n",
-            "      Token count (GPT-4o):  512  \n\n"
+            "     Total Files processed:  57                    \n",
+            " Total output size (bytes):  61,997,276 (59.1 MiB) \n",
+            "      Token count (GPT-4o):  21,344,532            \n\n"
         )
     );
     assert!(diagnostic.is_empty());
@@ -110,8 +117,10 @@ fn test_success_report_names_clipboard_destination() {
     };
     let mut reporter =
         progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let formatter = number_format::NumberFormatter::from_locale("en-US");
 
-    report_success(&params, Model::GPT5, (1, 2, 3), &mut reporter).unwrap();
+    report_success(&params, Model::GPT5, (1, 2, 3), &formatter, &mut reporter)
+        .unwrap();
 
     let (normal, diagnostic) = reporter.into_parts();
     assert!(normal.starts_with(b"-> Successfully copied XML to clipboard\n"));
@@ -126,11 +135,42 @@ fn test_success_report_is_silent_for_stdout_output() {
     };
     let mut reporter =
         progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let formatter = number_format::NumberFormatter::from_locale("en-US");
 
-    report_success(&params, Model::GPT5, (1, 2, 3), &mut reporter).unwrap();
+    report_success(&params, Model::GPT5, (1, 2, 3), &formatter, &mut reporter)
+        .unwrap();
 
     let (normal, diagnostic) = reporter.into_parts();
     assert!(normal.is_empty());
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_success_report_marks_gzip_size_as_compressed() {
+    let params = Params {
+        output_file: Some("result.xml.gz".to_string()),
+        gzip: true,
+        ..Params::default()
+    };
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let formatter = number_format::NumberFormatter::from_locale("en-US");
+
+    report_success(
+        &params,
+        Model::GPT5,
+        (57, 15_084_711, 21_344_532),
+        &formatter,
+        &mut reporter,
+    )
+    .unwrap();
+
+    let (normal, diagnostic) = reporter.into_parts();
+    let normal = String::from_utf8(normal).unwrap();
+    assert!(normal.contains(
+        "Total output size (bytes):  15,084,711 (14.4 MiB, compressed)"
+    ));
+    assert!(!normal.contains("uncompressed"));
     assert!(diagnostic.is_empty());
 }
 

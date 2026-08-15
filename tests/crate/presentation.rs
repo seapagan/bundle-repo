@@ -146,3 +146,37 @@ fn test_summary_accents_only_values_and_strips_to_plain_output() {
         plain
     );
 }
+
+#[test]
+fn test_summary_styles_complete_localized_values_after_layout() {
+    let table = concat!(
+        "Files:   57                                  \n",
+        "Bytes:   61\u{202f}997\u{202f}276 (59,1 MiB, compressed)  \n",
+        "Tokens:  21.344.532                          "
+    );
+    let values = [
+        "57".to_string(),
+        "61\u{202f}997\u{202f}276 (59,1 MiB, compressed)".to_string(),
+        "21.344.532".to_string(),
+    ];
+    let plain = Presentation::plain().summary(table, &values);
+    let coloured = Presentation::ansi16().summary(table, &values);
+
+    if std::env::var_os("NO_COLOR").is_some() {
+        assert_eq!(coloured, plain);
+        return;
+    }
+    assert_eq!(
+        coloured,
+        concat!(
+            "\n\x1b[1;36mSummary:\x1b[0m\n",
+            "Files:   \x1b[1;36m57\x1b[0m                                  \n",
+            "Bytes:   \x1b[1;36m61\u{202f}997\u{202f}276 (59,1 MiB, compressed)\x1b[0m  \n",
+            "Tokens:  \x1b[1;36m21.344.532\x1b[0m                          \n\n"
+        )
+    );
+    assert_eq!(
+        coloured.replace("\x1b[1;36m", "").replace("\x1b[0m", ""),
+        plain
+    );
+}
