@@ -69,3 +69,11 @@
 - Add secret-checking to the tool, to ensure that no secrets are included in the
   output XML file. Hopefully this can be done with a library, but may need to
   write our own checks.
+- Generalise the XML `<repository_skipped>` / `<skipped>` mechanism introduced by
+  secret scanning so other unrepresentable or unavailable repository items can
+  be reported explicitly instead of failing silently or aborting the whole
+  bundle where safe to do so. Revisit XML-invalid file/folder metadata,
+  unreadable files, and similar omission cases; preserve exact canonical
+  repository metadata for represented items, distinguish skipped files from
+  skipped subtrees, and avoid migrating cases such as binary-file content where
+  the repository item itself is still validly represented.
