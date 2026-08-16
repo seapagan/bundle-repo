@@ -58,6 +58,7 @@ invalid locale data falls back to deterministic English formatting.
     - [Output to File](#output-to-file)
     - [Output to stdout](#output-to-stdout)
     - [Terminal colour](#terminal-colour)
+    - [Secret scanning](#secret-scanning)
     - [Compress with gzip](#compress-with-gzip)
     - [Copy to Clipboard](#copy-to-clipboard)
     - [Add line numbers](#add-line-numbers)
@@ -97,6 +98,10 @@ and 11 tested).
 > to show that the file was excluded and why.
 >
 > See [Ignored Files](#ignored-files) for a full list of excluded files.
+
+- **Secret protection**: Scans decoded text and repository path components by
+  default. BundleRepo replaces detected content values and omits paths that
+  contain detected values before it creates the output XML.
 
 - **Metadata Extraction**: For each file, the XML output includes:
   - `path`: the file path relative to the repository root
@@ -262,6 +267,36 @@ BundleRepo does not write terminal styling into generated files, clipboard
 data, or XML and gzip bytes from `--stdout`. Structured phase-timing records
 stay plain.
 
+#### Secret scanning
+
+BundleRepo scans decoded text and each repository path component by default.
+It replaces detected content with `[Secret removed: Type]` or
+`[Secret removed]`. A detected value in a filename causes BundleRepo to omit
+that file. A detected value in a folder name causes BundleRepo to omit the
+subtree. The optional `<repository_skipped>` section records those omissions
+with safe, redacted paths; omitted items appear in neither canonical repository
+section.
+
+The scanner uses the rules bundled into this BundleRepo version. It runs
+offline and does not download rules or call an external scanner. A fixed
+BundleRepo version uses a fixed ruleset, which produces repeatable results for
+the same input. File, stdout, clipboard, and gzip destinations consume the same
+protected XML. BundleRepo does not emit values that the scanner detects. Secret
+detection is best effort, so formats that the bundled rules do not recognize
+can remain in the bundle.
+
+Some bundled detectors use a file's repository-relative path to recognize
+formats such as Terraform, Kubernetes YAML, NuGet configuration, or PKCS #12.
+When a path-only detector classifies decoded text as likely secret-bearing,
+BundleRepo keeps the canonical `<file>` entry but replaces its complete content
+with a fixed unavailable-content diagnostic. Repository-controlled path
+allowlists are not allowed to suppress content protection. Binary-file behavior
+is unchanged.
+
+Use `--no-secret-scan` or set `secret_scan = false` to disable protection. The
+`--secret-scan` flag overrides a disabled configuration value. Disabling the
+scanner restores the original content and path behavior and can expose secrets.
+
 #### Compress with gzip
 
 Gzip compression is opt-in with `-z` or `--gzip`. To select a compression level
@@ -404,6 +439,8 @@ Options:
   -x, --exclude <PATTERN>         Replace the existing exclude patterns with the specified pattern(s). Can be specified multiple times.
   -u, --utf8                      Detect and convert legacy text encodings to UTF-8
   -U, --no-utf8                   Disable legacy text conversion to UTF-8
+      --secret-scan               Enable secret scanning (enabled by default), overriding configuration
+      --no-secret-scan            Disable secret scanning, overriding configuration
   -h, --help                      Print help
 ```
 
@@ -433,6 +470,7 @@ exclude = ["*.exe", "*.dll", "node_modules/*"]  # File patterns to exclude
 utf8 = true  # Detect and convert legacy text encodings to UTF-8
 gzip = false  # Set true to gzip file or stdout output by default
 gzip_level = 6  # Compression level from 1 to 9; does not enable gzip by itself
+secret_scan = true  # Scan content and path components for secrets
 ```
 
 All settings are optional. Settings are applied in the following order of
@@ -462,12 +500,18 @@ Available configuration options:
 - `gzip`: Whether to gzip output by default (default: false)
 - `gzip_level`: Gzip compression level from 1 to 9 (default: 6). Setting a
   level does not enable gzip by itself. Invalid values are ignored.
+- `secret_scan`: Whether to scan emitted text and repository path components
+  for secrets (default: true)
 
 Gzip resolution follows these rules: `--no-gzip` disables it; an explicit
 `-z=N` or `--gzip=N` enables level `N`; a bare `-z` or `--gzip` enables the
 configured level; otherwise `gzip = true` enables the configured level. If none
 applies, output remains uncompressed. The local-over-global configuration
 precedence described above still applies to both gzip settings.
+
+Secret scanning resolution follows the same configuration precedence.
+`--no-secret-scan` disables it, `--secret-scan` enables it, and either flag
+overrides local and global `secret_scan` values.
 
 The `extend_exclude` and `exclude` options can be specified either by using
 multiple `-e` or `-x` flags on the command line:
@@ -585,6 +629,18 @@ understood by an LLM. Below is an example layout with explanations for each tag:
     </folder>
   </repository_structure>
 
+  <repository_skipped>
+    <summary>
+      Repository items omitted because their canonical path could not be emitted safely.
+    </summary>
+    <skipped kind="file" reason="secret-in-path"
+             secret-type="GitHub Personal Access Token"
+             path="fixtures/[Secret removed: GitHub Personal Access Token].env" />
+    <skipped kind="subtree" reason="secret-in-path"
+             secret-type="GitHub Personal Access Token"
+             path="fixtures/[Secret removed: GitHub Personal Access Token]" />
+  </repository_skipped>
+
   <repository_files>
     <summary>
       <!-- A summary of the files and their contents -->
@@ -593,9 +649,25 @@ understood by an LLM. Below is an example layout with explanations for each tag:
     println!("hello");
 }
 ]]></file>
+    <file path="certificates/client.p12" size="2048" lines="0">
+      <!-- Text content omitted because the file type may contain secrets -->
+    </file>
   </repository_files>
 </repository>
 ```
+
+BundleRepo emits `<repository_skipped>` when secret scanning omits a file or
+subtree whose path contains a detected value. Its `<skipped>` entries contain
+safe diagnostic paths. They differ from `<file>` entries for binary,
+unreadable, or XML-invalid content: BundleRepo retains canonical path metadata
+for those files because it can emit the repository item without exposing a
+path secret.
+
+BundleRepo scans decoded file text before XML validation and line numbering.
+The scanner replaces detected spans with descriptive or generic removal
+markers and preserves surrounding syntax and line boundaries for analysis. A
+path-only classification instead retains the canonical `<file>` item with a
+fixed unavailable-content diagnostic and omits its complete decoded content.
 
 BundleRepo writes included decoded text as CDATA. If file content contains
 `]]>`, the XML writer uses adjacent CDATA sections; an XML parser reconstructs

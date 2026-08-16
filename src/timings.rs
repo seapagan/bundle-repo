@@ -4,6 +4,8 @@ use std::time::Duration;
 #[derive(Default)]
 pub(crate) struct ProcessingTimings {
     pub(crate) tokenizer_load: Duration,
+    pub(crate) secret_scanner_load: Duration,
+    pub(crate) secret_scanning: Duration,
     pub(crate) file_classification_and_read: Duration,
     pub(crate) utf8_validation_or_transcode: Duration,
     pub(crate) xml_generation: Duration,
@@ -14,6 +16,9 @@ pub(crate) struct ProcessingTimings {
     pub(crate) valid_bytes: u64,
     pub(crate) transcoded_files: usize,
     pub(crate) transcoded_bytes: u64,
+    pub(crate) text_files_scanned: usize,
+    pub(crate) findings_redacted: usize,
+    pub(crate) path_items_skipped: usize,
 }
 
 impl ProcessingTimings {
@@ -27,6 +32,19 @@ impl ProcessingTimings {
         sink: &mut W,
     ) -> io::Result<()> {
         self.write_duration(sink, "tokenizer_load", self.tokenizer_load)?;
+        self.write_duration(
+            sink,
+            "secret_scanner_load",
+            self.secret_scanner_load,
+        )?;
+        writeln!(
+            sink,
+            "BUNDLEREPO_TIMING phase=secret_scanning nanos={} text_files_scanned={} findings_redacted={} path_items_skipped={}",
+            self.secret_scanning.as_nanos(),
+            self.text_files_scanned,
+            self.findings_redacted,
+            self.path_items_skipped,
+        )?;
         self.write_duration(
             sink,
             "file_classification_and_read",
@@ -91,6 +109,8 @@ mod tests {
             phases,
             [
                 "tokenizer_load",
+                "secret_scanner_load",
+                "secret_scanning",
                 "file_classification_and_read",
                 "utf8_validation_or_transcode",
                 "xml_generation",

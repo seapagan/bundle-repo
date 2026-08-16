@@ -67,6 +67,503 @@ fn test_output_repo_as_xml() {
 }
 
 #[test]
+fn test_scanner_redacts_content_before_line_numbers_and_serialization() {
+    let temp_dir = tempdir().unwrap();
+    let output_file = temp_dir.path().join("output.xml");
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("secret.txt"),
+        format!("let token = \"{secret}\";\nlet safe = true;"),
+    )
+    .unwrap();
+    let params = Params {
+        output_file: Some(output_file.to_string_lossy().into_owned()),
+        line_numbers: true,
+        ..Params::default()
+    };
+    let mut tree = FileTree::default();
+    tree.file_paths.push("secret.txt".to_string());
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = ProcessingTimings::default();
+
+    output_repo_as_xml_with_scanner_and_timings(
+        &params,
+        tree,
+        temp_dir.path(),
+        &Model::GPT4.to_tokenizer().unwrap(),
+        "GPT-4",
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = fs::read(output_file).unwrap();
+    let text = String::from_utf8(xml.clone()).unwrap();
+    assert!(!text.contains(&secret));
+    assert!(text.contains(
+        "1  let token = \"[Secret removed: GitHub Personal Access Token]\";"
+    ));
+    assert!(text.contains("2  let safe = true;"));
+    assert_eq!(timings.text_files_scanned, 1);
+    assert!(timings.findings_redacted >= 1);
+    assert!(timings.secret_scanning > Duration::ZERO);
+    parse_document(&xml);
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(!String::from_utf8(normal).unwrap().contains(&secret));
+    assert!(!String::from_utf8(diagnostic).unwrap().contains(&secret));
+}
+
+#[test]
+fn test_large_file_secret_is_redacted_before_serialization() {
+    let temp_dir = tempdir().unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    let mut content = "x".repeat(1024 * 1024);
+    content.push('\n');
+    content.push_str(&secret);
+    fs::write(temp_dir.path().join("large-secret.txt"), content).unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push("large-secret.txt".to_string());
+    let scanner = SecretScanner::from_bundled_for_workers(2).unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let mut timings = ProcessingTimings::default();
+
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = String::from_utf8(xml).unwrap();
+    assert!(!xml.contains(&secret));
+    assert!(xml.contains("[Secret removed: GitHub Personal Access Token]"));
+    assert_eq!(timings.text_files_scanned, 1);
+    assert!(timings.findings_redacted >= 1);
+    assert!(timings.secret_scanning > Duration::ZERO);
+}
+
+#[test]
+fn test_path_only_finding_omits_text_with_safe_fixed_placeholder() {
+    let temp_dir = tempdir().unwrap();
+    let path = "certificate.p12";
+    fs::write(temp_dir.path().join(path), "private decoded text").unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push(path.to_string());
+    let rules = r#"
+[[rules]]
+id = 'private-path-classification'
+description = 'private rule description'
+path = '\.p12$'
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let mut timings = ProcessingTimings::default();
+
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+    let file = parse_file(&xml, path);
+    let serialized = String::from_utf8(xml).unwrap();
+
+    assert!(file.text.is_empty());
+    assert_eq!(
+        file.comments,
+        [" Text content omitted because the file type may contain secrets "]
+    );
+    assert!(!serialized.contains("private decoded text"));
+    assert!(!serialized.contains("private-path-classification"));
+    assert!(!serialized.contains("private rule description"));
+    assert!(!serialized.contains("File path matches pattern"));
+    assert_eq!(timings.findings_redacted, 0);
+}
+
+#[test]
+fn test_path_only_finding_wins_over_ordinary_spans() {
+    let temp_dir = tempdir().unwrap();
+    let path = "certificate.p12";
+    fs::write(temp_dir.path().join(path), "token=SECRETAA").unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push(path.to_string());
+    let rules = r#"
+[[rules]]
+id = 'path-only'
+path = '\.p12$'
+
+[[rules]]
+id = 'ordinary'
+regex = 'token=([A-Z]{8})'
+keywords = ['token=']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 2).unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let mut timings = ProcessingTimings::default();
+
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+    let file = parse_file(&xml, path);
+
+    assert!(file.text.is_empty());
+    assert_eq!(
+        file.comments,
+        [" Text content omitted because the file type may contain secrets "]
+    );
+    assert_eq!(timings.findings_redacted, 1);
+}
+
+#[test]
+fn test_disabled_secret_scan_summary_does_not_claim_protection() {
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let params = Params {
+        secret_scan: false,
+        ..Params::default()
+    };
+    let xml = serialize_repository_xml(
+        &params,
+        &FileTree::default(),
+        &[],
+        tempdir().unwrap().path(),
+        None,
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(xml).unwrap();
+
+    assert!(text.contains("Secret scanning was disabled for this bundle."));
+    assert!(!text.contains("detected secrets in their paths"));
+    assert!(!text.contains("Repository skipped"));
+    assert!(!text.contains("likely secret-bearing"));
+}
+
+#[test]
+fn test_utf16_conversion_precedes_secret_scanning() {
+    let temp_dir = tempdir().unwrap();
+    let output_file = temp_dir.path().join("output.xml");
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    let source = format!("token = {secret}\n");
+    let mut bytes = vec![0xff, 0xfe];
+    for unit in source.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    fs::write(temp_dir.path().join("secret.txt"), bytes).unwrap();
+    let params = Params {
+        output_file: Some(output_file.to_string_lossy().into_owned()),
+        utf8: true,
+        ..Params::default()
+    };
+    let mut tree = FileTree::default();
+    tree.file_paths.push("secret.txt".to_string());
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = ProcessingTimings::default();
+
+    output_repo_as_xml_with_scanner_and_timings(
+        &params,
+        tree,
+        temp_dir.path(),
+        &Model::GPT4.to_tokenizer().unwrap(),
+        "GPT-4",
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = fs::read_to_string(output_file).unwrap();
+    assert!(!xml.contains(&secret));
+    assert!(
+        xml.contains("token = [Secret removed: GitHub Personal Access Token]")
+    );
+    assert_eq!(timings.transcoded_files, 1);
+    assert_eq!(timings.text_files_scanned, 1);
+}
+
+#[test]
+fn test_scanner_preserves_no_finding_xml_bytes() {
+    let temp_dir = tempdir().unwrap();
+    fs::write(temp_dir.path().join("safe.txt"), "ordinary text").unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push("safe.txt".to_string());
+    let params = Params {
+        stdout: true,
+        ..Params::default()
+    };
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let mut first_reporter =
+        ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let without_scanner = serialize_repository_xml(
+        &params,
+        &tree,
+        &[],
+        temp_dir.path(),
+        None,
+        &mut first_reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+    let mut second_reporter =
+        ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let with_scanner = serialize_repository_xml(
+        &params,
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut second_reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+
+    assert_eq!(with_scanner, without_scanner);
+}
+
+#[test]
+fn test_unrelated_xml_invalid_text_stays_omitted_after_redaction() {
+    let temp_dir = tempdir().unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("invalid.txt"),
+        format!("token = {secret}\u{000b}tail"),
+    )
+    .unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push("invalid.txt".to_string());
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+
+    let text = String::from_utf8(xml).unwrap();
+    assert!(!text.contains(&secret));
+    assert!(text.contains("Text content omitted: XML 1.0 cannot represent"));
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(!String::from_utf8(normal).unwrap().contains(&secret));
+    assert!(!String::from_utf8(diagnostic).unwrap().contains(&secret));
+    assert!(!text.contains("<repository_skipped>"));
+}
+
+fn assert_secret_path_diagnostics(xml: &[u8]) {
+    let skipped = parse_skipped(xml);
+    assert_eq!(skipped.len(), 2);
+    assert_eq!(
+        skipped[0],
+        [
+            ("kind".to_string(), "subtree".to_string()),
+            ("reason".to_string(), "secret-in-path".to_string()),
+            (
+                "path".to_string(),
+                "fixtures/[Secret removed: GitHub Personal Access Token]"
+                    .to_string(),
+            ),
+            (
+                "secret-type".to_string(),
+                "GitHub Personal Access Token".to_string(),
+            ),
+        ]
+    );
+    assert_eq!(
+        skipped[1],
+        [
+            ("kind".to_string(), "file".to_string()),
+            ("reason".to_string(), "secret-in-path".to_string()),
+            (
+                "path".to_string(),
+                "root-[Secret removed: GitHub Personal Access Token].env"
+                    .to_string(),
+            ),
+            (
+                "secret-type".to_string(),
+                "GitHub Personal Access Token".to_string(),
+            ),
+        ]
+    );
+}
+
+fn assert_secret_path_section_order(xml: &[u8]) {
+    let root_sections = parse_document(xml)
+        .into_iter()
+        .filter_map(|event| match event {
+            ReaderXmlEvent::StartElement { name, .. }
+                if matches!(
+                    name.local_name.as_str(),
+                    "file_summary"
+                        | "repository_structure"
+                        | "repository_skipped"
+                        | "repository_files"
+                ) =>
+            {
+                Some(name.local_name)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        root_sections,
+        [
+            "file_summary",
+            "repository_structure",
+            "repository_skipped",
+            "repository_files",
+        ]
+    );
+}
+
+#[test]
+fn test_secret_path_omissions_are_safe_consistent_and_parser_backed() {
+    let temp_dir = tempdir().unwrap();
+    fs::write(temp_dir.path().join("included.txt"), "safe content").unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let path_scan = scanner
+        .scan_repository_paths(vec![
+            format!("root-{secret}.env"),
+            format!("fixtures/{secret}/one.txt"),
+            format!("fixtures/{secret}/nested/two.txt"),
+            "included.txt".to_string(),
+        ])
+        .unwrap();
+    let tree = crate::filelist::group_files_by_directory(path_scan.included);
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &path_scan.skipped,
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+
+    assert!(!String::from_utf8_lossy(&xml).contains(&secret));
+    assert_eq!(
+        parse_structure_files(&xml),
+        [(vec![], "included.txt".to_string())]
+    );
+    assert_eq!(parse_file(&xml, "included.txt").text, "safe content");
+    assert_secret_path_diagnostics(&xml);
+    assert_secret_path_section_order(&xml);
+}
+
+#[test]
+fn test_invalid_metadata_after_path_redaction_cannot_echo_secret() {
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let path_scan = scanner
+        .scan_repository_paths(vec![format!("{secret}\u{000b}.txt")])
+        .unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+
+    let error = serialize_repository_xml(
+        &Params::default(),
+        &FileTree::default(),
+        &path_scan.skipped,
+        tempdir().unwrap().path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert!(!error.to_string().contains(&secret));
+    assert!(error.to_string().contains("U+000B"));
+}
+
+#[test]
+fn test_skipped_secret_type_attribute_is_optional() {
+    let skipped = [SkippedRepositoryItem {
+        kind: crate::secret_scanning::SkippedItemKind::File,
+        safe_path: "[Secret removed].env".to_string(),
+        reason: SkipReason::SecretInPath { secret_type: None },
+    }];
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &FileTree::default(),
+        &skipped,
+        tempdir().unwrap().path(),
+        None,
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        parse_skipped(&xml),
+        [vec![
+            ("kind".to_string(), "file".to_string()),
+            ("reason".to_string(), "secret-in-path".to_string()),
+            ("path".to_string(), "[Secret removed].env".to_string()),
+        ]]
+    );
+}
+
+#[test]
+fn test_skipped_attributes_round_trip_xml_sensitive_characters() {
+    let safe_path = "safe & < \" path";
+    let secret_type = "Type & < \" marker";
+    let skipped = [SkippedRepositoryItem {
+        kind: crate::secret_scanning::SkippedItemKind::Subtree,
+        safe_path: safe_path.to_string(),
+        reason: SkipReason::SecretInPath {
+            secret_type: Some(secret_type.to_string()),
+        },
+    }];
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &FileTree::default(),
+        &skipped,
+        tempdir().unwrap().path(),
+        None,
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        parse_skipped(&xml),
+        [vec![
+            ("kind".to_string(), "subtree".to_string()),
+            ("reason".to_string(), "secret-in-path".to_string()),
+            ("path".to_string(), safe_path.to_string()),
+            ("secret-type".to_string(), secret_type.to_string()),
+        ]]
+    );
+}
+
+#[test]
 fn test_reused_timings_subtract_only_per_call_file_phase_deltas() {
     let temp_dir = tempdir().unwrap();
     let output_file = temp_dir.path().join("output.xml");
@@ -472,6 +969,7 @@ fn test_malformed_utf8_bom_is_silent_with_quiet_reporter() {
         &paths,
         temp_dir.path(),
         &params,
+        None,
         &mut reporter,
         &mut ProcessingTimings::default(),
     )

@@ -205,6 +205,7 @@ pub struct Params {
     pub utf8: bool,
     pub gzip: bool,
     pub gzip_level: u32,
+    pub secret_scan: bool,
 }
 
 pub const DEFAULT_OUTPUT_FILE: &str = "packed-repo.xml";
@@ -225,6 +226,7 @@ impl Default for Params {
             utf8: false,
             gzip: false,
             gzip_level: 6,
+            secret_scan: true,
         }
     }
 }
@@ -259,6 +261,8 @@ impl From<Config> for Params {
         params.gzip = configured_or(&settings, "gzip", params.gzip);
         params.gzip_level =
             configured_gzip_level(&settings, params.gzip_level);
+        params.secret_scan =
+            configured_or(&settings, "secret_scan", params.secret_scan);
         params
     }
 }
@@ -314,6 +318,13 @@ fn utf8_enabled(args: &cli::Flags, configured: bool) -> bool {
     !args.no_utf8 && (args.utf8 || configured)
 }
 
+fn secret_scan_enabled(args: &cli::Flags, configured: bool) -> bool {
+    if args.no_secret_scan {
+        return false;
+    }
+    args.secret_scan || configured
+}
+
 impl Params {
     pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
         let (gzip, gzip_level) = gzip_options(args, &config);
@@ -340,6 +351,7 @@ impl Params {
             utf8: utf8_enabled(args, config.utf8),
             gzip,
             gzip_level,
+            secret_scan: secret_scan_enabled(args, config.secret_scan),
         }
     }
 }

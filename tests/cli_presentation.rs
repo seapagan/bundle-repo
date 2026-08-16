@@ -87,6 +87,10 @@ fn output_path(repository: &Path) -> PathBuf {
     repository.join("bundle.xml")
 }
 
+fn synthetic_github_pat() -> String {
+    ["ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"].concat()
+}
+
 #[test]
 fn default_captured_output_is_plain() {
     let repository = initialize_repository("example content");
@@ -231,6 +235,47 @@ fn stdout_xml_never_contains_presentation() {
     assert!(!contains_bytes(&output.stdout, b"\x1b["));
     assert!(!contains_bytes(&output.stdout, b"BundleRepo"));
     assert!(!contains_bytes(&output.stdout, b"Summary:"));
+    assert!(output.stderr.is_empty());
+    for event in ParserConfig::new().create_reader(output.stdout.as_slice()) {
+        event.unwrap();
+    }
+}
+
+#[test]
+fn stdout_redacts_secrets_without_stderr_leakage() {
+    let secret = synthetic_github_pat();
+    let repository = initialize_repository(&format!("token = {secret}"));
+    let output = command(repository.path()).arg("--stdout").output().unwrap();
+
+    assert!(output.status.success());
+    assert!(!contains_bytes(&output.stdout, secret.as_bytes()));
+    assert!(!contains_bytes(&output.stderr, secret.as_bytes()));
+    assert!(contains_bytes(
+        &output.stdout,
+        b"[Secret removed: GitHub Personal Access Token]"
+    ));
+    assert!(output.stderr.is_empty());
+    for event in ParserConfig::new().create_reader(output.stdout.as_slice()) {
+        event.unwrap();
+    }
+}
+
+#[test]
+fn stdout_omits_secret_bearing_paths_without_leakage() {
+    let secret = synthetic_github_pat();
+    let repository = initialize_repository("safe content");
+    fs::write(
+        repository.path().join(format!("fixture-{secret}.txt")),
+        "unsafe path",
+    )
+    .unwrap();
+    let output = command(repository.path()).arg("--stdout").output().unwrap();
+
+    assert!(output.status.success());
+    assert!(!contains_bytes(&output.stdout, secret.as_bytes()));
+    assert!(!contains_bytes(&output.stderr, secret.as_bytes()));
+    assert!(contains_bytes(&output.stdout, b"<repository_skipped>"));
+    assert!(contains_bytes(&output.stdout, b"reason=\"secret-in-path\""));
     assert!(output.stderr.is_empty());
     for event in ParserConfig::new().create_reader(output.stdout.as_slice()) {
         event.unwrap();

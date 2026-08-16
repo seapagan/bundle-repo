@@ -140,6 +140,40 @@ fn reader_attribute(attributes: &[OwnedAttribute], name: &str) -> String {
         .clone()
 }
 
+fn parse_skipped(xml: &[u8]) -> Vec<Vec<(String, String)>> {
+    parse_document(xml)
+        .into_iter()
+        .skip_while(|event| {
+            !matches!(
+                event,
+                ReaderXmlEvent::StartElement { name, .. }
+                    if name.local_name == "repository_skipped"
+            )
+        })
+        .skip(1)
+        .take_while(|event| {
+            !matches!(
+                event,
+                ReaderXmlEvent::EndElement { name }
+                    if name.local_name == "repository_skipped"
+            )
+        })
+        .filter_map(|event| match event {
+            ReaderXmlEvent::StartElement {
+                name, attributes, ..
+            } if name.local_name == "skipped" => Some(
+                attributes
+                    .into_iter()
+                    .map(|attribute| {
+                        (attribute.name.local_name, attribute.value)
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
 fn parse_structure_files(xml: &[u8]) -> Vec<(Vec<String>, String)> {
     let events = parse_document(xml);
     let mut folders = Vec::new();
@@ -200,7 +234,9 @@ fn serialize_single_file(content: &[u8], line_numbers: bool) -> Vec<u8> {
     serialize_repository_xml(
         &flags,
         &tree,
+        &[],
         temp_dir.path(),
+        None,
         &mut reporter,
         &mut ProcessingTimings::default(),
     )
@@ -256,5 +292,7 @@ fn serialize_read_error_entry(path: &str, diagnostic: &str) -> Vec<u8> {
 mod destinations;
 #[path = "xml_output/repository_output.rs"]
 mod repository_output;
+#[path = "xml_output/semantic_equivalence.rs"]
+mod semantic_equivalence;
 #[path = "xml_output/serialization.rs"]
 mod serialization;

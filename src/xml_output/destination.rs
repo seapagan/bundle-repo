@@ -88,11 +88,30 @@ fn write_destination<N: Write, D: Write>(
     reporter: &mut ProgressReporter<N, D>,
     timings: &mut ProcessingTimings,
 ) -> io::Result<u64> {
+    write_destination_with_clipboard(
+        flags,
+        xml_content,
+        reporter,
+        timings,
+        write_clipboard,
+    )
+}
+
+pub(super) fn write_destination_with_clipboard<N: Write, D: Write, C>(
+    flags: &Params,
+    xml_content: String,
+    reporter: &mut ProgressReporter<N, D>,
+    timings: &mut ProcessingTimings,
+    clipboard_writer: C,
+) -> io::Result<u64>
+where
+    C: FnOnce(&str, usize, &mut ProcessingTimings) -> io::Result<u64>,
+{
     report_destination(flags, reporter)?;
 
     if flags.clipboard {
         let content_length = xml_content.len();
-        return write_clipboard(&xml_content, content_length, timings);
+        return clipboard_writer(&xml_content, content_length, timings);
     }
 
     let output_path = effective_output_file(flags);
