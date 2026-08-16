@@ -86,7 +86,7 @@ pub(crate) enum SecretScanError {
     InvalidRuleset,
     PartitionIntegrity,
     PartitionScanFailure,
-    WorkerPanic,
+    ScanPanic,
     InvalidSpan,
     TruncatedFindings,
 }
@@ -107,9 +107,7 @@ impl fmt::Display for SecretScanError {
             Self::PartitionScanFailure => {
                 formatter.write_str("a secret scan worker failed")
             }
-            Self::WorkerPanic => {
-                formatter.write_str("a secret scan worker panicked")
-            }
+            Self::ScanPanic => formatter.write_str("secret scanning panicked"),
             Self::InvalidSpan => {
                 formatter.write_str("secret scanner returned an invalid span")
             }
@@ -126,7 +124,7 @@ impl Error for SecretScanError {
             Self::PartitionScanFailure => None,
             Self::InvalidRuleset
             | Self::PartitionIntegrity
-            | Self::WorkerPanic
+            | Self::ScanPanic
             | Self::InvalidSpan
             | Self::TruncatedFindings => None,
         }

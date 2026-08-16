@@ -7,10 +7,11 @@ use std::panic::PanicHookInfo;
 use std::sync::{Arc, Mutex};
 
 static PANIC_HOOK_LOCK: Mutex<()> = Mutex::new(());
-type PanicHook = Arc<dyn Fn(&PanicHookInfo<'_>) + Sync + Send + 'static>;
+type PanicHook = Box<dyn Fn(&PanicHookInfo<'_>) + Sync + Send + 'static>;
+type SharedPanicHook = Arc<Mutex<Option<PanicHook>>>;
 
 thread_local! {
-    static SCANNER_WORKER: Cell<bool> = const { Cell::new(false) };
+    static SCANNER_OPERATION: Cell<bool> = const { Cell::new(false) };
 }
 
 pub(super) fn scan_sequential(
@@ -18,16 +19,38 @@ pub(super) fn scan_sequential(
     path: &str,
     text: &str,
 ) -> Result<ScanResult, SecretScanError> {
-    let results = scanners
-        .partitions
-        .iter()
-        .map(|partition| {
-            (
-                partition.ordinal,
-                partition.scanner.scan_content_detailed(path, text),
-            )
-        })
-        .collect();
+    orchestrate_sequential(scanners, path, text, |partition, path, text| {
+        partition.scanner.scan_content_detailed(path, text)
+    })
+}
+
+fn orchestrate_sequential(
+    scanners: &PartitionedScanners,
+    path: &str,
+    text: &str,
+    execute: impl Fn(&super::partitions::RulePartition, &str, &str) -> ScanResult,
+) -> Result<ScanResult, SecretScanError> {
+    with_suppressed_scanner_panic_output(|| {
+        orchestrate_sequential_protected(scanners, path, text, execute)
+    })
+}
+
+fn orchestrate_sequential_protected(
+    scanners: &PartitionedScanners,
+    path: &str,
+    text: &str,
+    execute: impl Fn(&super::partitions::RulePartition, &str, &str) -> ScanResult,
+) -> Result<ScanResult, SecretScanError> {
+    let mut results = Vec::with_capacity(scanners.partitions.len());
+    for partition in &scanners.partitions {
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _scanner = ScannerOperationGuard::enter();
+                execute(partition, path, text)
+            }))
+            .map_err(|_| SecretScanError::ScanPanic)?;
+        results.push((partition.ordinal, result));
+    }
     merge_results(scanners, results)
 }
 
@@ -62,7 +85,7 @@ fn orchestrate_parallel(
     ) -> Vec<(usize, ScanResult)>
     + Sync,
 ) -> Result<ScanResult, SecretScanError> {
-    with_suppressed_worker_panic_output(|| {
+    with_suppressed_scanner_panic_output(|| {
         std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(scanners.partitions.len());
             let mut spawn_failed = false;
@@ -71,7 +94,7 @@ fn orchestrate_parallel(
                 let handle = before_spawn(partition.ordinal).and_then(|()| {
                     std::thread::Builder::new()
                         .spawn_scoped(scope, move || {
-                            let _worker = ScannerWorkerGuard::enter();
+                            let _scanner = ScannerOperationGuard::enter();
                             execute(partition, path, text)
                         })
                         .map_err(|_| ())
@@ -95,7 +118,7 @@ fn orchestrate_parallel(
                 }
             }
             if worker_panicked {
-                return Err(SecretScanError::WorkerPanic);
+                return Err(SecretScanError::ScanPanic);
             }
             if spawn_failed {
                 return Err(SecretScanError::PartitionScanFailure);
@@ -105,10 +128,18 @@ fn orchestrate_parallel(
     })
 }
 
-fn with_suppressed_worker_panic_output<T>(operation: impl FnOnce() -> T) -> T {
+fn with_suppressed_scanner_panic_output<T>(
+    operation: impl FnOnce() -> T,
+) -> T {
     let _lock = PANIC_HOOK_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    with_suppressed_scanner_panic_output_locked(operation)
+}
+
+fn with_suppressed_scanner_panic_output_locked<T>(
+    operation: impl FnOnce() -> T,
+) -> T {
     let hook = PanicHookGuard::install();
     let result =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation));
@@ -120,46 +151,54 @@ fn with_suppressed_worker_panic_output<T>(operation: impl FnOnce() -> T) -> T {
 }
 
 struct PanicHookGuard {
-    previous: Option<PanicHook>,
+    previous: SharedPanicHook,
 }
 
 impl PanicHookGuard {
     fn install() -> Self {
-        let previous: PanicHook = std::panic::take_hook().into();
+        let previous = Arc::new(Mutex::new(Some(std::panic::take_hook())));
         let delegated = Arc::clone(&previous);
         std::panic::set_hook(Box::new(move |info| {
-            let scanner_worker = SCANNER_WORKER.with(Cell::get);
-            if !scanner_worker {
-                delegated(info);
+            let scanner_operation = SCANNER_OPERATION.with(Cell::get);
+            if !scanner_operation {
+                let previous = delegated
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(previous) = previous.as_ref() {
+                    previous(info);
+                }
             }
         }));
-        Self {
-            previous: Some(previous),
-        }
+        Self { previous }
     }
 }
 
 impl Drop for PanicHookGuard {
     fn drop(&mut self) {
-        if let Some(previous) = self.previous.take() {
-            let _installed = std::panic::take_hook();
-            std::panic::set_hook(Box::new(move |info| previous(info)));
+        let _installed = std::panic::take_hook();
+        let previous = self
+            .previous
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(previous) = previous {
+            std::panic::set_hook(previous);
         }
     }
 }
 
-struct ScannerWorkerGuard;
+struct ScannerOperationGuard;
 
-impl ScannerWorkerGuard {
+impl ScannerOperationGuard {
     fn enter() -> Self {
-        SCANNER_WORKER.with(|worker| worker.set(true));
+        SCANNER_OPERATION.with(|operation| operation.set(true));
         Self
     }
 }
 
-impl Drop for ScannerWorkerGuard {
+impl Drop for ScannerOperationGuard {
     fn drop(&mut self) {
-        SCANNER_WORKER.with(|worker| worker.set(false));
+        SCANNER_OPERATION.with(|operation| operation.set(false));
     }
 }
 
@@ -227,7 +266,8 @@ pub(super) fn merge_test_results(
 #[cfg(test)]
 pub(super) use test_support::{
     TestExecution, WorkerFault, panic_hook_delivery_for_tests,
-    scan_parallel_with_test_execution,
+    panic_hook_restoration_for_tests, scan_parallel_with_test_execution,
+    scan_sequential_with_test_panic,
 };
 
 #[cfg(test)]
@@ -320,7 +360,7 @@ mod test_support {
                     .map(|fault| fault.1)
                 {
                     Some(WorkerFault::Panic) => {
-                        panic!("private worker panic payload")
+                        panic!("private scanner panic payload")
                     }
                     Some(WorkerFault::Missing) => Vec::new(),
                     Some(WorkerFault::Duplicate) => vec![
@@ -339,6 +379,36 @@ mod test_support {
         )
     }
 
+    pub(crate) fn scan_sequential_with_test_panic(
+        scanners: &PartitionedScanners,
+        path: &str,
+        text: &str,
+    ) -> (Result<ScanResult, SecretScanError>, usize) {
+        let _lock = PANIC_HOOK_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let deliveries = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&deliveries);
+        let original = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        let result = with_suppressed_scanner_panic_output_locked(|| {
+            orchestrate_sequential_protected(
+                scanners,
+                path,
+                text,
+                |_, _, _| panic!("private sequential scanner payload"),
+            )
+        });
+
+        let restored = std::panic::take_hook();
+        drop(restored);
+        std::panic::set_hook(original);
+        (result, deliveries.load(Ordering::SeqCst))
+    }
+
     pub(crate) fn panic_hook_delivery_for_tests() -> usize {
         let _lock = PANIC_HOOK_LOCK
             .lock()
@@ -350,11 +420,14 @@ mod test_support {
             observed.fetch_add(1, Ordering::SeqCst);
         }));
 
+        for _ in 0..8 {
+            drop(PanicHookGuard::install());
+        }
         {
             let _hook = PanicHookGuard::install();
             let worker = std::thread::spawn(|| {
-                let _worker = ScannerWorkerGuard::enter();
-                panic!("private scanner worker payload")
+                let _scanner = ScannerOperationGuard::enter();
+                panic!("private scanner payload")
             });
             let unrelated =
                 std::thread::spawn(|| panic!("unrelated panic payload"));
@@ -366,6 +439,44 @@ mod test_support {
         drop(installed);
         std::panic::set_hook(original);
         deliveries.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn panic_hook_restoration_for_tests() -> (bool, bool) {
+        let _lock = PANIC_HOOK_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let original = std::panic::take_hook();
+        let marker = Arc::new(());
+        let captured = Arc::clone(&marker);
+        let replacement: PanicHook = Box::new(move |_| {
+            let _ = &captured;
+        });
+        let expected =
+            (&*replacement as *const dyn Fn(&PanicHookInfo<'_>)) as *const ();
+        std::panic::set_hook(replacement);
+
+        for _ in 0..8 {
+            drop(PanicHookGuard::install());
+        }
+        let restored = std::panic::take_hook();
+        let repeated = ((&*restored as *const dyn Fn(&PanicHookInfo<'_>))
+            as *const ())
+            == expected;
+        std::panic::set_hook(restored);
+
+        let unwind = std::panic::catch_unwind(|| {
+            with_suppressed_scanner_panic_output_locked(|| {
+                panic!("unrelated protected operation panic");
+            });
+        });
+        assert!(unwind.is_err());
+        let restored = std::panic::take_hook();
+        let after_unwind = ((&*restored as *const dyn Fn(&PanicHookInfo<'_>))
+            as *const ())
+            == expected;
+        drop(restored);
+        std::panic::set_hook(original);
+        (repeated, after_unwind)
     }
 
     fn completion_gate(

@@ -1,7 +1,8 @@
 use super::*;
 use crate::secret_scanning::execution::{
     TestExecution, WorkerFault, panic_hook_delivery_for_tests,
-    scan_parallel_with_test_execution, scan_sequential,
+    panic_hook_restoration_for_tests, scan_parallel_with_test_execution,
+    scan_sequential, scan_sequential_with_test_panic,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -58,6 +59,32 @@ fn test_scheduling_requires_multiple_partitions_and_threshold_content() {
 #[test]
 fn test_only_scanner_worker_panics_are_hidden_from_previous_hook() {
     assert_eq!(panic_hook_delivery_for_tests(), 1);
+}
+
+#[test]
+fn test_filtering_hook_restores_exact_hook_repeatedly_and_during_unwind() {
+    assert_eq!(panic_hook_restoration_for_tests(), (true, true));
+}
+
+#[test]
+fn test_sequential_scanner_panic_is_hidden_and_fails_closed() {
+    let scanner =
+        SecretScanner::from_rules_for_workers(EXECUTION_RULES, 3).unwrap();
+    let private_path = "private/repository/path";
+    let private_content = "FIRSTSECRET private-content LASTSECRET";
+    let (result, deliveries) = scan_sequential_with_test_panic(
+        scanner.partitioned(),
+        private_path,
+        private_content,
+    );
+    let message = result.unwrap_err().to_string();
+
+    assert_eq!(message, "secret scanning panicked");
+    assert_eq!(deliveries, 0);
+    assert!(!message.contains(private_path));
+    assert!(!message.contains(private_content));
+    assert!(!message.contains("private sequential scanner payload"));
+    assert!(!message.contains("FIRSTSECRET"));
 }
 
 #[test]
@@ -152,7 +179,7 @@ fn test_parallel_faults_fail_closed_after_every_worker_joins() {
     let private_path = "private/repository/path";
     let cases = [
         (WorkerFault::Error, 2, 2, "a secret scan worker failed"),
-        (WorkerFault::Panic, 0, 3, "a secret scan worker panicked"),
+        (WorkerFault::Panic, 0, 3, "secret scanning panicked"),
         (
             WorkerFault::Missing,
             0,
@@ -194,7 +221,7 @@ fn test_parallel_faults_fail_closed_after_every_worker_joins() {
         assert_eq!(message, expected_message);
         assert!(!message.contains(private_content));
         assert!(!message.contains(private_path));
-        assert!(!message.contains("private worker panic payload"));
+        assert!(!message.contains("private scanner panic payload"));
         assert!(!message.contains("FIRSTSECRET"));
     }
 }
