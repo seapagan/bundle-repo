@@ -42,6 +42,7 @@ pub(super) fn build_partitioned_scanners(
 ) -> Result<PartitionedScanners, SecretScanError> {
     let mut document = toml::from_str::<Table>(source)
         .map_err(|_| SecretScanError::InvalidRuleset)?;
+    harden_path_allowlists(&mut document)?;
     let rules = document
         .remove("rules")
         .and_then(|value| value.as_array().cloned())
@@ -88,6 +89,135 @@ pub(super) fn build_partitioned_scanners(
         partitions,
         rule_order,
     })
+}
+
+fn harden_path_allowlists(
+    document: &mut Table,
+) -> Result<(), SecretScanError> {
+    harden_optional_allowlist(document, "allowlist")?;
+    harden_allowlist_array(document, "allowlists")?;
+
+    let rules = document
+        .get_mut("rules")
+        .and_then(Value::as_array_mut)
+        .ok_or(SecretScanError::InvalidRuleset)?;
+    for rule in rules {
+        let table =
+            rule.as_table_mut().ok_or(SecretScanError::InvalidRuleset)?;
+        harden_allowlist_array(table, "allowlists")?;
+    }
+    Ok(())
+}
+
+fn harden_optional_allowlist(
+    parent: &mut Table,
+    key: &str,
+) -> Result<(), SecretScanError> {
+    let Some(value) = parent.get_mut(key) else {
+        return Ok(());
+    };
+    let keep = harden_allowlist(
+        value
+            .as_table_mut()
+            .ok_or(SecretScanError::InvalidRuleset)?,
+    )?;
+    if !keep {
+        parent.remove(key);
+    }
+    Ok(())
+}
+
+fn harden_allowlist_array(
+    parent: &mut Table,
+    key: &str,
+) -> Result<(), SecretScanError> {
+    let Some(value) = parent.get_mut(key) else {
+        return Ok(());
+    };
+    let allowlists = value
+        .as_array_mut()
+        .ok_or(SecretScanError::InvalidRuleset)?;
+    let mut hardened = Vec::with_capacity(allowlists.len());
+    for mut allowlist in std::mem::take(allowlists) {
+        let keep = harden_allowlist(
+            allowlist
+                .as_table_mut()
+                .ok_or(SecretScanError::InvalidRuleset)?,
+        )?;
+        if keep {
+            hardened.push(allowlist);
+        }
+    }
+    *allowlists = hardened;
+    Ok(())
+}
+
+fn harden_allowlist(allowlist: &mut Table) -> Result<bool, SecretScanError> {
+    let has_paths = match allowlist.get("paths") {
+        None => false,
+        Some(Value::Array(paths)) => {
+            for path in paths {
+                path.as_str().ok_or(SecretScanError::InvalidRuleset)?;
+            }
+            !paths.is_empty()
+        }
+        Some(_) => return Err(SecretScanError::InvalidRuleset),
+    };
+    if !has_paths {
+        return Ok(true);
+    }
+
+    if allowlist_condition_is_and(allowlist)? {
+        return Ok(false);
+    }
+    allowlist.remove("paths");
+    has_non_path_criteria(allowlist)
+}
+
+fn allowlist_condition_is_and(
+    allowlist: &Table,
+) -> Result<bool, SecretScanError> {
+    match allowlist.get("condition") {
+        None => Ok(false),
+        Some(Value::String(condition)) => {
+            if condition.eq_ignore_ascii_case("or") {
+                Ok(false)
+            } else if condition.eq_ignore_ascii_case("and") {
+                Ok(true)
+            } else {
+                Err(SecretScanError::InvalidRuleset)
+            }
+        }
+        Some(_) => Err(SecretScanError::InvalidRuleset),
+    }
+}
+
+fn has_non_path_criteria(allowlist: &Table) -> Result<bool, SecretScanError> {
+    for key in ["regexes", "stopwords"] {
+        match allowlist.get(key) {
+            None => {}
+            Some(Value::Array(values)) => {
+                for value in values {
+                    value.as_str().ok_or(SecretScanError::InvalidRuleset)?;
+                }
+                if !values.is_empty() {
+                    return Ok(true);
+                }
+            }
+            Some(_) => return Err(SecretScanError::InvalidRuleset),
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(test)]
+pub(super) fn hardened_ruleset_for_tests(
+    source: &str,
+) -> Result<Table, SecretScanError> {
+    let mut document = toml::from_str::<Table>(source)
+        .map_err(|_| SecretScanError::InvalidRuleset)?;
+    harden_path_allowlists(&mut document)?;
+    Ok(document)
 }
 
 fn parse_source_rules(

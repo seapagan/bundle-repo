@@ -187,7 +187,7 @@ fn test_bundled_scanner_redacts_three_stable_rule_families() {
         secrets[0], secrets[1], secrets[2]
     );
     let ids = scanner().rule_ids(&text);
-    let redacted = scanner().redact_text(&text).unwrap();
+    let redacted = scanner().redact_text("safe/example.txt", &text).unwrap();
 
     for expected in ["github-pat", "gitlab-pat", "aws-access-token"] {
         assert!(ids.iter().any(|rule_id| rule_id == expected));
@@ -203,7 +203,8 @@ fn test_allow_markers_cannot_suppress_a_secret() {
     for marker in ["gitleaks:allow", "secrets-scanner:allow"] {
         let secret = github_pat();
         let text = format!("token = {secret} # {marker}");
-        let redacted = scanner().redact_text(&text).unwrap();
+        let redacted =
+            scanner().redact_text("safe/example.txt", &text).unwrap();
         assert!(!redacted.text.contains(&secret));
         assert!(redacted.findings > 0);
     }
@@ -216,7 +217,7 @@ fn test_large_content_is_scanned_through_the_end() {
     text.push('\n');
     text.push_str(&secret);
 
-    let redacted = scanner().redact_text(&text).unwrap();
+    let redacted = scanner().redact_text("safe/example.txt", &text).unwrap();
 
     assert!(!redacted.text.contains(&secret));
     assert!(redacted.text.ends_with(']'));
@@ -270,6 +271,56 @@ fn test_repository_paths_omit_files_and_deduplicate_subtrees() {
 }
 
 #[test]
+fn test_component_scan_stays_synthetic_and_ignores_path_allowlists() {
+    let rules = r#"
+[allowlist]
+paths = ['repository-path-component']
+
+[[rules]]
+id = 'component-secret'
+regex = 'component-([A-Z]{8})'
+keywords = ['component-']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let scan = scanner
+        .scan_repository_paths(vec!["safe/component-SECRETAA.txt".to_string()])
+        .unwrap();
+
+    assert!(scan.included.is_empty());
+    assert_eq!(scan.skipped.len(), 1);
+    assert!(!scan.skipped[0].safe_path.contains("SECRETAA"));
+}
+
+#[test]
+fn test_non_path_rule_zero_span_still_fails_closed() {
+    let rules = r#"
+[[rules]]
+id = 'ordinary'
+regex = '(SECRETAA)'
+keywords = ['SECRETAA']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let mut finding = scanner
+        .scan_findings("safe.txt", "SECRETAA")
+        .unwrap()
+        .pop()
+        .unwrap();
+    finding.secret_start_offset = 0;
+    finding.secret_end_offset = 0;
+    let result = ScanResult {
+        findings: vec![finding],
+        findings_truncated: false,
+    };
+
+    assert!(matches!(
+        scanner.redact_result_for_tests("SECRETAA", result),
+        Err(SecretScanError::InvalidSpan)
+    ));
+}
+
+#[test]
 fn test_repository_path_with_conflicting_types_omits_type() {
     let github = github_pat();
     let gitlab = gitlab_pat();
@@ -309,8 +360,8 @@ fn test_repository_path_diagnostics_are_deterministic() {
 fn test_repeated_scans_produce_identical_output() {
     let secret = github_pat();
     let text = format!("token = {secret}");
-    let first = scanner().redact_text(&text).unwrap();
-    let second = scanner().redact_text(&text).unwrap();
+    let first = scanner().redact_text("safe/example.txt", &text).unwrap();
+    let second = scanner().redact_text("safe/example.txt", &text).unwrap();
 
     assert_eq!(first.text, second.text);
     assert_eq!(first.findings, second.findings);

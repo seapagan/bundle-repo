@@ -11,13 +11,12 @@ use redaction::{
     redact_ranges,
 };
 #[cfg(test)]
-use secrets_scanner::Finding;
-use secrets_scanner::{RedactionMode, ScanConfig, ScanResult, Scanner};
+use secrets_scanner::{Finding, Scanner};
+use secrets_scanner::{RedactionMode, ScanConfig, ScanResult};
 use std::error::Error;
 use std::fmt;
 use std::num::NonZeroUsize;
 
-const CONTENT_SCAN_PATH: &str = "repository-content";
 const PATH_COMPONENT_SCAN_PATH: &str = "repository-path-component";
 const MAX_SCAN_WORKERS: usize = 28;
 const PARALLEL_SCAN_THRESHOLD: usize = 1024 * 1024;
@@ -28,18 +27,14 @@ pub(crate) fn synthetic_github_pat() -> String {
 }
 
 pub(crate) struct SecretScanner {
-    scanners: ScannerSet,
-}
-
-enum ScannerSet {
-    Bundled(Box<Scanner>),
-    Partitioned(PartitionedScanners),
+    scanners: PartitionedScanners,
 }
 
 pub(crate) struct SecretRedaction {
     pub(crate) text: String,
     pub(crate) findings: usize,
     pub(crate) secret_type: Option<String>,
+    pub(crate) omit_content: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -87,7 +82,6 @@ impl RepositoryPathScan {
 
 #[derive(Debug)]
 pub(crate) enum SecretScanError {
-    Setup(secrets_scanner::ScannerError),
     PartitionSetup(secrets_scanner::ScannerError),
     InvalidRuleset,
     PartitionIntegrity,
@@ -100,9 +94,6 @@ pub(crate) enum SecretScanError {
 impl fmt::Display for SecretScanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Setup(error) => {
-                write!(formatter, "failed to load bundled rules: {error}")
-            }
             Self::PartitionSetup(error) => {
                 write!(
                     formatter,
@@ -131,7 +122,7 @@ impl fmt::Display for SecretScanError {
 impl Error for SecretScanError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::Setup(error) | Self::PartitionSetup(error) => Some(error),
+            Self::PartitionSetup(error) => Some(error),
             Self::PartitionScanFailure => None,
             Self::InvalidRuleset
             | Self::PartitionIntegrity
@@ -153,19 +144,11 @@ impl SecretScanner {
         workers: usize,
     ) -> Result<Self, SecretScanError> {
         let config = scanner_config();
-        let scanners = if workers <= 1 {
-            ScannerSet::Bundled(Box::new(
-                Scanner::from_bundled()
-                    .map_err(SecretScanError::Setup)?
-                    .with_config(config),
-            ))
-        } else {
-            ScannerSet::Partitioned(build_partitioned_scanners(
-                secrets_scanner::rules::BUNDLED_RULES,
-                workers,
-                &config,
-            )?)
-        };
+        let scanners = build_partitioned_scanners(
+            secrets_scanner::rules::BUNDLED_RULES,
+            workers,
+            &config,
+        )?;
         Ok(Self { scanners })
     }
 
@@ -175,17 +158,10 @@ impl SecretScanner {
         text: &str,
         schedule: ScanSchedule,
     ) -> Result<ScanResult, SecretScanError> {
-        match &self.scanners {
-            ScannerSet::Bundled(scanner) => {
-                Ok(scanner.scan_content_detailed(scanner_path, text))
-            }
-            ScannerSet::Partitioned(scanners) => {
-                if scan_mode(schedule, text.len()) == ScanMode::Parallel {
-                    execution::scan_parallel(scanners, scanner_path, text)
-                } else {
-                    execution::scan_sequential(scanners, scanner_path, text)
-                }
-            }
+        if scan_mode(schedule, text.len()) == ScanMode::Parallel {
+            execution::scan_parallel(&self.scanners, scanner_path, text)
+        } else {
+            execution::scan_sequential(&self.scanners, scanner_path, text)
         }
     }
 
@@ -208,28 +184,18 @@ impl SecretScanner {
     }
 
     #[cfg(test)]
-    fn is_bundled(&self) -> bool {
-        matches!(self.scanners, ScannerSet::Bundled(_))
+    fn partitioned(&self) -> &PartitionedScanners {
+        &self.scanners
     }
 
     #[cfg(test)]
-    fn partitioned(&self) -> Option<&PartitionedScanners> {
-        match &self.scanners {
-            ScannerSet::Bundled(_) => None,
-            ScannerSet::Partitioned(scanners) => Some(scanners),
-        }
-    }
-
-    #[cfg(test)]
-    fn from_rules_for_workers(
+    pub(crate) fn from_rules_for_workers(
         rules: &str,
         workers: usize,
     ) -> Result<Self, SecretScanError> {
         let scanners =
             build_partitioned_scanners(rules, workers, &scanner_config())?;
-        Ok(Self {
-            scanners: ScannerSet::Partitioned(scanners),
-        })
+        Ok(Self { scanners })
     }
 
     #[cfg(test)]
@@ -248,14 +214,15 @@ impl SecretScanner {
 
     #[cfg(test)]
     fn partition_count(&self) -> usize {
-        self.partitioned().map_or(1, |set| set.partitions.len())
+        self.partitioned().partitions.len()
     }
 
     pub(crate) fn redact_text(
         &self,
+        path: &str,
         text: &str,
     ) -> Result<SecretRedaction, SecretScanError> {
-        self.redact(CONTENT_SCAN_PATH, text, ScanSchedule::Content)
+        self.redact(path, text, ScanSchedule::Content)
     }
 
     fn redact(
@@ -265,21 +232,42 @@ impl SecretScanner {
         schedule: ScanSchedule,
     ) -> Result<SecretRedaction, SecretScanError> {
         let result = self.scan(scanner_path, text, schedule)?;
+        self.redact_result(text, result)
+    }
+
+    fn redact_result(
+        &self,
+        text: &str,
+        result: ScanResult,
+    ) -> Result<SecretRedaction, SecretScanError> {
         if result.findings_truncated {
             return Err(SecretScanError::TruncatedFindings);
         }
-        let findings = result.findings.len();
+        let rule_order = &self.scanners.rule_order;
+        let mut omit_content = false;
+        let mut findings = 0;
         let spans = result
             .findings
             .into_iter()
-            .map(|finding| SafeFinding {
-                start: finding.secret_start_offset,
-                end: finding.secret_end_offset,
-                secret_type: normalize_secret_type(
-                    &finding.rule_description,
-                    &finding.rule_id,
-                ),
-                rule_id: finding.rule_id,
+            .filter_map(|finding| {
+                let is_path_only =
+                    rule_order.get(&finding.rule_id).is_some_and(|order| {
+                        order.phase == partitions::RulePhase::PathOnly
+                    });
+                if is_path_only {
+                    omit_content = true;
+                    return None;
+                }
+                findings += 1;
+                Some(SafeFinding {
+                    start: finding.secret_start_offset,
+                    end: finding.secret_end_offset,
+                    secret_type: normalize_secret_type(
+                        &finding.rule_description,
+                        &finding.rule_id,
+                    ),
+                    rule_id: finding.rule_id,
+                })
             })
             .collect();
         let ranges = normalized_ranges(text, spans)?;
@@ -289,12 +277,22 @@ impl SecretScanner {
             text,
             findings,
             secret_type,
+            omit_content,
         })
     }
 
     #[cfg(test)]
+    fn redact_result_for_tests(
+        &self,
+        text: &str,
+        result: ScanResult,
+    ) -> Result<SecretRedaction, SecretScanError> {
+        self.redact_result(text, result)
+    }
+
+    #[cfg(test)]
     fn rule_ids(&self, text: &str) -> Vec<String> {
-        self.scan(CONTENT_SCAN_PATH, text, ScanSchedule::Content)
+        self.scan("repository-content", text, ScanSchedule::Content)
             .unwrap()
             .findings
             .into_iter()

@@ -451,11 +451,19 @@ fn write_processed_text_file<W: Write, N: Write, D: Write>(
     }
     if let Some(scanner) = scanner {
         let started = Instant::now();
-        let redaction = scanner.redact_text(&decoded.text);
+        let redaction = scanner.redact_text(path, &decoded.text);
         timings.secret_scanning += started.elapsed();
         timings.text_files_scanned += 1;
         let redaction = redaction.map_err(io::Error::other)?;
         timings.findings_redacted += redaction.findings;
+        if redaction.omit_content {
+            return write_placeholder_file_entry(
+                writer,
+                path,
+                size,
+                "Text content omitted because the file type may contain secrets",
+            );
+        }
         decoded.text = redaction.text;
     }
     if let Some(invalid) = first_invalid_xml10_char(&decoded.text) {
@@ -576,11 +584,12 @@ fn write_file_summary<W: Write>(
         "purpose",
         "This file contains a packed representation of the entire repository's contents.\nIt is designed to be easily consumable by AI systems for analysis, code review,\nor other automated processes.",
     )?;
-    write_text_element(
-        writer,
-        "file_format",
-        "The content is organized as follows:\n1. This summary section\n2. Repository structure: A hierarchical listing of safely emitted folders and files.\n3. Repository skipped (optional): Safe diagnostics for files or subtrees omitted because a secret was detected in their path.\n4. Repository files: Each emitted file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent.",
-    )?;
+    let file_format = if flags.secret_scan {
+        "The content is organized as follows:\n1. This summary section\n2. Repository structure: A hierarchical listing of safely emitted folders and files.\n3. Repository skipped (optional): Safe diagnostics for files or subtrees omitted because a secret was detected in their path.\n4. Repository files: Each emitted file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files, text classified as likely secret-bearing by its path/type, and text that XML 1.0 cannot represent."
+    } else {
+        "The content is organized as follows:\n1. This summary section\n2. Repository structure: A hierarchical listing of folders and files.\n3. Repository files: Each file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent."
+    };
+    write_text_element(writer, "file_format", file_format)?;
 
     let line_number_instruction = if flags.line_numbers {
         "\n- Line numbers have been added to the code for reference. Please use them for\n  referring to specific lines of code when needed. However, do NOT include line\n  numbers when outputting or displaying code in responses."
@@ -596,11 +605,12 @@ fn write_file_summary<W: Write>(
         "usage_guidelines",
         "- This file should be treated as read-only. Any changes should be made to the\n  original repository files, not this packed version.\n- When processing this file, use the file path to distinguish\n  between different files in the repository.\n- Be aware that this file may contain sensitive information. Handle it with\n  the same level of security as you would the original repository.",
     )?;
-    write_text_element(
-        writer,
-        "notes",
-        "- Some files may have been excluded based on .gitignore rules and bundlerepo's\n  configuration.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.",
-    )?;
+    let notes = if flags.secret_scan {
+        "- Some files may have been excluded based on .gitignore rules and bundlerepo's\n  configuration.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Decoded text classified as likely secret-bearing by its path/type retains its\n  canonical file entry with a safe unavailable-content diagnostic.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic."
+    } else {
+        "- Some files may have been excluded based on .gitignore rules and bundlerepo's\n  configuration.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Secret scanning was disabled for this bundle."
+    };
+    write_text_element(writer, "notes", notes)?;
     write_text_element(
         writer,
         "additional_info",

@@ -275,6 +275,14 @@ protected XML. BundleRepo does not emit values that the scanner detects. Secret
 detection is best effort, so formats that the bundled rules do not recognize
 can remain in the bundle.
 
+Some bundled detectors use a file's repository-relative path to recognize
+formats such as Terraform, Kubernetes YAML, NuGet configuration, or PKCS #12.
+When a path-only detector classifies decoded text as likely secret-bearing,
+BundleRepo keeps the canonical `<file>` entry but replaces its complete content
+with a fixed unavailable-content diagnostic. Repository-controlled path
+allowlists are not allowed to suppress content protection. Binary-file behavior
+is unchanged.
+
 Use `--no-secret-scan` or set `secret_scan = false` to disable protection. The
 `--secret-scan` flag overrides a disabled configuration value. Disabling the
 scanner restores the original content and path behavior and can expose secrets.
@@ -621,6 +629,9 @@ understood by an LLM. Below is an example layout with explanations for each tag:
     println!("hello");
 }
 ]]></file>
+    <file path="certificates/client.p12" size="2048" lines="0">
+      <!-- Text content omitted because the file type may contain secrets -->
+    </file>
   </repository_files>
 </repository>
 ```
@@ -634,7 +645,9 @@ path secret.
 
 BundleRepo scans decoded file text before XML validation and line numbering.
 The scanner replaces detected spans with descriptive or generic removal
-markers and preserves surrounding syntax and line boundaries for analysis.
+markers and preserves surrounding syntax and line boundaries for analysis. A
+path-only classification instead retains the canonical `<file>` item with a
+fixed unavailable-content diagnostic and omits its complete decoded content.
 
 BundleRepo writes included decoded text as CDATA. If file content contains
 `]]>`, the XML writer uses adjacent CDATA sections; an XML parser reconstructs

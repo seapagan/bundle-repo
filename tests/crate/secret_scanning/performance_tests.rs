@@ -80,7 +80,9 @@ fn benchmark_partitioned(
         .scan_findings("repository-content", &workload.text)
         .unwrap();
     assert_findings_equivalent(&reference.findings, &findings);
-    let protected = scanner.redact_text(&workload.text).unwrap();
+    let protected = scanner
+        .redact_text("repository-content", &workload.text)
+        .unwrap();
     assert!(
         protected.text == reference.protected,
         "protected output mismatch for benchmark label {}",

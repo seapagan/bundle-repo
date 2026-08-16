@@ -31,7 +31,10 @@ secretGroup = 1
 
     assert_findings_equivalent(&reference.findings, &partitioned);
     assert_eq!(
-        scanner.redact_text("abcdefghij").unwrap().text,
+        scanner
+            .redact_text("repository-content", "abcdefghij")
+            .unwrap()
+            .text,
         "a[Secret removed][Secret removed: Suffix]j"
     );
 }
@@ -52,7 +55,7 @@ regex = '''DUPLICATE'''
     assert_equivalent(rules, "repository-content", "DUPLICATE", 2);
     let redaction = SecretScanner::from_rules_for_workers(rules, 2)
         .unwrap()
-        .redact_text("DUPLICATE")
+        .redact_text("repository-content", "DUPLICATE")
         .unwrap();
 
     assert_eq!(redaction.findings, 2);
@@ -155,6 +158,11 @@ secretGroup = 1
         "token=ABCDEFGH # gitleaks:allow",
         2,
     );
+    let findings = SecretScanner::from_rules_for_workers(rules, 2)
+        .unwrap()
+        .scan_findings("repository-content", "token=ABCDEFGH # gitleaks:allow")
+        .unwrap();
+    assert_eq!(findings.len(), 1);
 }
 
 fn assert_equivalent(rules: &str, path: &str, text: &str, workers: usize) {

@@ -116,7 +116,7 @@ fn test_scanner_redacts_content_before_line_numbers_and_serialization() {
 }
 
 #[test]
-fn test_parallel_scanner_finishes_before_large_file_serialization() {
+fn test_large_file_secret_is_redacted_before_serialization() {
     let temp_dir = tempdir().unwrap();
     let secret = crate::secret_scanning::synthetic_github_pat();
     let mut content = "x".repeat(1024 * 1024);
@@ -146,6 +146,115 @@ fn test_parallel_scanner_finishes_before_large_file_serialization() {
     assert_eq!(timings.text_files_scanned, 1);
     assert!(timings.findings_redacted >= 1);
     assert!(timings.secret_scanning > Duration::ZERO);
+}
+
+#[test]
+fn test_path_only_finding_omits_text_with_safe_fixed_placeholder() {
+    let temp_dir = tempdir().unwrap();
+    let path = "certificate.p12";
+    fs::write(temp_dir.path().join(path), "private decoded text").unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push(path.to_string());
+    let rules = r#"
+[[rules]]
+id = 'private-path-classification'
+description = 'private rule description'
+path = '\.p12$'
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let mut timings = ProcessingTimings::default();
+
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+    let file = parse_file(&xml, path);
+    let serialized = String::from_utf8(xml).unwrap();
+
+    assert!(file.text.is_empty());
+    assert_eq!(
+        file.comments,
+        [" Text content omitted because the file type may contain secrets "]
+    );
+    assert!(!serialized.contains("private decoded text"));
+    assert!(!serialized.contains("private-path-classification"));
+    assert!(!serialized.contains("private rule description"));
+    assert!(!serialized.contains("File path matches pattern"));
+    assert_eq!(timings.findings_redacted, 0);
+}
+
+#[test]
+fn test_path_only_finding_wins_over_ordinary_spans() {
+    let temp_dir = tempdir().unwrap();
+    let path = "certificate.p12";
+    fs::write(temp_dir.path().join(path), "token=SECRETAA").unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push(path.to_string());
+    let rules = r#"
+[[rules]]
+id = 'path-only'
+path = '\.p12$'
+
+[[rules]]
+id = 'ordinary'
+regex = 'token=([A-Z]{8})'
+keywords = ['token=']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 2).unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let mut timings = ProcessingTimings::default();
+
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+    let file = parse_file(&xml, path);
+
+    assert!(file.text.is_empty());
+    assert_eq!(
+        file.comments,
+        [" Text content omitted because the file type may contain secrets "]
+    );
+    assert_eq!(timings.findings_redacted, 1);
+}
+
+#[test]
+fn test_disabled_secret_scan_summary_does_not_claim_protection() {
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let params = Params {
+        secret_scan: false,
+        ..Params::default()
+    };
+    let xml = serialize_repository_xml(
+        &params,
+        &FileTree::default(),
+        &[],
+        tempdir().unwrap().path(),
+        None,
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(xml).unwrap();
+
+    assert!(text.contains("Secret scanning was disabled for this bundle."));
+    assert!(!text.contains("detected secrets in their paths"));
+    assert!(!text.contains("Repository skipped"));
+    assert!(!text.contains("likely secret-bearing"));
 }
 
 #[test]
