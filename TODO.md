@@ -93,3 +93,10 @@
   appropriate serialization/build boundary rather than broad unrelated data
   structure changes, and add repeated-run regression coverage proving stable
   repository structure and whole-document XML bytes.
+- Investigate reducing the fixed startup cost of default-on secret scanning.
+  Compiling the pinned bundled ruleset currently costs roughly 1.6–1.7 seconds
+  per process and dominates very small repository runs. Any optimization must
+  preserve the hardened ruleset transformation, complete detector coverage,
+  path-aware semantics, Rust 1.88 MSRV, offline operation, and current
+  fail-closed behavior. Measure tiny and large repositories before choosing an
+  approach; do not weaken or lazily skip protection merely to reduce startup.
