@@ -147,6 +147,10 @@ fn normalized_description(description: &str) -> Option<String> {
         .collect::<Vec<_>>()
         .join(" ");
     for prefix in [
+        "Identified a potential ",
+        "Found a pattern resembling a ",
+        "Found an ",
+        "Found a ",
         "Uncovered a possible ",
         "Uncovered an ",
         "Uncovered a ",

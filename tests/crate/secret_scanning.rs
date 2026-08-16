@@ -174,6 +174,34 @@ fn test_secret_type_normalization_and_fallback_are_bounded() {
         Some("AWS Access Key".to_string())
     );
     assert_eq!(
+        normalize_secret_type(
+            "Identified a potential DeepSeek API Key, which could lead to unauthorized access",
+            "deepseek-api-key",
+        ),
+        Some("DeepSeek API Key".to_string())
+    );
+    assert_eq!(
+        normalize_secret_type(
+            "Found a Confluent Secret Key, potentially risking unauthorized operations",
+            "confluent-secret-key",
+        ),
+        Some("Confluent Secret Key".to_string())
+    );
+    assert_eq!(
+        normalize_secret_type(
+            "Found an Etsy Access Token, potentially compromising shop management",
+            "etsy-access-token",
+        ),
+        Some("Etsy Access Token".to_string())
+    );
+    assert_eq!(
+        normalize_secret_type(
+            "Found a pattern resembling a Codecov Access Token, posing a risk",
+            "codecov-access-token",
+        ),
+        Some("Codecov Access Token".to_string())
+    );
+    assert_eq!(
         normalize_secret_type("", "generic-api-key"),
         Some("Generic API Key".to_string())
     );
