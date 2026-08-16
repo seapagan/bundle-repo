@@ -7,6 +7,9 @@ mod equivalence_tests;
 mod execution_tests;
 #[path = "secret_scanning/partition_tests.rs"]
 mod partition_tests;
+#[cfg(not(debug_assertions))]
+#[path = "secret_scanning/performance_tests.rs"]
+mod performance_tests;
 
 fn scanner() -> &'static SecretScanner {
     static SCANNER: OnceLock<SecretScanner> = OnceLock::new();
