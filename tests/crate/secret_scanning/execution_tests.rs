@@ -30,23 +30,29 @@ secretGroup = 1
 "#;
 
 #[test]
-fn test_scheduling_boundary_uses_decoded_byte_length() {
-    assert_eq!(
-        scan_mode(ScanSchedule::Content, PARALLEL_SCAN_THRESHOLD - 1),
-        ScanMode::Sequential
-    );
-    assert_eq!(
-        scan_mode(ScanSchedule::Content, PARALLEL_SCAN_THRESHOLD),
-        ScanMode::Parallel
-    );
-    assert_eq!(
-        scan_mode(ScanSchedule::Content, PARALLEL_SCAN_THRESHOLD + 1),
-        ScanMode::Parallel
-    );
-    assert_eq!(
-        scan_mode(ScanSchedule::RepositoryPath, usize::MAX),
-        ScanMode::Sequential
-    );
+fn test_scheduling_requires_multiple_partitions_and_threshold_content() {
+    let cases = [
+        (1, PARALLEL_SCAN_THRESHOLD - 1, ScanMode::Sequential),
+        (1, PARALLEL_SCAN_THRESHOLD, ScanMode::Sequential),
+        (1, PARALLEL_SCAN_THRESHOLD + 1, ScanMode::Sequential),
+        (2, PARALLEL_SCAN_THRESHOLD - 1, ScanMode::Sequential),
+        (2, PARALLEL_SCAN_THRESHOLD, ScanMode::Parallel),
+        (2, PARALLEL_SCAN_THRESHOLD + 1, ScanMode::Parallel),
+    ];
+
+    for (partitions, text_len, expected) in cases {
+        assert_eq!(
+            scan_mode(ScanSchedule::Content, text_len, partitions),
+            expected
+        );
+    }
+
+    for partitions in [1, 2] {
+        assert_eq!(
+            scan_mode(ScanSchedule::RepositoryPath, usize::MAX, partitions),
+            ScanMode::Sequential
+        );
+    }
 }
 
 #[test]

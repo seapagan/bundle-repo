@@ -158,7 +158,9 @@ impl SecretScanner {
         text: &str,
         schedule: ScanSchedule,
     ) -> Result<ScanResult, SecretScanError> {
-        if scan_mode(schedule, text.len()) == ScanMode::Parallel {
+        if scan_mode(schedule, text.len(), self.scanners.partitions.len())
+            == ScanMode::Parallel
+        {
             execution::scan_parallel(&self.scanners, scanner_path, text)
         } else {
             execution::scan_sequential(&self.scanners, scanner_path, text)
@@ -330,8 +332,14 @@ enum ScanMode {
     Parallel,
 }
 
-fn scan_mode(schedule: ScanSchedule, text_len: usize) -> ScanMode {
-    if schedule == ScanSchedule::Content && text_len >= PARALLEL_SCAN_THRESHOLD
+fn scan_mode(
+    schedule: ScanSchedule,
+    text_len: usize,
+    partition_count: usize,
+) -> ScanMode {
+    if schedule == ScanSchedule::Content
+        && text_len >= PARALLEL_SCAN_THRESHOLD
+        && partition_count > 1
     {
         ScanMode::Parallel
     } else {
