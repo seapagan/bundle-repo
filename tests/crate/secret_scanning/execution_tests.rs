@@ -139,26 +139,32 @@ fn test_parallel_faults_fail_closed_after_every_worker_joins() {
     let private_content = "FIRSTSECRET private-content LASTSECRET";
     let private_path = "private/repository/path";
     let cases = [
-        (WorkerFault::Error, "a secret scan worker failed"),
-        (WorkerFault::Panic, "a secret scan worker panicked"),
+        (WorkerFault::Error, 2, 2, "a secret scan worker failed"),
+        (WorkerFault::Panic, 0, 3, "a secret scan worker panicked"),
         (
             WorkerFault::Missing,
+            0,
+            3,
             "bundled secret rule partition validation failed",
         ),
         (
             WorkerFault::Duplicate,
+            0,
+            3,
             "bundled secret rule partition validation failed",
         ),
         (
             WorkerFault::Truncated,
+            0,
+            3,
             "secret scanner returned incomplete findings",
         ),
     ];
 
-    for (fault, expected_message) in cases {
+    for (fault, fault_ordinal, expected_completed, expected_message) in cases {
         let completed = Arc::new(AtomicUsize::new(0));
         let execution = TestExecution {
-            fault: Some((0, fault)),
+            fault: Some((fault_ordinal, fault)),
             completion_order: None,
             completed: Arc::clone(&completed),
             observed_order: Arc::new(Mutex::new(Vec::new())),
@@ -172,7 +178,7 @@ fn test_parallel_faults_fail_closed_after_every_worker_joins() {
         .unwrap_err();
         let message = error.to_string();
 
-        assert_eq!(completed.load(Ordering::SeqCst), 3);
+        assert_eq!(completed.load(Ordering::SeqCst), expected_completed);
         assert_eq!(message, expected_message);
         assert!(!message.contains(private_content));
         assert!(!message.contains(private_path));

@@ -31,23 +31,30 @@ pub(super) fn scan_parallel(
     path: &str,
     text: &str,
 ) -> Result<ScanResult, SecretScanError> {
-    orchestrate_parallel(scanners, path, text, |partition, path, text| {
-        Ok(vec![(
-            partition.ordinal,
-            partition.scanner.scan_content_detailed(path, text),
-        )])
-    })
+    orchestrate_parallel(
+        scanners,
+        path,
+        text,
+        |_| Ok(()),
+        |partition, path, text| {
+            vec![(
+                partition.ordinal,
+                partition.scanner.scan_content_detailed(path, text),
+            )]
+        },
+    )
 }
 
 fn orchestrate_parallel(
     scanners: &PartitionedScanners,
     path: &str,
     text: &str,
+    before_spawn: impl Fn(usize) -> Result<(), ()>,
     execute: impl Fn(
         &super::partitions::RulePartition,
         &str,
         &str,
-    ) -> Result<Vec<(usize, ScanResult)>, SecretScanError>
+    ) -> Vec<(usize, ScanResult)>
     + Sync,
 ) -> Result<ScanResult, SecretScanError> {
     with_suppressed_worker_panic_output(|| {
@@ -56,10 +63,14 @@ fn orchestrate_parallel(
             let mut spawn_failed = false;
             for partition in &scanners.partitions {
                 let execute = &execute;
-                match std::thread::Builder::new()
-                    .spawn_scoped(scope, move || {
-                        execute(partition, path, text)
-                    }) {
+                let handle = before_spawn(partition.ordinal).and_then(|()| {
+                    std::thread::Builder::new()
+                        .spawn_scoped(scope, move || {
+                            execute(partition, path, text)
+                        })
+                        .map_err(|_| ())
+                });
+                match handle {
                     Ok(handle) => handles.push(handle),
                     Err(_) => {
                         spawn_failed = true;
@@ -68,21 +79,19 @@ fn orchestrate_parallel(
                 }
             }
             let mut results = Vec::with_capacity(handles.len());
-            let mut worker_failed = false;
             let mut worker_panicked = false;
             for handle in handles {
                 match handle.join() {
-                    Ok(Ok(mut worker_results)) => {
+                    Ok(mut worker_results) => {
                         results.append(&mut worker_results);
                     }
-                    Ok(Err(_)) => worker_failed = true,
                     Err(_) => worker_panicked = true,
                 }
             }
             if worker_panicked {
                 return Err(SecretScanError::WorkerPanic);
             }
-            if spawn_failed || worker_failed {
+            if spawn_failed {
                 return Err(SecretScanError::PartitionScanFailure);
             }
             merge_results(scanners, results)
@@ -251,36 +260,48 @@ mod test_support {
         execution: &TestExecution,
     ) -> Result<ScanResult, SecretScanError> {
         let gate = completion_gate(execution);
-        orchestrate_parallel(scanners, path, text, |partition, path, text| {
-            let _guard = CompletionGuard(Arc::clone(&execution.completed));
-            let mut result =
-                partition.scanner.scan_content_detailed(path, text);
-            if let Some(gate) = &gate {
-                gate.finish(partition.ordinal);
-            }
-            match execution
-                .fault
-                .filter(|fault| fault.0 == partition.ordinal)
-                .map(|fault| fault.1)
-            {
-                Some(WorkerFault::Error) => {
-                    Err(SecretScanError::PartitionScanFailure)
+        orchestrate_parallel(
+            scanners,
+            path,
+            text,
+            |ordinal| match execution.fault {
+                Some((fault_ordinal, WorkerFault::Error))
+                    if fault_ordinal == ordinal =>
+                {
+                    Err(())
                 }
-                Some(WorkerFault::Panic) => {
-                    panic!("private worker panic payload")
+                _ => Ok(()),
+            },
+            |partition, path, text| {
+                let _guard = CompletionGuard(Arc::clone(&execution.completed));
+                let mut result =
+                    partition.scanner.scan_content_detailed(path, text);
+                if let Some(gate) = &gate {
+                    gate.finish(partition.ordinal);
                 }
-                Some(WorkerFault::Missing) => Ok(Vec::new()),
-                Some(WorkerFault::Duplicate) => Ok(vec![
-                    (partition.ordinal, result.clone()),
-                    (partition.ordinal, result),
-                ]),
-                Some(WorkerFault::Truncated) => {
-                    result.findings_truncated = true;
-                    Ok(vec![(partition.ordinal, result)])
+                match execution
+                    .fault
+                    .filter(|fault| fault.0 == partition.ordinal)
+                    .map(|fault| fault.1)
+                {
+                    Some(WorkerFault::Panic) => {
+                        panic!("private worker panic payload")
+                    }
+                    Some(WorkerFault::Missing) => Vec::new(),
+                    Some(WorkerFault::Duplicate) => vec![
+                        (partition.ordinal, result.clone()),
+                        (partition.ordinal, result),
+                    ],
+                    Some(WorkerFault::Truncated) => {
+                        result.findings_truncated = true;
+                        vec![(partition.ordinal, result)]
+                    }
+                    Some(WorkerFault::Error) | None => {
+                        vec![(partition.ordinal, result)]
+                    }
                 }
-                None => Ok(vec![(partition.ordinal, result)]),
-            }
-        })
+            },
+        )
     }
 
     fn completion_gate(
