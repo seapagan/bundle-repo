@@ -149,7 +149,7 @@ pub struct Flags {
         long = "secret-scan",
         action = ArgAction::SetTrue,
         conflicts_with = "no_secret_scan",
-        help = "Enable secret scanning, overriding configuration"
+        help = "Enable secret scanning (enabled by default), overriding configuration"
     )]
     pub secret_scan: bool,
 
