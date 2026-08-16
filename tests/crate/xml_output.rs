@@ -292,5 +292,7 @@ fn serialize_read_error_entry(path: &str, diagnostic: &str) -> Vec<u8> {
 mod destinations;
 #[path = "xml_output/repository_output.rs"]
 mod repository_output;
+#[path = "xml_output/semantic_equivalence.rs"]
+mod semantic_equivalence;
 #[path = "xml_output/serialization.rs"]
 mod serialization;
