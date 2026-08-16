@@ -28,17 +28,33 @@ however future versions may include additional formats.
 > format for feeding context and instructions into an LLM).
 
 ```pre
-BundleRepo Version 0.7.0, © 2024-2026 Grant Ramsay <seapagan@gmail.com>
+BundleRepo Version 0.8.0, © 2024-2026 Grant Ramsay <seapagan@gmail.com>
 
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
--> Found a git repository in the current directory: '/home/seapagan/data/work/own/bundle-repo' (branch: add-config-file)
--> Successfully wrote XML to 'packed-repo.xml'
+-> Loading tokenizer for GPT-5
+-> Loading secret scanner
+-> Found a git repository in the current directory: '/home/seapagan/data/work/own/bundle-repo' (branch: main)
+-> Scanning repository paths for secrets
+-> Reading files and generating XML
+-> Converted 'tests/fixtures/encodings/iso-2022-jp.txt' from ISO-2022-JP to UTF-8
+-> Converted 'tests/fixtures/encodings/gbk.txt' from GBK to UTF-8
+-> Converted 'tests/fixtures/encodings/big5.txt' from Big5 to UTF-8
+-> Converted 'tests/fixtures/encodings/euc-jp.txt' from EUC-JP to UTF-8
+-> Converted 'tests/fixtures/encodings/windows-1251.txt' from windows-1251 to UTF-8
+-> Converted 'tests/fixtures/encodings/windows-1252.txt' from windows-1252 to UTF-8
+-> Converted 'tests/fixtures/encodings/shift-jis.txt' from Shift_JIS to UTF-8
+-> Converted 'tests/fixtures/encodings/gb18030.txt' from GBK to UTF-8
+-> Converted 'tests/fixtures/encodings/utf-16be.txt' from UTF-16BE to UTF-8
+-> Converted 'tests/fixtures/encodings/utf-16le.txt' from UTF-16LE to UTF-8
+-> Counting tokens with GPT-5
+-> Compressing and writing result to 'packed-repo.xml.gz'
+-> Successfully wrote XML to 'packed-repo.xml.gz'
 
 Summary:
-     Total Files processed:  57
- Total output size (bytes):  61,997,276 (59.1 MiB)
-       Token count (GPT-5):  21,344,532
+     Total Files processed:  71
+ Total output size (bytes):  15,141,563 (14.4 MiB, compressed)
+       Token count (GPT-5):  21,396,360
 ```
 
 On Unix, summary grouping and decimal separators follow the POSIX numeric

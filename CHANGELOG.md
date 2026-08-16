@@ -5,6 +5,25 @@ project since the first release, with the latest changes at the top.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0](https://github.com/seapagan/bundle-repo/releases/tag/0.8.0) (August 16, 2026)
+
+**New Features**
+
+- Feat: add secret-safe repository bundles ([#111](https://github.com/seapagan/bundle-repo/pull/111)) by [seapagan](https://github.com/seapagan)
+- Feat: format summary metrics for the numeric locale ([#109](https://github.com/seapagan/bundle-repo/pull/109)) by [seapagan](https://github.com/seapagan)
+- Feat: add semantic terminal colour ([#108](https://github.com/seapagan/bundle-repo/pull/108)) by [seapagan](https://github.com/seapagan)
+
+**CI / CD Pipeline**
+
+- Ci: use released setup-rust action ([#107](https://github.com/seapagan/bundle-repo/pull/107)) by [seapagan](https://github.com/seapagan)
+
+**Dependency Updates**
+
+- Chore(deps): update taiki-e/install-action action to v2.86.1 ([#110](https://github.com/seapagan/bundle-repo/pull/110)) by [renovate[bot]](https://github.com/apps/renovate)
+- Chore(deps): update taiki-e/install-action action to v2.85.13 ([#106](https://github.com/seapagan/bundle-repo/pull/106)) by [renovate[bot]](https://github.com/apps/renovate)
+
+[`Full Changelog`](https://github.com/seapagan/bundle-repo/compare/0.7.0...0.8.0) | [`Diff`](https://github.com/seapagan/bundle-repo/compare/0.7.0...0.8.0.diff) | [`Patch`](https://github.com/seapagan/bundle-repo/compare/0.7.0...0.8.0.patch)
+
 ## [0.7.0](https://github.com/seapagan/bundle-repo/releases/tag/0.7.0) (August 09, 2026)
 
 **Closed Issues**
