@@ -40,6 +40,31 @@ pub(super) fn build_partitioned_scanners(
     requested_partitions: usize,
     config: &ScanConfig,
 ) -> Result<PartitionedScanners, SecretScanError> {
+    let (document, source_rules, partition_count) =
+        prepare_source_rules(source, requested_partitions)?;
+    let (partitions, compiled_union) =
+        build_partitions(&document, &source_rules, partition_count, config)?;
+    let rule_order = source_rules
+        .into_iter()
+        .map(|rule| (rule.id, rule.order))
+        .collect::<BTreeMap<_, _>>();
+    validate_partition_integrity(
+        &partitions,
+        &rule_order,
+        &compiled_union,
+        partition_count,
+    )?;
+
+    Ok(PartitionedScanners {
+        partitions,
+        rule_order,
+    })
+}
+
+fn prepare_source_rules(
+    source: &str,
+    requested_partitions: usize,
+) -> Result<(Table, Vec<SourceRule>, usize), SecretScanError> {
     let mut document = toml::from_str::<Table>(source)
         .map_err(|_| SecretScanError::InvalidRuleset)?;
     harden_path_allowlists(&mut document)?;
@@ -50,8 +75,18 @@ pub(super) fn build_partitioned_scanners(
         .ok_or(SecretScanError::InvalidRuleset)?;
     let partition_count = requested_partitions.max(1).min(rules.len());
     let source_rules = parse_source_rules(rules, partition_count)?;
+
+    Ok((document, source_rules, partition_count))
+}
+
+fn build_partitions(
+    document: &Table,
+    source_rules: &[SourceRule],
+    partition_count: usize,
+    config: &ScanConfig,
+) -> Result<(Vec<RulePartition>, BTreeSet<String>), SecretScanError> {
     let mut assigned = vec![Vec::new(); partition_count];
-    for source_rule in &source_rules {
+    for source_rule in source_rules {
         assigned[source_rule.order.owner_partition]
             .push(source_rule.value.clone());
     }
@@ -60,7 +95,7 @@ pub(super) fn build_partitioned_scanners(
     let mut compiled_union = BTreeSet::new();
     for (ordinal, assigned_rules) in assigned.into_iter().enumerate() {
         let (scanner, _serialized_ruleset) = build_partition(
-            &document,
+            document,
             &assigned_rules,
             config,
             &mut compiled_union,
@@ -73,22 +108,23 @@ pub(super) fn build_partitioned_scanners(
         });
     }
 
-    let rule_order = source_rules
-        .into_iter()
-        .map(|rule| (rule.id, rule.order))
-        .collect::<BTreeMap<_, _>>();
+    Ok((partitions, compiled_union))
+}
+
+fn validate_partition_integrity(
+    partitions: &[RulePartition],
+    rule_order: &BTreeMap<String, RuleOrder>,
+    compiled_union: &BTreeSet<String>,
+    partition_count: usize,
+) -> Result<(), SecretScanError> {
     let source_ids = rule_order.keys().cloned().collect::<BTreeSet<_>>();
-    if compiled_union != source_ids
+    if *compiled_union != source_ids
         || compiled_union.len() != rule_order.len()
         || partitions.len() != partition_count
     {
         return Err(SecretScanError::PartitionIntegrity);
     }
-
-    Ok(PartitionedScanners {
-        partitions,
-        rule_order,
-    })
+    Ok(())
 }
 
 fn harden_path_allowlists(

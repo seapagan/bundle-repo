@@ -5,6 +5,8 @@ use std::sync::OnceLock;
 mod equivalence_tests;
 #[path = "secret_scanning/execution_tests.rs"]
 mod execution_tests;
+#[path = "secret_scanning/hardening_tests.rs"]
+mod hardening_tests;
 #[path = "secret_scanning/partition_tests.rs"]
 mod partition_tests;
 #[cfg(not(debug_assertions))]
