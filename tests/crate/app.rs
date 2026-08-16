@@ -429,12 +429,16 @@ fn test_application_secret_scan_opt_out_restores_original_content() {
     )
     .unwrap();
     let output_path = temp_dir.path().join("output.xml");
-    let params = Params {
-        output_file: Some(output_path.to_string_lossy().into_owned()),
-        secret_scan: false,
-        ..Params::default()
-    };
     let args = Flags::parse_from(["program", "--no-secret-scan"]);
+    let params = Params::from_args_and_config(
+        &args,
+        Params {
+            output_file: Some(output_path.to_string_lossy().into_owned()),
+            secret_scan: true,
+            ..Params::default()
+        },
+    );
+    assert!(!params.secret_scan);
     let mut reporter =
         progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
     let mut timings = timings::ProcessingTimings::default();

@@ -421,6 +421,40 @@ fn test_skipped_secret_type_attribute_is_optional() {
 }
 
 #[test]
+fn test_skipped_attributes_round_trip_xml_sensitive_characters() {
+    let safe_path = "safe & < \" path";
+    let secret_type = "Type & < \" marker";
+    let skipped = [SkippedRepositoryItem {
+        kind: crate::secret_scanning::SkippedItemKind::Subtree,
+        safe_path: safe_path.to_string(),
+        reason: SkipReason::SecretInPath {
+            secret_type: Some(secret_type.to_string()),
+        },
+    }];
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &FileTree::default(),
+        &skipped,
+        tempdir().unwrap().path(),
+        None,
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        parse_skipped(&xml),
+        [vec![
+            ("kind".to_string(), "subtree".to_string()),
+            ("reason".to_string(), "secret-in-path".to_string()),
+            ("path".to_string(), safe_path.to_string()),
+            ("secret-type".to_string(), secret_type.to_string()),
+        ]]
+    );
+}
+
+#[test]
 fn test_reused_timings_subtract_only_per_call_file_phase_deltas() {
     let temp_dir = tempdir().unwrap();
     let output_file = temp_dir.path().join("output.xml");
