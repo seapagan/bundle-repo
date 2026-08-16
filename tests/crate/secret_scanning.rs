@@ -1,6 +1,9 @@
 use super::*;
 use std::sync::OnceLock;
 
+#[path = "secret_scanning/partition_tests.rs"]
+mod partition_tests;
+
 fn scanner() -> &'static SecretScanner {
     static SCANNER: OnceLock<SecretScanner> = OnceLock::new();
     SCANNER.get_or_init(|| SecretScanner::from_bundled().unwrap())
