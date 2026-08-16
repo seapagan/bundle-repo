@@ -116,6 +116,39 @@ fn test_scanner_redacts_content_before_line_numbers_and_serialization() {
 }
 
 #[test]
+fn test_parallel_scanner_finishes_before_large_file_serialization() {
+    let temp_dir = tempdir().unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    let mut content = "x".repeat(1024 * 1024);
+    content.push('\n');
+    content.push_str(&secret);
+    fs::write(temp_dir.path().join("large-secret.txt"), content).unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push("large-secret.txt".to_string());
+    let scanner = SecretScanner::from_bundled_for_workers(2).unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let mut timings = ProcessingTimings::default();
+
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        Some(&scanner),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = String::from_utf8(xml).unwrap();
+    assert!(!xml.contains(&secret));
+    assert!(xml.contains("[Secret removed: GitHub Personal Access Token]"));
+    assert_eq!(timings.text_files_scanned, 1);
+    assert!(timings.findings_redacted >= 1);
+    assert!(timings.secret_scanning > Duration::ZERO);
+}
+
+#[test]
 fn test_utf16_conversion_precedes_secret_scanning() {
     let temp_dir = tempdir().unwrap();
     let output_file = temp_dir.path().join("output.xml");

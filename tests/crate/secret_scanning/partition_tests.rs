@@ -3,7 +3,7 @@ use crate::secret_scanning::execution::merge_test_results;
 use crate::secret_scanning::partitions::{
     RulePhase, build_partitioned_scanners, prove_compiled_partition_for_tests,
 };
-use secrets_scanner::{Finding, ScanResult};
+use secrets_scanner::ScanResult;
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
@@ -343,7 +343,7 @@ fn test_real_bundled_partitioned_findings_and_redaction_match_reference() {
     let partitioned =
         scanner.scan_findings("repository-content", &text).unwrap();
 
-    compare_findings(&reference.findings, &partitioned);
+    assert_findings_equivalent(&reference.findings, &partitioned);
     let expected = redact_findings(
         &text,
         reference
@@ -447,35 +447,5 @@ fn compare_reference_and_partitioned(
         .unwrap();
 
     assert!(!reference.findings_truncated);
-    compare_findings(&reference.findings, &partitioned);
-}
-
-fn compare_findings(reference: &[Finding], partitioned: &[Finding]) {
-    assert_eq!(reference.len(), partitioned.len());
-    for (expected, actual) in reference.iter().zip(partitioned) {
-        assert_eq!(expected.file, actual.file);
-        assert_eq!(expected.line, actual.line);
-        assert_eq!(expected.col, actual.col);
-        assert_eq!(expected.end_line, actual.end_line);
-        assert_eq!(expected.end_col, actual.end_col);
-        assert_eq!(expected.col_utf16, actual.col_utf16);
-        assert_eq!(expected.end_col_utf16, actual.end_col_utf16);
-        assert_eq!(expected.rule_id, actual.rule_id);
-        assert_eq!(expected.rule_description, actual.rule_description);
-        assert!(expected.matched == actual.matched, "matched value mismatch");
-        assert_eq!(expected.entropy.to_bits(), actual.entropy.to_bits());
-        assert_eq!(expected.start_offset, actual.start_offset);
-        assert_eq!(expected.end_offset, actual.end_offset);
-        assert_eq!(expected.secret_start_offset, actual.secret_start_offset);
-        assert_eq!(expected.secret_end_offset, actual.secret_end_offset);
-        assert!(
-            expected.fingerprint == actual.fingerprint,
-            "fingerprint mismatch"
-        );
-        assert_eq!(expected.commit, actual.commit);
-        assert!(
-            expected.context_lines == actual.context_lines,
-            "context mismatch"
-        );
-    }
+    assert_findings_equivalent(&reference.findings, &partitioned);
 }

@@ -13,6 +13,7 @@ const CONTENT_SCAN_PATH: &str = "repository-content";
 const PATH_COMPONENT_SCAN_PATH: &str = "repository-path-component";
 const MAX_LABEL_LEN: usize = 80;
 const MAX_SCAN_WORKERS: usize = 28;
+const PARALLEL_SCAN_THRESHOLD: usize = 1024 * 1024;
 
 #[cfg(test)]
 pub(crate) fn synthetic_github_pat() -> String {
@@ -83,6 +84,8 @@ pub(crate) enum SecretScanError {
     PartitionSetup(secrets_scanner::ScannerError),
     InvalidRuleset,
     PartitionIntegrity,
+    PartitionScanFailure,
+    WorkerPanic,
     InvalidSpan,
     TruncatedFindings,
 }
@@ -100,6 +103,12 @@ impl fmt::Display for SecretScanError {
                 .write_str("bundled secret rules have an unsupported format"),
             Self::PartitionIntegrity => formatter
                 .write_str("bundled secret rule partition validation failed"),
+            Self::PartitionScanFailure => {
+                formatter.write_str("a secret scan worker failed")
+            }
+            Self::WorkerPanic => {
+                formatter.write_str("a secret scan worker panicked")
+            }
             Self::InvalidSpan => {
                 formatter.write_str("secret scanner returned an invalid span")
             }
@@ -113,8 +122,10 @@ impl Error for SecretScanError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Setup(error) | Self::PartitionSetup(error) => Some(error),
+            Self::PartitionScanFailure => None,
             Self::InvalidRuleset
             | Self::PartitionIntegrity
+            | Self::WorkerPanic
             | Self::InvalidSpan
             | Self::TruncatedFindings => None,
         }
@@ -152,19 +163,24 @@ impl SecretScanner {
         &self,
         scanner_path: &str,
         text: &str,
+        schedule: ScanSchedule,
     ) -> Result<ScanResult, SecretScanError> {
         match &self.scanners {
             ScannerSet::Bundled(scanner) => {
                 Ok(scanner.scan_content_detailed(scanner_path, text))
             }
             ScannerSet::Partitioned(scanners) => {
-                execution::scan_sequential(scanners, scanner_path, text)
+                if scan_mode(schedule, text.len()) == ScanMode::Parallel {
+                    execution::scan_parallel(scanners, scanner_path, text)
+                } else {
+                    execution::scan_sequential(scanners, scanner_path, text)
+                }
             }
         }
     }
 
     #[cfg(test)]
-    fn from_bundled_for_workers(
+    pub(crate) fn from_bundled_for_workers(
         workers: usize,
     ) -> Result<Self, SecretScanError> {
         Self::from_bundled_with_worker_count(workers)
@@ -176,7 +192,9 @@ impl SecretScanner {
         scanner_path: &str,
         text: &str,
     ) -> Result<Vec<Finding>, SecretScanError> {
-        Ok(self.scan(scanner_path, text)?.findings)
+        Ok(self
+            .scan(scanner_path, text, ScanSchedule::Content)?
+            .findings)
     }
 
     #[cfg(test)]
@@ -227,7 +245,7 @@ impl SecretScanner {
         &self,
         text: &str,
     ) -> Result<SecretRedaction, SecretScanError> {
-        self.redact(CONTENT_SCAN_PATH, text)
+        self.redact(CONTENT_SCAN_PATH, text, ScanSchedule::Content)
     }
 
     pub(crate) fn scan_repository_paths(
@@ -246,8 +264,11 @@ impl SecretScanner {
             let mut safe_components = Vec::with_capacity(components.len());
             let mut affected = None;
             for (index, component) in components.iter().enumerate() {
-                let redaction =
-                    self.redact(PATH_COMPONENT_SCAN_PATH, component)?;
+                let redaction = self.redact(
+                    PATH_COMPONENT_SCAN_PATH,
+                    component,
+                    ScanSchedule::RepositoryPath,
+                )?;
                 findings += redaction.findings;
                 safe_components.push(redaction.text);
                 if redaction.findings > 0 {
@@ -294,8 +315,9 @@ impl SecretScanner {
         &self,
         scanner_path: &str,
         text: &str,
+        schedule: ScanSchedule,
     ) -> Result<SecretRedaction, SecretScanError> {
-        let result = self.scan(scanner_path, text)?;
+        let result = self.scan(scanner_path, text, schedule)?;
         if result.findings_truncated {
             return Err(SecretScanError::TruncatedFindings);
         }
@@ -325,7 +347,7 @@ impl SecretScanner {
 
     #[cfg(test)]
     fn rule_ids(&self, text: &str) -> Vec<String> {
-        self.scan(CONTENT_SCAN_PATH, text)
+        self.scan(CONTENT_SCAN_PATH, text, ScanSchedule::Content)
             .unwrap()
             .findings
             .into_iter()
@@ -349,6 +371,27 @@ fn scanner_config() -> ScanConfig {
 
 fn resolved_worker_count(available: Option<NonZeroUsize>) -> usize {
     available.map_or(1, NonZeroUsize::get).min(MAX_SCAN_WORKERS)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScanSchedule {
+    RepositoryPath,
+    Content,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScanMode {
+    Sequential,
+    Parallel,
+}
+
+fn scan_mode(schedule: ScanSchedule, text_len: usize) -> ScanMode {
+    if schedule == ScanSchedule::Content && text_len >= PARALLEL_SCAN_THRESHOLD
+    {
+        ScanMode::Parallel
+    } else {
+        ScanMode::Sequential
+    }
 }
 
 struct PendingSkipped {

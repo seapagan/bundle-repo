@@ -1,6 +1,10 @@
 use super::*;
 use std::sync::OnceLock;
 
+#[path = "secret_scanning/equivalence_tests.rs"]
+mod equivalence_tests;
+#[path = "secret_scanning/execution_tests.rs"]
+mod execution_tests;
 #[path = "secret_scanning/partition_tests.rs"]
 mod partition_tests;
 
@@ -20,6 +24,36 @@ fn finding(
         end,
         secret_type: secret_type.map(str::to_string),
         rule_id: rule_id.to_string(),
+    }
+}
+
+fn assert_findings_equivalent(reference: &[Finding], partitioned: &[Finding]) {
+    assert_eq!(reference.len(), partitioned.len());
+    for (expected, actual) in reference.iter().zip(partitioned) {
+        assert_eq!(expected.file, actual.file);
+        assert_eq!(expected.line, actual.line);
+        assert_eq!(expected.col, actual.col);
+        assert_eq!(expected.end_line, actual.end_line);
+        assert_eq!(expected.end_col, actual.end_col);
+        assert_eq!(expected.col_utf16, actual.col_utf16);
+        assert_eq!(expected.end_col_utf16, actual.end_col_utf16);
+        assert_eq!(expected.rule_id, actual.rule_id);
+        assert_eq!(expected.rule_description, actual.rule_description);
+        assert!(expected.matched == actual.matched, "matched value mismatch");
+        assert_eq!(expected.entropy.to_bits(), actual.entropy.to_bits());
+        assert_eq!(expected.start_offset, actual.start_offset);
+        assert_eq!(expected.end_offset, actual.end_offset);
+        assert_eq!(expected.secret_start_offset, actual.secret_start_offset);
+        assert_eq!(expected.secret_end_offset, actual.secret_end_offset);
+        assert!(
+            expected.fingerprint == actual.fingerprint,
+            "fingerprint mismatch"
+        );
+        assert_eq!(expected.commit, actual.commit);
+        assert!(
+            expected.context_lines == actual.context_lines,
+            "context mismatch"
+        );
     }
 }
 
