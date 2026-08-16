@@ -1,7 +1,7 @@
 use super::*;
 use crate::secret_scanning::execution::{
-    TestExecution, WorkerFault, scan_parallel_with_test_execution,
-    scan_sequential,
+    TestExecution, WorkerFault, panic_hook_delivery_for_tests,
+    scan_parallel_with_test_execution, scan_sequential,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -50,6 +50,11 @@ fn test_scheduling_boundary_uses_decoded_byte_length() {
 }
 
 #[test]
+fn test_only_scanner_worker_panics_are_hidden_from_previous_hook() {
+    assert_eq!(panic_hook_delivery_for_tests(), 1);
+}
+
+#[test]
 fn test_threshold_cases_scan_the_same_complete_content() {
     let scanner =
         SecretScanner::from_rules_for_workers(EXECUTION_RULES, 3).unwrap();
@@ -59,7 +64,8 @@ fn test_threshold_cases_scan_the_same_complete_content() {
         PARALLEL_SCAN_THRESHOLD + 1,
     ] {
         let text = text_with_secret_at_size(size, "LASTSECRET");
-        let redaction = scanner.redact_text(&text).unwrap();
+        let redaction =
+            scanner.redact_text("repository-content", &text).unwrap();
 
         assert_eq!(redaction.findings, 1);
         assert!(!redaction.text.contains("LASTSECRET"));
@@ -76,7 +82,7 @@ fn test_parallel_partitions_scan_first_last_and_unbounded_multiline_regions() {
     text.push_str("ENDSECRET\nLASTSECRET");
 
     let findings = scanner.scan_findings("repository-content", &text).unwrap();
-    let redaction = scanner.redact_text(&text).unwrap();
+    let redaction = scanner.redact_text("repository-content", &text).unwrap();
 
     assert_eq!(
         findings
@@ -94,7 +100,7 @@ fn test_parallel_partitions_scan_first_last_and_unbounded_multiline_regions() {
 fn test_reverse_worker_completion_preserves_released_order() {
     let scanner =
         SecretScanner::from_rules_for_workers(EXECUTION_RULES, 3).unwrap();
-    let scanners = scanner.partitioned().unwrap();
+    let scanners = scanner.partitioned();
     let text = "FIRSTSECRET BEGINSECRET body ENDSECRET LASTSECRET";
     let completed = Arc::new(AtomicUsize::new(0));
     let observed = Arc::new(Mutex::new(Vec::new()));
@@ -135,7 +141,7 @@ fn test_reverse_worker_completion_preserves_released_order() {
 fn test_parallel_faults_fail_closed_after_every_worker_joins() {
     let scanner =
         SecretScanner::from_rules_for_workers(EXECUTION_RULES, 3).unwrap();
-    let scanners = scanner.partitioned().unwrap();
+    let scanners = scanner.partitioned();
     let private_content = "FIRSTSECRET private-content LASTSECRET";
     let private_path = "private/repository/path";
     let cases = [
@@ -193,10 +199,10 @@ fn test_parallel_scans_are_repeatedly_deterministic() {
         SecretScanner::from_rules_for_workers(EXECUTION_RULES, 3).unwrap();
     let mut text = "padding".repeat(PARALLEL_SCAN_THRESHOLD / 7 + 1);
     text.push_str(" FIRSTSECRET LASTSECRET");
-    let first = scanner.redact_text(&text).unwrap();
+    let first = scanner.redact_text("repository-content", &text).unwrap();
 
     for _ in 0..5 {
-        let next = scanner.redact_text(&text).unwrap();
+        let next = scanner.redact_text("repository-content", &text).unwrap();
         assert_eq!(next.text, first.text);
         assert_eq!(next.findings, first.findings);
     }
