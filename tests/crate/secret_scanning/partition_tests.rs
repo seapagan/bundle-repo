@@ -221,10 +221,13 @@ fn test_strict_subset_construction_failures_are_fatal() {
         let error = SecretScanner::from_rules_for_workers(&rules, 2)
             .err()
             .unwrap();
-        assert!(matches!(error, SecretScanError::PartitionSetup(_)));
+        let cause = match &error {
+            SecretScanError::PartitionSetup(cause) => cause.to_string(),
+            _ => panic!("expected partition setup error"),
+        };
         assert_eq!(
             error.to_string(),
-            "failed to load a bundled rule partition"
+            format!("failed to load a bundled rule partition: {cause}")
         );
     }
 

@@ -103,8 +103,11 @@ impl fmt::Display for SecretScanError {
             Self::Setup(error) => {
                 write!(formatter, "failed to load bundled rules: {error}")
             }
-            Self::PartitionSetup(_) => {
-                formatter.write_str("failed to load a bundled rule partition")
+            Self::PartitionSetup(error) => {
+                write!(
+                    formatter,
+                    "failed to load a bundled rule partition: {error}"
+                )
             }
             Self::InvalidRuleset => formatter
                 .write_str("bundled secret rules have an unsupported format"),
