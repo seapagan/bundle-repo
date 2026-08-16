@@ -74,3 +74,22 @@
   repository metadata for represented items, distinguish skipped files from
   skipped subtrees, and avoid migrating cases such as binary-file content where
   the repository item itself is still validly represented.
+- Add an explicit expert-level mechanism to exclude selected repository files or
+  folders from **content** secret scanning while still including their contents
+  in the generated bundle. Support both configuration and CLI patterns, with
+  clear precedence/merge semantics and repository-relative matching consistent
+  with existing exclusion behavior. Secret-scan exclusions must be opt-in only;
+  never infer them automatically from file size, type, extension, generated
+  status, or location. Continue scanning the excluded item's path metadata.
+  Make the bypass visible in the XML rather than silently implying full secret
+  protection, report only safe aggregate exclusion counts in diagnostics/timing,
+  and document plainly that excluded content is emitted without secret
+  inspection and may therefore expose credentials.
+- Make repository-structure XML serialization deterministic so identical
+  repository state, BundleRepo version, and options produce byte-identical
+  output across repeated runs. The current `FolderNode`/`HashMap` traversal can
+  emit sibling folders in randomized order even when file contents and paths
+  are unchanged. Prefer deterministic lexicographic ordering at the narrowest
+  appropriate serialization/build boundary rather than broad unrelated data
+  structure changes, and add repeated-run regression coverage proving stable
+  repository structure and whole-document XML bytes.
