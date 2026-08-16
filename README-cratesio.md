@@ -418,7 +418,7 @@ Options:
   -x, --exclude <PATTERN>         Replace the existing exclude patterns with the specified pattern(s). Can be specified multiple times.
   -u, --utf8                      Detect and convert legacy text encodings to UTF-8
   -U, --no-utf8                   Disable legacy text conversion to UTF-8
-      --secret-scan               Enable secret scanning, overriding configuration
+      --secret-scan               Enable secret scanning (enabled by default), overriding configuration
       --no-secret-scan            Disable secret scanning, overriding configuration
   -h, --help                      Print help
 ```
@@ -609,7 +609,8 @@ understood by an LLM. Below is an example layout with explanations for each tag:
              secret-type="GitHub Personal Access Token"
              path="fixtures/[Secret removed: GitHub Personal Access Token].env" />
     <skipped kind="subtree" reason="secret-in-path"
-             path="fixtures/[Secret removed]" />
+             secret-type="GitHub Personal Access Token"
+             path="fixtures/[Secret removed: GitHub Personal Access Token]" />
   </repository_skipped>
 
   <repository_files>
