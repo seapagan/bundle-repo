@@ -8,10 +8,6 @@ use std::sync::Mutex;
 static PANIC_HOOK_LOCK: Mutex<()> = Mutex::new(());
 type PanicHook = Box<dyn Fn(&PanicHookInfo<'_>) + Sync + Send + 'static>;
 
-enum WorkerExecutionError {
-    Failed,
-}
-
 pub(super) fn scan_sequential(
     scanners: &PartitionedScanners,
     path: &str,
@@ -51,7 +47,7 @@ fn orchestrate_parallel(
         &super::partitions::RulePartition,
         &str,
         &str,
-    ) -> Result<Vec<(usize, ScanResult)>, WorkerExecutionError>
+    ) -> Result<Vec<(usize, ScanResult)>, SecretScanError>
     + Sync,
 ) -> Result<ScanResult, SecretScanError> {
     with_suppressed_worker_panic_output(|| {
@@ -79,9 +75,7 @@ fn orchestrate_parallel(
                     Ok(Ok(mut worker_results)) => {
                         results.append(&mut worker_results);
                     }
-                    Ok(Err(WorkerExecutionError::Failed)) => {
-                        worker_failed = true;
-                    }
+                    Ok(Err(_)) => worker_failed = true,
                     Err(_) => worker_panicked = true,
                 }
             }
@@ -269,7 +263,9 @@ mod test_support {
                 .filter(|fault| fault.0 == partition.ordinal)
                 .map(|fault| fault.1)
             {
-                Some(WorkerFault::Error) => Err(WorkerExecutionError::Failed),
+                Some(WorkerFault::Error) => {
+                    Err(SecretScanError::PartitionScanFailure)
+                }
                 Some(WorkerFault::Panic) => {
                     panic!("private worker panic payload")
                 }
