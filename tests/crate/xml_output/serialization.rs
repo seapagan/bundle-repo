@@ -433,6 +433,112 @@ fn test_nested_repository_structure_round_trips_with_hierarchy() {
 }
 
 #[test]
+fn test_repository_structure_uses_lexicographic_sibling_order() {
+    let mut beta = FolderNode {
+        files: vec!["z.txt".to_string(), "a.txt".to_string()],
+        ..FolderNode::default()
+    };
+    let mut nested = FolderNode::default();
+    nested.files.push("deep.txt".to_string());
+    beta.subfolders.insert("nested".to_string(), nested);
+
+    let mut alpha = FolderNode::default();
+    alpha.files.push("lowercase.txt".to_string());
+    let mut non_ascii = FolderNode::default();
+    non_ascii.files.push("non-ascii.txt".to_string());
+
+    let mut tree = FileTree::default();
+    tree.folder_node.files = vec![
+        "éclair.txt".to_string(),
+        "zeta.txt".to_string(),
+        "Alpha.txt".to_string(),
+    ];
+    tree.folder_node
+        .subfolders
+        .insert("βeta".to_string(), non_ascii);
+    tree.folder_node
+        .subfolders
+        .insert("alpha".to_string(), alpha);
+    tree.folder_node.subfolders.insert("Beta".to_string(), beta);
+
+    let temp_dir = tempdir().unwrap();
+    let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+    let xml = serialize_repository_xml(
+        &Params::default(),
+        &tree,
+        &[],
+        temp_dir.path(),
+        None,
+        &mut reporter,
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        parse_structure_files(&xml),
+        [
+            (Vec::<String>::new(), "Alpha.txt".to_string()),
+            (Vec::<String>::new(), "zeta.txt".to_string()),
+            (Vec::<String>::new(), "éclair.txt".to_string()),
+            (vec!["Beta".to_string()], "a.txt".to_string()),
+            (vec!["Beta".to_string()], "z.txt".to_string()),
+            (
+                vec!["Beta".to_string(), "nested".to_string()],
+                "deep.txt".to_string(),
+            ),
+            (vec!["alpha".to_string()], "lowercase.txt".to_string()),
+            (vec!["βeta".to_string()], "non-ascii.txt".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn test_equivalent_repository_runs_produce_identical_document_bytes() {
+    let temp_dir = tempdir().unwrap();
+    let paths = [
+        "zeta/root.txt",
+        "Alpha/one.txt",
+        "nested/Ω/two.txt",
+        "nested/a/three.txt",
+        "éclair.txt",
+    ];
+    for path in paths {
+        let full_path = temp_dir.path().join(path);
+        fs::create_dir_all(full_path.parent().unwrap()).unwrap();
+        fs::write(&full_path, format!("content for {path}\n")).unwrap();
+    }
+
+    let orders = [
+        [0, 1, 2, 3, 4],
+        [4, 3, 2, 1, 0],
+        [2, 4, 1, 0, 3],
+        [3, 0, 4, 2, 1],
+    ];
+    let documents = orders.map(|order| {
+        let file_list = order
+            .into_iter()
+            .map(|index| paths[index].to_string())
+            .collect();
+        let tree = crate::filelist::group_files_by_directory(file_list);
+        let mut reporter = ProgressReporter::new(Vec::new(), Vec::new(), true);
+        serialize_repository_xml(
+            &Params::default(),
+            &tree,
+            &[],
+            temp_dir.path(),
+            None,
+            &mut reporter,
+            &mut ProcessingTimings::default(),
+        )
+        .unwrap()
+    });
+
+    for document in &documents[1..] {
+        assert_eq!(document, &documents[0]);
+    }
+}
+
+#[test]
 fn test_lf_and_cr_metadata_round_trip_exactly() {
     let path = "line\nfeed.txt";
     let entry_xml = serialize_text_entry(path, "content");

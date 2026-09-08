@@ -85,14 +85,6 @@
   protection, report only safe aggregate exclusion counts in diagnostics/timing,
   and document plainly that excluded content is emitted without secret
   inspection and may therefore expose credentials.
-- Make repository-structure XML serialization deterministic so identical
-  repository state, BundleRepo version, and options produce byte-identical
-  output across repeated runs. The current `FolderNode`/`HashMap` traversal can
-  emit sibling folders in randomized order even when file contents and paths
-  are unchanged. Prefer deterministic lexicographic ordering at the narrowest
-  appropriate serialization/build boundary rather than broad unrelated data
-  structure changes, and add repeated-run regression coverage proving stable
-  repository structure and whole-document XML bytes.
 - Investigate reducing the fixed startup cost of default-on secret scanning.
   Compiling the pinned bundled ruleset currently costs roughly 1.6–1.7 seconds
   per process and dominates very small repository runs. Any optimization must

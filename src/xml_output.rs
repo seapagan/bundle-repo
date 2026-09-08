@@ -354,7 +354,9 @@ fn write_folder_to_xml<W: Write>(
     writer: &mut EventWriter<W>,
     folder_node: &FolderNode,
 ) -> Result<(), std::io::Error> {
-    for file in &folder_node.files {
+    let mut files = folder_node.files.iter().collect::<Vec<_>>();
+    files.sort_unstable();
+    for file in files {
         writer
             .write(XmlEvent::start_element("file").attr("path", file))
             .map_err(map_xml_error)?;
@@ -363,7 +365,9 @@ fn write_folder_to_xml<W: Write>(
             .map_err(map_xml_error)?;
     }
 
-    for (subfolder_name, subfolder_node) in &folder_node.subfolders {
+    let mut subfolders = folder_node.subfolders.iter().collect::<Vec<_>>();
+    subfolders.sort_unstable_by_key(|(name, _)| *name);
+    for (subfolder_name, subfolder_node) in subfolders {
         writer
             .write(
                 XmlEvent::start_element("folder").attr("name", subfolder_name),
@@ -397,6 +401,8 @@ fn write_repository_files_to_xml<W: Write, N: Write, D: Write>(
         "This node contains a list of files with their full paths and contents serialized as CDATA.",
     )?;
 
+    let mut file_paths = file_paths.iter().collect::<Vec<_>>();
+    file_paths.sort_unstable();
     for file_path in file_paths {
         let full_path = base_path.join(file_path);
         let file_size = metadata(&full_path)?.len();
