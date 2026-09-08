@@ -182,6 +182,19 @@ fn normalize_include(selector: &str) -> Result<String, String> {
     Ok(components.join("/"))
 }
 
+fn include_metadata(
+    path: &Path,
+    selector: &str,
+) -> Result<Option<std::fs::Metadata>, String> {
+    match path.symlink_metadata() {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => {
+            Err(format!("invalid include path '{selector}': {error}"))
+        }
+    }
+}
+
 fn resolve_include(
     repo_path: &Path,
     selector: &str,
@@ -191,16 +204,8 @@ fn resolve_include(
     let component_count = path.split('/').count();
     for (index, component) in path.split('/').enumerate() {
         current.push(component);
-        let metadata = match current.symlink_metadata() {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(None);
-            }
-            Err(error) => {
-                return Err(format!(
-                    "invalid include path '{selector}': {error}"
-                ));
-            }
+        let Some(metadata) = include_metadata(&current, selector)? else {
+            return Ok(None);
         };
         if metadata.file_type().is_symlink() {
             return Ok(None);
