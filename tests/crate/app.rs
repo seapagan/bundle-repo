@@ -342,6 +342,90 @@ fn test_no_exclude_patterns() {
 }
 
 #[test]
+fn test_include_paths_combine_cli_and_config() {
+    let args = Flags::parse_from([
+        "program",
+        "--include",
+        "cli.txt",
+        "--include",
+        "shared.txt",
+    ]);
+    let config =
+        create_test_config(r#"include = ["config.txt", "shared.txt"]"#);
+
+    let params = Params::from_args_and_config(&args, config);
+
+    assert_eq!(
+        params.include,
+        Some(vec![
+            "cli.txt".to_string(),
+            "shared.txt".to_string(),
+            "config.txt".to_string(),
+            "shared.txt".to_string(),
+        ])
+    );
+}
+
+#[test]
+fn test_include_paths_work_from_cli_or_config_alone() {
+    let cli = Params::from_args_and_config(
+        &Flags::parse_from(["program", "-i", "cli.txt"]),
+        create_test_config(""),
+    );
+    assert_eq!(cli.include, Some(vec!["cli.txt".to_string()]));
+
+    let config = Params::from_args_and_config(
+        &Flags::parse_from(["program"]),
+        create_test_config(r#"include = ["config.txt"]"#),
+    );
+    assert_eq!(config.include, Some(vec!["config.txt".to_string()]));
+}
+
+#[test]
+fn test_include_remains_active_with_replacement_exclude() {
+    let args = Flags::parse_from([
+        "program",
+        "--exclude",
+        "*.txt",
+        "--include",
+        "keep.txt",
+    ]);
+
+    let params = Params::from_args_and_config(&args, create_test_config(""));
+
+    assert_eq!(params.exclude, Some(vec!["*.txt".to_string()]));
+    assert_eq!(params.include, Some(vec!["keep.txt".to_string()]));
+}
+
+#[test]
+fn test_legacy_exclude_precedence() {
+    let cases: [(&str, &[&str], bool); 6] = [
+        ("", &["program"], false),
+        ("legacy_excludes = false", &["program"], false),
+        ("legacy_excludes = true", &["program"], true),
+        (
+            "legacy_excludes = false",
+            &["program", "--legacy-excludes"],
+            true,
+        ),
+        (
+            "legacy_excludes = true",
+            &["program", "--no-legacy-excludes"],
+            false,
+        ),
+        ("", &["program", "--no-legacy-excludes"], false),
+    ];
+
+    for (toml, arguments, expected) in cases {
+        let params = Params::from_args_and_config(
+            &Flags::parse_from(arguments),
+            create_test_config(toml),
+        );
+        assert_eq!(params.legacy_excludes, expected);
+    }
+}
+
+#[test]
 fn test_application_runs_local_repository_and_reports_success() {
     let temp_dir = tempdir().unwrap();
     initialize_repository(temp_dir.path());

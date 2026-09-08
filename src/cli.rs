@@ -129,6 +129,31 @@ pub struct Flags {
     pub exclude: Option<Vec<String>>,
 
     #[arg(
+        long = "include",
+        short = 'i',
+        value_name = "PATH",
+        help = "Include a literal repository-relative file or directory path. Can be specified multiple times.",
+        action = ArgAction::Append
+    )]
+    pub include: Option<Vec<String>>,
+
+    #[arg(
+        long = "legacy-excludes",
+        action = ArgAction::SetTrue,
+        conflicts_with = "no_legacy_excludes",
+        help = "Enable the legacy built-in exclusion profile"
+    )]
+    pub legacy_excludes: bool,
+
+    #[arg(
+        long = "no-legacy-excludes",
+        action = ArgAction::SetTrue,
+        conflicts_with = "legacy_excludes",
+        help = "Disable the legacy built-in exclusion profile, overriding configuration"
+    )]
+    pub no_legacy_excludes: bool,
+
+    #[arg(
         long = "utf8",
         short = 'u',
         action = ArgAction::SetTrue,

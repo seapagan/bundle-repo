@@ -136,6 +136,8 @@ fn test_params_default() {
     assert_eq!(params.branch, None);
     assert_eq!(params.extend_exclude, None);
     assert_eq!(params.exclude, None);
+    assert_eq!(params.include, None);
+    assert!(!params.legacy_excludes);
     assert!(!params.utf8);
     assert!(!params.gzip);
     assert_eq!(params.gzip_level, 6);
@@ -153,6 +155,8 @@ fn test_params_from_config() {
             branch = "main"
             extend_exclude = ["target", "node_modules"]
             exclude = ["custom.xml"]
+            include = [".gitignore", ".github/"]
+            legacy_excludes = true
         "#;
     let config = Config::builder()
         .add_source(File::from_str(config_str, FileFormat::Toml))
@@ -172,6 +176,11 @@ fn test_params_from_config() {
         Some(vec!["target".to_string(), "node_modules".to_string()])
     );
     assert_eq!(params.exclude, Some(vec!["custom.xml".to_string()]));
+    assert_eq!(
+        params.include,
+        Some(vec![".gitignore".to_string(), ".github/".to_string()])
+    );
+    assert!(params.legacy_excludes);
     assert!(!params.utf8);
 }
 

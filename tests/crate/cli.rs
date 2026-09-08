@@ -200,6 +200,49 @@ fn test_extend_exclude_patterns() {
 }
 
 #[test]
+fn test_include_paths_are_repeatable() {
+    let args = Flags::parse_from([
+        "program",
+        "-i",
+        ".gitignore",
+        "--include",
+        ".github/",
+    ]);
+
+    assert_eq!(
+        args.include,
+        Some(vec![".gitignore".to_string(), ".github/".to_string()])
+    );
+}
+
+#[test]
+fn test_legacy_exclude_flag_values() {
+    let enabled = Flags::parse_from(["program", "--legacy-excludes"]);
+    assert!(enabled.legacy_excludes);
+    assert!(!enabled.no_legacy_excludes);
+
+    let disabled = Flags::parse_from(["program", "--no-legacy-excludes"]);
+    assert!(!disabled.legacy_excludes);
+    assert!(disabled.no_legacy_excludes);
+
+    let default = Flags::parse_from(["program"]);
+    assert!(!default.legacy_excludes);
+    assert!(!default.no_legacy_excludes);
+}
+
+#[test]
+fn test_legacy_exclude_flags_conflict() {
+    assert!(
+        Flags::try_parse_from([
+            "program",
+            "--legacy-excludes",
+            "--no-legacy-excludes",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
 fn test_multiple_flags() {
     let args = Flags::parse_from([
         "program",

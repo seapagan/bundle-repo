@@ -202,6 +202,8 @@ pub struct Params {
     pub branch: Option<String>,
     pub extend_exclude: Option<Vec<String>>,
     pub exclude: Option<Vec<String>>,
+    pub include: Option<Vec<String>>,
+    pub legacy_excludes: bool,
     pub utf8: bool,
     pub gzip: bool,
     pub gzip_level: u32,
@@ -223,6 +225,8 @@ impl Default for Params {
             branch: None,
             extend_exclude: None,
             exclude: None,
+            include: None,
+            legacy_excludes: false,
             utf8: false,
             gzip: false,
             gzip_level: 6,
@@ -257,6 +261,13 @@ impl From<Config> for Params {
         );
         params.exclude =
             configured_optional_or(&settings, "exclude", params.exclude);
+        params.include =
+            configured_optional_or(&settings, "include", params.include);
+        params.legacy_excludes = configured_or(
+            &settings,
+            "legacy_excludes",
+            params.legacy_excludes,
+        );
         params.utf8 = configured_or(&settings, "utf8", params.utf8);
         params.gzip = configured_or(&settings, "gzip", params.gzip);
         params.gzip_level =
@@ -325,10 +336,29 @@ fn secret_scan_enabled(args: &cli::Flags, configured: bool) -> bool {
     args.secret_scan || configured
 }
 
+fn included_paths(args: &cli::Flags, config: &Params) -> Option<Vec<String>> {
+    match (&args.include, &config.include) {
+        (Some(cli), Some(config)) => {
+            Some([cli.clone(), config.clone()].concat())
+        }
+        (Some(cli), None) => Some(cli.clone()),
+        (None, Some(config)) => Some(config.clone()),
+        (None, None) => None,
+    }
+}
+
+fn legacy_excludes_enabled(args: &cli::Flags, configured: bool) -> bool {
+    if args.no_legacy_excludes {
+        return false;
+    }
+    args.legacy_excludes || configured
+}
+
 impl Params {
     pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
         let (gzip, gzip_level) = gzip_options(args, &config);
         let extend_exclude = extended_excludes(args, &config);
+        let include = included_paths(args, &config);
 
         Params {
             output_file: args
@@ -348,6 +378,11 @@ impl Params {
             branch: args.branch.clone().or(config.branch),
             extend_exclude,
             exclude: args.exclude.clone().or(config.exclude),
+            include,
+            legacy_excludes: legacy_excludes_enabled(
+                args,
+                config.legacy_excludes,
+            ),
             utf8: utf8_enabled(args, config.utf8),
             gzip,
             gzip_level,
