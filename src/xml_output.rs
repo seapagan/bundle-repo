@@ -612,9 +612,9 @@ fn write_file_summary<W: Write>(
         "- This file should be treated as read-only. Any changes should be made to the\n  original repository files, not this packed version.\n- When processing this file, use the file path to distinguish\n  between different files in the repository.\n- Be aware that this file may contain sensitive information. Handle it with\n  the same level of security as you would the original repository.",
     )?;
     let notes = if flags.secret_scan {
-        "- Some files may have been excluded based on .gitignore rules and bundlerepo's\n  configuration.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Decoded text classified as likely secret-bearing by its path/type retains its\n  canonical file entry with a safe unavailable-content diagnostic.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic."
+        "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Decoded text classified as likely secret-bearing by its path/type retains its\n  canonical file entry with a safe unavailable-content diagnostic.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic."
     } else {
-        "- Some files may have been excluded based on .gitignore rules and bundlerepo's\n  configuration.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Secret scanning was disabled for this bundle."
+        "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Secret scanning was disabled for this bundle."
     };
     write_text_element(writer, "notes", notes)?;
     write_text_element(

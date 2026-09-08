@@ -100,14 +100,14 @@ and 11 tested).
 
 - **Clone Git Repositories**: Supports cloning both public and private
   repositories (with token support). Only supports `https` URLs at this time.
-- **File Scanning**: Automatically scans the repository and adds all files to
-  the output, excluding standard ignored files (e.g. `.gitignore`, `LICENSE`,
-  etc).
+- **File Scanning**: Includes useful repository text and configuration by
+  default, including licences, lockfiles, `.github`, `.gitignore`, and other
+  dotfiles that repository ignore rules do not exclude.
 
 > [!NOTE]
 >
-> Any file listed in a `.gitignore` file will be excluded from the output and
-> metadata.
+> Repository ignore rules are respected by default. Use `--include` to recover
+> one ignored file or directory subtree for the current bundle.
 >
 > Binary file content will always be excluded, though they will be listed in the
 > `<repository_structure>` node and a `<file>` node will be created in the XML
@@ -205,11 +205,11 @@ bundlerepo
 
 > [!NOTE]
 >
-> The tool will actually bundle **any** files in the current directory (unless
-> they are in the hard-coded ignore list). This can probably be useful for
-> bundling any related files that you wish to feed to an AI. However, you may
-> need to edit the `<purpose>` and `<instructions>` nodes in the output XML. I
-> may add a flag to make this easier in the future (`--not-code` or something).
+> The tool bundles eligible files in the current repository. This can be useful
+> for bundling any related files that you wish to feed to an AI. However, you
+> may need to edit the `<purpose>` and `<instructions>` nodes in the output XML.
+> I may add a flag to make this easier in the future (`--not-code` or
+> something).
 >
 > However, it still needs to be an actual git repository or the code will exit.
 > I may add a flag to allow non-git repositories in the future.
@@ -451,8 +451,11 @@ Options:
   -l, --lnumbers                  Add line numbers to each code file in the output.
   -t, --token <TOKEN>             GitHub personal access token (required for private repos and to pass rate limits)
   -V, --version                   Print version information and exit
-  -e, --extend-exclude <PATTERN>  Add file/directory pattern to exclude, can be specified multiple times.
-  -x, --exclude <PATTERN>         Replace the existing exclude patterns with the specified pattern(s). Can be specified multiple times.
+  -e, --extend-exclude <PATTERN>  Add a repository-relative glob pattern to exclude. Can be specified multiple times.
+  -x, --exclude <PATTERN>         Replace BundleRepo exclusion patterns with repository-relative glob patterns. Can be specified multiple times.
+  -i, --include <PATH>            Include a literal repository-relative file or directory path. Can be specified multiple times.
+      --legacy-excludes           Enable the legacy built-in exclusion profile
+      --no-legacy-excludes        Disable the legacy built-in exclusion profile, overriding configuration
   -u, --utf8                      Detect and convert legacy text encodings to UTF-8
   -U, --no-utf8                   Disable legacy text conversion to UTF-8
       --secret-scan               Enable secret scanning (enabled by default), overriding configuration
@@ -483,6 +486,8 @@ line_numbers = true
 token = "your-github-token"
 extend_exclude = ["*.md", "*.txt", "docs/*"]  # Additional patterns to exclude
 exclude = ["*.exe", "*.dll", "node_modules/*"]  # File patterns to exclude
+include = [".gitignore", ".github/"]  # Literal paths to include
+legacy_excludes = false  # Restore the pre-0.9 context-saving exclusions
 utf8 = true  # Detect and convert legacy text encodings to UTF-8
 gzip = false  # Set true to gzip file or stdout output by default
 gzip_level = 6  # Compression level from 1 to 9; does not enable gzip by itself
@@ -497,6 +502,10 @@ precedence (highest to lowest):
 3. Global config file (`~/.config/bundlerepo/config.toml`)
 4. Built-in defaults
 
+CLI and configuration values for `include` and `extend_exclude` are additive.
+An active `exclude` value replaces the BundleRepo exclusion list and disables
+all `extend_exclude` values.
+
 Available configuration options:
 
 - `output_file`: Default output filename (default: "packed-repo.xml"). A leading
@@ -509,8 +518,13 @@ Available configuration options:
 - `line_numbers`: Whether to add line numbers by default (default: false)
 - `token`: Your GitHub personal access token (default: none)
 - `extend_exclude`: Additional file patterns to exclude (default: none)
-- `exclude`: File patterns to exclude, replacing the default ignore list
+- `exclude`: File patterns to exclude, replacing the active BundleRepo
+  exclusion list
   (default: none)
+- `include`: Literal repository-relative files or directories to include even
+  when file-selection rules exclude them (default: none)
+- `legacy_excludes`: Enable the pre-0.9 built-in context-saving exclusion
+  profile (default: false)
 - `utf8`: Whether to detect and convert legacy text encodings to UTF-8
   (default: false)
 - `gzip`: Whether to gzip output by default (default: false)
@@ -544,23 +558,35 @@ extend_exclude = ["*.md", "*.txt", "docs/*"]
 exclude = ["*.exe", "*.dll", "node_modules/*"]
 ```
 
-The `extend_exclude` patterns will be **added** to the default ignore list,
-while the `exclude` patterns will **replace** the default ignore list entirely.
+These exclusion values are case-insensitive repository-path globs. `*` and `?`
+do not cross `/`, `**` is recursive, and character classes are supported. A
+pattern without `/` matches that name at any depth. A slash-containing pattern
+is relative to the repository root, and a trailing `/` excludes a directory
+subtree. For example:
+
+- `*.md` matches Markdown filenames at every depth.
+- `docs/*` matches one component directly under `docs`; matching a directory
+  also excludes its subtree.
+- `docs/**` matches recursively below `docs`.
+- `target` matches a file or directory named `target` at any depth.
+
+`extend_exclude` adds patterns to the active BundleRepo exclusion list. That
+list is empty by default and contains the legacy profile when
+`--legacy-excludes` or `legacy_excludes = true` is active. `exclude` replaces
+the active BundleRepo list and disables `extend_exclude`.
 
 > [!IMPORTANT]
 >
-> When the `exclude` option is used (either via command line or config file),
-> both the default ignore list and any `extend_exclude` patterns are completely
-> ignored. The `exclude` patterns become the only ignore rules in effect
-> **EXCEPT that in either case, files in the `.gitignore` are ALWAYS ignored.**
+> Repository ignore rules remain active with either exclusion option. An
+> explicit literal `include` path overrides repository and BundleRepo
+> file-selection rules for only that file or directory subtree. It cannot
+> include `.git` metadata or bypass secret scanning, binary handling, XML
+> safety, unreadable-file handling, or symlink containment.
 
 > [!TIP]
 >
-> The `extend_exclude` option is useful for excluding additional files that
-> aren't in the default ignore list but that you don't want to include in your
-> XML output. The `exclude` option gives you complete control over what files
-> are ignored, replacing the built-in ignore list. Both options can help reduce
-> token usage and remove irrelevant files from the LLM context.
+> `include` is a literal path selector, not a glob. Paths must stay below the
+> repository root and cannot select the root or contain a `.git` component.
 >
 > Storing your GitHub token in the configuration file can be more convenient
 > than passing it via command line, especially if you frequently work with
@@ -585,36 +611,39 @@ while the `exclude` patterns will **replace** the default ignore list entirely.
 
 ## Ignored Files
 
-The tool will ignore the following files by default and (except for binary, see
-below) they will not be listed anywhere in the XML output:
+BundleRepo includes useful tracked and unignored repository context by default.
+Licences, lockfiles, requirements files, `renovate.json`, `.github`,
+`.gitignore`, `.vscode`, and other dotfiles are normally eligible. A `.git`
+path component is always excluded and cannot be overridden.
 
-- **ANY Binary File**. If you have a binary file in your repository, it will be
-  listed in the XML output, but the content will be excluded.
-- `.gitignore`
-- any file **listed** in a `.gitignore` file
-- `.git` folder and it's contents
-- `.github` folder and it's contents
-- Python requirements files (`requirements.txt`, `requirements-dev.txt`, etc)
-- Lockfiles - any file ending in `.lock`
-- `renovate.json`
-- `license` files (e.g. `LICENSE`, `LICENSE.md`, etc). Also matches the
-  alternate 'Licence' spelling.
-- `.vscode` folder and it's contents
+The normal walk respects `.ignore`, `.gitignore`, `.git/info/exclude`, global
+Git ignore rules, and applicable parent ignore files. BundleRepo does not offer
+a blanket ignore bypass.
 
-This list is hard-coded (and to be honest is tuned to my current workflow)
-however it can be added to / replaced by the `extend_exclude` and `exclude`
-options above. **In ALL CASES, files in the `.gitignore` are ALWAYS ignored.**
+Use a literal repository-relative include to recover one ignored path:
+
+```bash
+bundlerepo --include .gitignore
+bundlerepo --include generated/schema.json
+bundlerepo --include .github/
+```
+
+An included directory is recursive, but only its selected subtree bypasses
+file-selection rules. Explicitly including ignored material may expose files
+the repository normally hides. Secret scanning, binary-content omission, XML
+safety, unreadable-file handling, symlink policy, and repository containment
+remain active.
+
+Use `--legacy-excludes` to restore the previous built-in context-saving set:
+`.gitignore`, `renovate.json`, requirements files, lockfiles, licence/license
+files, `.github`, and `.vscode`. Configure it persistently with
+`legacy_excludes = true`; `--no-legacy-excludes` disables a configured profile
+for one invocation.
 
 > [!TIP]
 >
-> I'm very open to adding other files that should be ignored by default, If you
-> have a suggestion, please open a PR or an Issue on GitHub. For example, tool
-> configuration files (eslintrc, prettierrc, etc), which are not needed by an
-> LLM and just take up token space.
->
-> If there is demand, I may add a flag to allow the user to bypass this list and
-> include all files. However, binary files will always be excluded as they don't
-> fit well in XML.
+> Binary files remain listed in repository metadata, but their content is not
+> emitted.
 
 ## Planned Improvements
 

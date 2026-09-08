@@ -243,6 +243,18 @@ fn test_legacy_exclude_flags_conflict() {
 }
 
 #[test]
+fn test_file_selection_help_distinguishes_globs_and_literal_paths() {
+    use clap::CommandFactory;
+
+    let help = Flags::command().render_long_help().to_string();
+
+    assert!(help.contains("repository-relative glob pattern"));
+    assert!(help.contains("literal repository-relative file or directory"));
+    assert!(help.contains("--legacy-excludes"));
+    assert!(help.contains("--no-legacy-excludes"));
+}
+
+#[test]
 fn test_multiple_flags() {
     let args = Flags::parse_from([
         "program",
