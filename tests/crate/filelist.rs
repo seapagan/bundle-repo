@@ -143,13 +143,20 @@ fn test_exclusion_globs_are_unicode_case_insensitive() {
 
 #[test]
 fn test_exclusion_question_mark_matches_one_unicode_character() {
-    let temp_dir = TempDir::new().unwrap();
-    create_test_files(&temp_dir, &["ß.txt", "ss.txt"]);
     let exclude = vec!["?.txt".to_string()];
 
-    let files = list_files(temp_dir.path(), None, Some(&exclude), None, false)
-        .unwrap();
+    let unicode_dir = TempDir::new().unwrap();
+    create_test_files(&unicode_dir, &["ß.txt"]);
+    let files =
+        list_files(unicode_dir.path(), None, Some(&exclude), None, false)
+            .unwrap();
+    assert!(files.is_empty());
 
+    let ascii_dir = TempDir::new().unwrap();
+    create_test_files(&ascii_dir, &["ss.txt"]);
+    let files =
+        list_files(ascii_dir.path(), None, Some(&exclude), None, false)
+            .unwrap();
     assert_eq!(files, vec!["ss.txt"]);
 }
 
