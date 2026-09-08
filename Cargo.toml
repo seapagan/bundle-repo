@@ -53,6 +53,7 @@ chardetng = "1.0.0"
 dirs-next = "2.0.0"
 encoding_rs = "0.8.33"
 flate2 = "1.1.9"
+globset = "=0.4.20"
 icu_decimal = { version = "2.3.0", features = ["alloc"] }
 icu_locale_core = "2.3.0"
 

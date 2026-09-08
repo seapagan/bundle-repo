@@ -463,6 +463,113 @@ fn test_application_runs_local_repository_and_reports_success() {
 }
 
 #[test]
+fn test_invalid_exclusion_glob_creates_no_output() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    fs::write(temp_dir.path().join("example.txt"), "content").unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        exclude: Some(vec!["[unterminated".to_string()]),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 1);
+    assert!(error.to_string().contains("invalid exclusion glob"));
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn test_invalid_include_creates_no_output() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        include: Some(vec!["../outside.txt".to_string()]),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 1);
+    assert!(error.to_string().contains("invalid include path"));
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn test_included_ignored_files_keep_secret_and_binary_protection() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    fs::write(
+        temp_dir.path().join(".gitignore"),
+        "secret.txt\nbinary.bin\n",
+    )
+    .unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("secret.txt"),
+        format!("token = {secret}"),
+    )
+    .unwrap();
+    fs::write(temp_dir.path().join("binary.bin"), [0_u8, 159, 146, 150])
+        .unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        include: Some(vec![
+            "secret.txt".to_string(),
+            "binary.bin".to_string(),
+        ]),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = fs::read_to_string(output_path).unwrap();
+    assert!(xml.matches("secret.txt").count() >= 2);
+    assert!(xml.matches("binary.bin").count() >= 2);
+    assert!(!xml.contains(&secret));
+    assert!(xml.contains("[Secret removed: GitHub Personal Access Token]"));
+    assert!(xml.contains("This file is a binary file and not included"));
+}
+
+#[test]
 fn test_application_redacts_secrets_by_default() {
     let temp_dir = tempdir().unwrap();
     initialize_repository(temp_dir.path());

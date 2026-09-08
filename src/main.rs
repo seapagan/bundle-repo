@@ -152,6 +152,7 @@ fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(
 #[derive(Debug)]
 enum ApplicationError {
     Tokenizer(String),
+    FileSelection(String),
     Clone(git2::Error),
     CurrentDirectory(git2::Error),
     Output(std::io::Error),
@@ -162,6 +163,7 @@ impl ApplicationError {
     const fn exit_code(&self) -> i32 {
         match self {
             Self::Tokenizer(_) => 1,
+            Self::FileSelection(_) => 1,
             Self::Clone(_) => 2,
             Self::CurrentDirectory(_) => 3,
             Self::Output(_) => 4,
@@ -173,7 +175,9 @@ impl ApplicationError {
 impl fmt::Display for ApplicationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Tokenizer(error) => formatter.write_str(error),
+            Self::Tokenizer(error) | Self::FileSelection(error) => {
+                formatter.write_str(error)
+            }
             Self::Clone(error) | Self::CurrentDirectory(error) => {
                 write!(formatter, "Error: {error}")
             }
@@ -216,10 +220,15 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
 
     let file_list = filelist::list_files_in_repo(
         &repo_folder,
-        params.extend_exclude.as_deref(),
-        params.exclude.as_deref(),
+        &filelist::FileSelectionOptions {
+            extend_exclude: params.extend_exclude.as_deref(),
+            exclude: params.exclude.as_deref(),
+            include: params.include.as_deref(),
+            legacy_excludes: params.legacy_excludes,
+        },
         reporter,
-    );
+    )
+    .map_err(ApplicationError::FileSelection)?;
     let path_scan =
         scan_repository_paths(file_list, scanner.as_ref(), reporter, timings)?;
     let file_tree = filelist::group_files_by_directory(path_scan.included);

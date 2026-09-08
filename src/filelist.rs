@@ -1,21 +1,30 @@
+use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use crate::progress::ProgressReporter;
 
-const DEFAULT_EXCLUDE_PATTERNS: [&str; 8] = [
+const LEGACY_EXCLUDE_PATTERNS: [&str; 7] = [
     r"(?i)\.gitignore",
     r"(?i)renovate\.json",
     r"(?i)requirement.*\.txt",
     r"(?i)\.lock$",
     r"(?i)licen[cs]e(\..*)?",
     r"(?i)\.github",
-    r"(?i)\.git",
     r"(?i)\.vscode",
 ];
+
+pub struct FileSelectionOptions<'a> {
+    pub extend_exclude: Option<&'a [String]>,
+    pub exclude: Option<&'a [String]>,
+    pub include: Option<&'a [String]>,
+    pub legacy_excludes: bool,
+}
 
 #[derive(Default)]
 pub struct FolderNode {
@@ -36,86 +45,247 @@ fn repository_path(path: &Path) -> String {
         .join("/")
 }
 
-fn literal_exclude_pattern(pattern: &str) -> String {
-    #[cfg(windows)]
-    let pattern = pattern.replace('\\', "/");
-    #[cfg(not(windows))]
-    let pattern = pattern.to_string();
-
-    format!(r"(?i){}", regex::escape(&pattern))
-}
-
 struct ExclusionMatcher {
-    patterns: Vec<Regex>,
+    legacy_patterns: Vec<Regex>,
+    custom_patterns: GlobSet,
 }
 
 impl ExclusionMatcher {
-    fn new<N: Write, D: Write>(
+    fn new(
+        legacy_excludes: bool,
         extend_exclude: Option<&[String]>,
         exclude: Option<&[String]>,
-        reporter: &mut ProgressReporter<N, D>,
-    ) -> Self {
-        let patterns = if let Some(patterns) = exclude {
+    ) -> Result<Self, String> {
+        let custom_patterns = if let Some(patterns) = exclude {
             patterns
-                .iter()
-                .map(|pattern| literal_exclude_pattern(pattern))
-                .collect()
         } else {
-            let mut patterns = DEFAULT_EXCLUDE_PATTERNS
-                .into_iter()
-                .map(String::from)
-                .collect::<Vec<_>>();
-            if let Some(extend_patterns) = extend_exclude {
-                patterns.extend(
-                    extend_patterns
-                        .iter()
-                        .map(|pattern| literal_exclude_pattern(pattern)),
-                );
-            }
-            patterns
+            extend_exclude.unwrap_or_default()
         };
-
-        Self {
-            patterns: patterns
-                .into_iter()
-                .map(|pattern| {
-                    Regex::new(&pattern).unwrap_or_else(|error| {
-                        reporter
-                            .always_visible_diagnostic(&format!(
-                                "Warning: Invalid regex pattern '{pattern}': {error}"
-                            ))
-                            .unwrap();
-                        Regex::new(r"^$").unwrap()
-                    })
-                })
-                .collect(),
+        let mut builder = GlobSetBuilder::new();
+        for pattern in custom_patterns {
+            for normalized in exclusion_glob_variants(pattern) {
+                let glob = GlobBuilder::new(&normalized)
+                    .case_insensitive(true)
+                    .literal_separator(true)
+                    .backslash_escape(false)
+                    .build()
+                    .map_err(|error| {
+                        format!("invalid exclusion glob '{pattern}': {error}")
+                    })?;
+                builder.add(glob);
+            }
         }
+
+        Ok(Self {
+            legacy_patterns: if legacy_excludes && exclude.is_none() {
+                LEGACY_EXCLUDE_PATTERNS
+                    .into_iter()
+                    .map(|pattern| Regex::new(pattern).unwrap())
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            custom_patterns: builder.build().map_err(|error| {
+                format!("invalid exclusion glob set: {error}")
+            })?,
+        })
     }
 
     fn matches(&self, repository_path: &str) -> bool {
-        self.patterns
+        self.legacy_patterns
             .iter()
             .any(|pattern| pattern.is_match(repository_path))
+            || self.custom_patterns.is_match(repository_path)
     }
+}
+
+fn exclusion_glob_variants(pattern: &str) -> Vec<String> {
+    let normalized = pattern.replace('\\', "/");
+    if normalized.ends_with('/') {
+        let directory = normalized.trim_end_matches('/');
+        return vec![directory.to_string(), format!("{directory}/**")];
+    }
+    if normalized.contains('/') {
+        vec![normalized]
+    } else {
+        vec![format!("**/{normalized}")]
+    }
+}
+
+#[cfg(windows)]
+fn is_git_component(component: &OsStr) -> bool {
+    component.to_string_lossy().eq_ignore_ascii_case(".git")
+}
+
+#[cfg(not(windows))]
+fn is_git_component(component: &OsStr) -> bool {
+    component == ".git"
+}
+
+fn has_git_component(path: &Path) -> bool {
+    path.components()
+        .any(|component| is_git_component(component.as_os_str()))
+}
+
+#[derive(Clone)]
+struct IncludeSelector {
+    path: String,
+    directory: bool,
+}
+
+fn normalize_include(selector: &str) -> Result<String, String> {
+    let normalized = selector.replace('\\', "/");
+    let windows_absolute = normalized.as_bytes().get(1) == Some(&b':')
+        && normalized
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphabetic);
+    if normalized.starts_with('/') || windows_absolute {
+        return Err(format!(
+            "invalid include path '{selector}': path must be repository-relative"
+        ));
+    }
+
+    let mut components = Vec::new();
+    for component in normalized.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                return Err(format!(
+                    "invalid include path '{selector}': parent traversal is not allowed"
+                ));
+            }
+            ".git" => {
+                return Err(format!(
+                    "invalid include path '{selector}': .git metadata cannot be included"
+                ));
+            }
+            component => components.push(component),
+        }
+    }
+    if components.is_empty() {
+        return Err(format!(
+            "invalid include path '{selector}': repository root cannot be included"
+        ));
+    }
+    Ok(components.join("/"))
+}
+
+fn resolve_include(
+    repo_path: &Path,
+    selector: &str,
+) -> Result<Option<IncludeSelector>, String> {
+    let path = normalize_include(selector)?;
+    let mut current = repo_path.to_path_buf();
+    let component_count = path.split('/').count();
+    for (index, component) in path.split('/').enumerate() {
+        current.push(component);
+        let metadata = match current.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(None);
+            }
+            Err(error) => {
+                return Err(format!(
+                    "invalid include path '{selector}': {error}"
+                ));
+            }
+        };
+        if metadata.file_type().is_symlink() {
+            return Ok(None);
+        }
+        if index + 1 < component_count && !metadata.is_dir() {
+            return Ok(None);
+        }
+        if index + 1 == component_count {
+            if !metadata.is_file() && !metadata.is_dir() {
+                return Ok(None);
+            }
+            return Ok(Some(IncludeSelector {
+                path,
+                directory: metadata.is_dir(),
+            }));
+        }
+    }
+    Ok(None)
+}
+
+fn include_entry(selectors: &[IncludeSelector], path: &str) -> bool {
+    if path.is_empty() {
+        return true;
+    }
+    selectors.iter().any(|selector| {
+        path == selector.path
+            || selector.path.starts_with(&format!("{path}/"))
+            || (selector.directory
+                && path.starts_with(&format!("{}/", selector.path)))
+    })
+}
+
+fn include_file(selectors: &[IncludeSelector], path: &str) -> bool {
+    selectors.iter().any(|selector| {
+        path == selector.path
+            || (selector.directory
+                && path.starts_with(&format!("{}/", selector.path)))
+    })
 }
 
 pub fn list_files_in_repo<N: Write, D: Write>(
     repo_path: &Path,
-    extend_exclude: Option<&[String]>,
-    exclude: Option<&[String]>,
+    options: &FileSelectionOptions<'_>,
     reporter: &mut ProgressReporter<N, D>,
-) -> Vec<String> {
-    let mut file_list = Vec::new();
-    let exclusions = ExclusionMatcher::new(extend_exclude, exclude, reporter);
+) -> Result<Vec<String>, String> {
+    let mut file_list = BTreeSet::new();
+    let exclusions = Arc::new(ExclusionMatcher::new(
+        options.legacy_excludes,
+        options.extend_exclude,
+        options.exclude,
+    )?);
+    walk_normal(repo_path, &exclusions, reporter, &mut file_list);
 
-    let walker = WalkBuilder::new(repo_path)
+    let selectors = options
+        .include
+        .unwrap_or_default()
+        .iter()
+        .map(|selector| resolve_include(repo_path, selector))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if !selectors.is_empty() {
+        walk_includes(repo_path, &selectors, reporter, &mut file_list);
+    }
+
+    Ok(file_list.into_iter().collect())
+}
+
+fn walk_normal<N: Write, D: Write>(
+    repo_path: &Path,
+    exclusions: &Arc<ExclusionMatcher>,
+    reporter: &mut ProgressReporter<N, D>,
+    file_list: &mut BTreeSet<String>,
+) {
+    let filter_root = repo_path.to_path_buf();
+    let filter_exclusions = Arc::clone(exclusions);
+
+    let mut builder = WalkBuilder::new(repo_path);
+    builder
         .hidden(false)
         .git_ignore(true)
         .git_exclude(true)
         .git_global(true)
-        .build();
+        .filter_entry(move |entry| {
+            let Ok(relative) = entry.path().strip_prefix(&filter_root) else {
+                return false;
+            };
+            if has_git_component(relative) {
+                return false;
+            }
+            !entry.file_type().is_some_and(|kind| kind.is_dir())
+                || !filter_exclusions.matches(&repository_path(relative))
+        });
 
-    for result in walker {
+    for result in builder.build() {
         match result {
             Ok(entry) => {
                 if !entry.file_type().is_some_and(|ft| ft.is_file()) {
@@ -132,15 +302,54 @@ pub fn list_files_in_repo<N: Write, D: Write>(
                     continue;
                 }
 
-                file_list.push(relative_path);
+                file_list.insert(relative_path);
             }
             Err(err) => reporter
                 .always_visible_diagnostic(&format!("Error: {err}"))
                 .unwrap(),
         }
     }
+}
 
-    file_list
+fn walk_includes<N: Write, D: Write>(
+    repo_path: &Path,
+    selectors: &[IncludeSelector],
+    reporter: &mut ProgressReporter<N, D>,
+    file_list: &mut BTreeSet<String>,
+) {
+    let filter_root = repo_path.to_path_buf();
+    let filter_selectors = selectors.to_vec();
+    let mut builder = WalkBuilder::new(repo_path);
+    builder
+        .standard_filters(false)
+        .follow_links(false)
+        .filter_entry(move |entry| {
+            let Ok(relative) = entry.path().strip_prefix(&filter_root) else {
+                return false;
+            };
+            !has_git_component(relative)
+                && include_entry(&filter_selectors, &repository_path(relative))
+        });
+
+    for result in builder.build() {
+        match result {
+            Ok(entry)
+                if entry.file_type().is_some_and(|kind| kind.is_file()) =>
+            {
+                let Ok(relative) = entry.path().strip_prefix(repo_path) else {
+                    continue;
+                };
+                let relative = repository_path(relative);
+                if include_file(selectors, &relative) {
+                    file_list.insert(relative);
+                }
+            }
+            Ok(_) => {}
+            Err(error) => reporter
+                .always_visible_diagnostic(&format!("Error: {error}"))
+                .unwrap(),
+        }
+    }
 }
 
 pub fn group_files_by_directory(file_list: Vec<String>) -> FileTree {
