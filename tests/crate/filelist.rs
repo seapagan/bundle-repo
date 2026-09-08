@@ -267,6 +267,7 @@ fn test_include_overrides_legacy_and_extend_excludes() {
 #[test]
 fn test_include_narrowly_overrides_repository_ignore_rules() {
     let temp_dir = TempDir::new().unwrap();
+    git2::Repository::init(temp_dir.path()).unwrap();
     fs::write(
         temp_dir.path().join(".gitignore"),
         "ignored.txt\ngenerated/\n",
@@ -337,6 +338,7 @@ fn test_include_overrides_git_info_exclude() {
 #[test]
 fn test_include_file_below_ignored_directory_is_narrow() {
     let temp_dir = TempDir::new().unwrap();
+    git2::Repository::init(temp_dir.path()).unwrap();
     fs::write(temp_dir.path().join(".gitignore"), "generated/\n").unwrap();
     create_test_files(&temp_dir, &["generated/one.txt", "generated/two.txt"]);
     let include = vec!["generated/one.txt".to_string()];
