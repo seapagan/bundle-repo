@@ -106,7 +106,7 @@ fn test_exclusion_glob_contract() {
         "nested/target",
         "windows/path/config.toml",
     ] {
-        assert!(matcher.matches(path), "expected match for {path}");
+        assert!(matcher.matches_file(path), "expected match for {path}");
     }
     for path in [
         "docs/nested/deep.txt",
@@ -114,19 +114,31 @@ fn test_exclusion_glob_contract() {
         "src/c.rs",
         "targeted/file.txt",
     ] {
-        assert!(!matcher.matches(path), "unexpected match for {path}");
+        assert!(!matcher.matches_file(path), "unexpected match for {path}");
     }
 
     let recursive =
         ExclusionMatcher::new(false, None, Some(&["docs/**".to_string()]))
             .unwrap();
-    assert!(recursive.matches("docs/nested/deep.txt"));
+    assert!(recursive.matches_file("docs/nested/deep.txt"));
 
     let subtree =
         ExclusionMatcher::new(false, None, Some(&["generated/".to_string()]))
             .unwrap();
-    assert!(subtree.matches("generated"));
-    assert!(subtree.matches("generated/nested/file.txt"));
+    assert!(subtree.matches_file("generated"));
+    assert!(subtree.matches_file("generated/nested/file.txt"));
+}
+
+#[test]
+fn test_exclusion_globs_are_unicode_case_insensitive() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(&temp_dir, &["nested/ÜBER.txt"]);
+    let exclude = vec!["über.txt".to_string()];
+
+    let files = list_files(temp_dir.path(), None, Some(&exclude), None, false)
+        .unwrap();
+
+    assert!(files.is_empty());
 }
 
 #[test]
@@ -222,6 +234,16 @@ fn test_legacy_exclude_profile_and_replacement_precedence() {
             variant
         );
     }
+}
+
+#[test]
+fn test_legacy_file_pattern_does_not_prune_matching_directory() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(&temp_dir, &["cache.lock/keep.txt"]);
+
+    let files = list_files(temp_dir.path(), None, None, None, true).unwrap();
+
+    assert_eq!(files, vec!["cache.lock/keep.txt"]);
 }
 
 #[test]
@@ -388,6 +410,23 @@ fn test_invalid_include_selectors_are_errors() {
         assert!(error.contains(selector));
         assert!(error.contains("invalid include path"));
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn test_windows_include_rejects_case_equivalent_git_component() {
+    let error = normalize_include("nested/.GIT/config").unwrap_err();
+
+    assert!(error.contains(".git metadata cannot be included"));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_unix_include_preserves_case_sensitive_git_component_semantics() {
+    assert_eq!(
+        normalize_include("nested/.GIT/config").unwrap(),
+        "nested/.GIT/config"
+    );
 }
 
 #[test]

@@ -240,6 +240,7 @@ dependencies = [
  "tiktoken-rs",
  "tokenizers",
  "toml 1.1.4+spec-1.1.0",
+ "unicase",
  "url",
  "xml",
 ]

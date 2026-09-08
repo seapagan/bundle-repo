@@ -6,6 +6,7 @@ use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use unicase::UniCase;
 
 use crate::progress::ProgressReporter;
 
@@ -64,8 +65,8 @@ impl ExclusionMatcher {
         let mut builder = GlobSetBuilder::new();
         for pattern in custom_patterns {
             for normalized in exclusion_glob_variants(pattern) {
-                let glob = GlobBuilder::new(&normalized)
-                    .case_insensitive(true)
+                let folded = UniCase::new(normalized).to_folded_case();
+                let glob = GlobBuilder::new(&folded)
                     .literal_separator(true)
                     .backslash_escape(false)
                     .build()
@@ -91,11 +92,20 @@ impl ExclusionMatcher {
         })
     }
 
-    fn matches(&self, repository_path: &str) -> bool {
+    fn matches_file(&self, repository_path: &str) -> bool {
         self.legacy_patterns
             .iter()
             .any(|pattern| pattern.is_match(repository_path))
-            || self.custom_patterns.is_match(repository_path)
+            || self.matches_custom(repository_path)
+    }
+
+    fn matches_directory(&self, repository_path: &str) -> bool {
+        self.matches_custom(repository_path)
+    }
+
+    fn matches_custom(&self, repository_path: &str) -> bool {
+        self.custom_patterns
+            .is_match(UniCase::new(repository_path).to_folded_case())
     }
 }
 
@@ -155,7 +165,7 @@ fn normalize_include(selector: &str) -> Result<String, String> {
                     "invalid include path '{selector}': parent traversal is not allowed"
                 ));
             }
-            ".git" => {
+            component if is_git_component(OsStr::new(component)) => {
                 return Err(format!(
                     "invalid include path '{selector}': .git metadata cannot be included"
                 ));
@@ -282,7 +292,8 @@ fn walk_normal<N: Write, D: Write>(
                 return false;
             }
             !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !filter_exclusions.matches(&repository_path(relative))
+                || !filter_exclusions
+                    .matches_directory(&repository_path(relative))
         });
 
     for result in builder.build() {
@@ -298,7 +309,7 @@ fn walk_normal<N: Write, D: Write>(
                     Err(_) => continue,
                 };
 
-                if exclusions.matches(&relative_path) {
+                if exclusions.matches_file(&relative_path) {
                     continue;
                 }
 
