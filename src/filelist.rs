@@ -1,4 +1,5 @@
-use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+use casefold::simple_fold;
+use glob::{MatchOptions, Pattern};
 use ignore::WalkBuilder;
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
@@ -6,7 +7,6 @@ use std::ffi::OsStr;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use unicase::UniCase;
 
 use crate::progress::ProgressReporter;
 
@@ -48,7 +48,7 @@ fn repository_path(path: &Path) -> String {
 
 struct ExclusionMatcher {
     legacy_patterns: Vec<Regex>,
-    custom_patterns: GlobSet,
+    custom_patterns: Vec<Pattern>,
 }
 
 impl ExclusionMatcher {
@@ -57,23 +57,19 @@ impl ExclusionMatcher {
         extend_exclude: Option<&[String]>,
         exclude: Option<&[String]>,
     ) -> Result<Self, String> {
-        let custom_patterns = if let Some(patterns) = exclude {
+        let patterns = if let Some(patterns) = exclude {
             patterns
         } else {
             extend_exclude.unwrap_or_default()
         };
-        let mut builder = GlobSetBuilder::new();
-        for pattern in custom_patterns {
+        let mut custom_patterns = Vec::new();
+        for pattern in patterns {
             for normalized in exclusion_glob_variants(pattern) {
-                let folded = UniCase::new(normalized).to_folded_case();
-                let glob = GlobBuilder::new(&folded)
-                    .literal_separator(true)
-                    .backslash_escape(false)
-                    .build()
-                    .map_err(|error| {
-                        format!("invalid exclusion glob '{pattern}': {error}")
-                    })?;
-                builder.add(glob);
+                let folded = simple_fold(normalized);
+                let glob = Pattern::new(&folded).map_err(|error| {
+                    format!("invalid exclusion glob '{pattern}': {error}")
+                })?;
+                custom_patterns.push(glob);
             }
         }
 
@@ -86,9 +82,7 @@ impl ExclusionMatcher {
             } else {
                 Vec::new()
             },
-            custom_patterns: builder.build().map_err(|error| {
-                format!("invalid exclusion glob set: {error}")
-            })?,
+            custom_patterns,
         })
     }
 
@@ -104,8 +98,15 @@ impl ExclusionMatcher {
     }
 
     fn matches_custom(&self, repository_path: &str) -> bool {
+        let folded = simple_fold(repository_path.to_string());
+        let options = MatchOptions {
+            case_sensitive: true,
+            require_literal_separator: true,
+            require_literal_leading_dot: false,
+        };
         self.custom_patterns
-            .is_match(UniCase::new(repository_path).to_folded_case())
+            .iter()
+            .any(|pattern| pattern.matches_with(&folded, options))
     }
 }
 

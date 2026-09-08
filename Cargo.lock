@@ -215,6 +215,7 @@ name = "bundle_repo"
 version = "0.8.0"
 dependencies = [
  "arboard",
+ "casefold",
  "chardetng",
  "clap",
  "colored_text",
@@ -224,7 +225,7 @@ dependencies = [
  "flate2",
  "fs_extra",
  "git2",
- "globset",
+ "glob",
  "icu_decimal",
  "icu_locale_core",
  "ignore",
@@ -240,7 +241,6 @@ dependencies = [
  "tiktoken-rs",
  "tokenizers",
  "toml 1.1.4+spec-1.1.0",
- "unicase",
  "url",
  "xml",
 ]
@@ -256,6 +256,12 @@ name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
+name = "casefold"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4382156a4e6d5f0c279184bb37207f1259a5061c23084d3aa93eedf2a68c2eed"
 
 [[package]]
 name = "castaway"
@@ -864,6 +870,12 @@ dependencies = [
  "openssl-sys",
  "url",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "globset"
