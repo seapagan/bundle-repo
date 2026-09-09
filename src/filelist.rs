@@ -148,6 +148,20 @@ fn is_exact_git_component(component: &OsStr) -> bool {
     component == ".git"
 }
 
+fn git_namespace_entries(
+    parent: &Path,
+    component: &OsStr,
+) -> std::io::Result<(bool, bool)> {
+    let mut component_entry = false;
+    let mut git_entry = false;
+    for entry in parent.read_dir()? {
+        let name = entry?.file_name();
+        component_entry |= name == component;
+        git_entry |= name == ".git";
+    }
+    Ok((component_entry, git_entry))
+}
+
 fn is_git_metadata_component(
     parent: &Path,
     component: &OsStr,
@@ -162,13 +176,8 @@ fn is_git_metadata_component(
         return Ok(false);
     }
 
-    let mut component_entry = false;
-    let mut git_entry = false;
-    for entry in parent.read_dir()? {
-        let name = entry?.file_name();
-        component_entry |= name == component;
-        git_entry |= name == ".git";
-    }
+    let (component_entry, git_entry) =
+        git_namespace_entries(parent, component)?;
     if !component_entry {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
