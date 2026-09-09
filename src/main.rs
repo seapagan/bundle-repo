@@ -175,9 +175,8 @@ impl ApplicationError {
 impl fmt::Display for ApplicationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Tokenizer(error) | Self::FileSelection(error) => {
-                formatter.write_str(error)
-            }
+            Self::Tokenizer(error) => formatter.write_str(error),
+            Self::FileSelection(error) => write!(formatter, "Error: {error}"),
             Self::Clone(error) | Self::CurrentDirectory(error) => {
                 write!(formatter, "Error: {error}")
             }

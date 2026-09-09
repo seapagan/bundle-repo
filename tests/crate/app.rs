@@ -711,6 +711,20 @@ fn test_secret_scanner_error_has_stable_exit_code_and_generic_message() {
 }
 
 #[test]
+fn test_file_selection_error_has_prefix_and_stable_exit_code() {
+    let error = ApplicationError::FileSelection(
+        "invalid include path '../secret': parent traversal is not allowed"
+            .to_string(),
+    );
+
+    assert_eq!(error.exit_code(), 1);
+    assert_eq!(
+        error.to_string(),
+        "Error: invalid include path '../secret': parent traversal is not allowed"
+    );
+}
+
+#[test]
 fn test_application_maps_tokenizer_failure_to_exit_code() {
     let params = Params {
         model: Some("unknown".to_string()),
