@@ -130,6 +130,68 @@ fn test_exclusion_glob_contract() {
 }
 
 #[test]
+fn test_root_anchored_basename_excludes_only_repository_root() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(
+        &temp_dir,
+        &["target/root.txt", "nested/target/deep.txt", "visible.txt"],
+    );
+
+    let unanchored = vec!["target".to_string()];
+    let files =
+        list_files(temp_dir.path(), None, Some(&unanchored), None, false)
+            .unwrap();
+    assert_eq!(files, vec!["visible.txt"]);
+
+    let anchored = vec!["/target".to_string()];
+    let files =
+        list_files(temp_dir.path(), None, Some(&anchored), None, false)
+            .unwrap();
+    assert_eq!(files, vec!["nested/target/deep.txt", "visible.txt"]);
+}
+
+#[test]
+fn test_root_anchored_directory_globs_share_exclusion_semantics() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(
+        &temp_dir,
+        &[
+            "docs/root.txt",
+            "docs/nested/deep.txt",
+            "nested/docs/visible.txt",
+        ],
+    );
+
+    for pattern in ["/docs/**", "/docs/"] {
+        let patterns = vec![pattern.to_string()];
+        let excluded =
+            list_files(temp_dir.path(), None, Some(&patterns), None, false)
+                .unwrap();
+        let extended =
+            list_files(temp_dir.path(), Some(&patterns), None, None, false)
+                .unwrap();
+
+        assert_eq!(excluded, vec!["nested/docs/visible.txt"]);
+        assert_eq!(extended, excluded);
+    }
+}
+
+#[test]
+fn test_invalid_root_anchor_exclusion_globs_are_errors() {
+    let temp_dir = TempDir::new().unwrap();
+
+    for pattern in ["/", "//target", "///docs/**"] {
+        let patterns = vec![pattern.to_string()];
+        let error =
+            list_files(temp_dir.path(), None, Some(&patterns), None, false)
+                .unwrap_err();
+
+        assert!(error.contains(pattern));
+        assert!(error.contains("invalid exclusion glob"));
+    }
+}
+
+#[test]
 fn test_exclusion_globs_are_unicode_case_insensitive() {
     let temp_dir = TempDir::new().unwrap();
     create_test_files(&temp_dir, &["nested/ÜBER.txt"]);
@@ -543,21 +605,58 @@ fn test_invalid_include_selectors_are_errors() {
     }
 }
 
-#[cfg(windows)]
 #[test]
-fn test_windows_include_rejects_case_equivalent_git_component() {
-    let error = normalize_include("nested/.GIT/config").unwrap_err();
+fn test_git_boundary_follows_filesystem_case_semantics() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(&temp_dir, &[".GIT/config"]);
+    let git_alias_resolves = temp_dir.path().join(".git").exists();
 
-    assert!(error.contains(".git metadata cannot be included"));
+    let files = list_files(temp_dir.path(), None, None, None, false).unwrap();
+
+    assert_eq!(
+        files.contains(&".GIT/config".to_string()),
+        !git_alias_resolves
+    );
 }
 
-#[cfg(not(windows))]
 #[test]
-fn test_unix_include_preserves_case_sensitive_git_component_semantics() {
-    assert_eq!(
-        normalize_include("nested/.GIT/config").unwrap(),
-        "nested/.GIT/config"
-    );
+fn test_include_git_boundary_follows_filesystem_case_semantics() {
+    let temp_dir = TempDir::new().unwrap();
+    create_test_files(&temp_dir, &[".GIT/config"]);
+    let git_alias_resolves = temp_dir.path().join(".git").exists();
+    let include = vec![".GIT/config".to_string()];
+
+    let result =
+        list_files(temp_dir.path(), None, None, Some(&include), false);
+
+    if git_alias_resolves {
+        let error = result.unwrap_err();
+        assert!(error.contains(".git metadata cannot be included"));
+    } else {
+        assert_eq!(result.unwrap(), vec![".GIT/config"]);
+    }
+}
+
+#[test]
+fn test_invalid_include_is_validated_before_normal_walk_diagnostics() {
+    let temp_dir = TempDir::new().unwrap();
+    let missing_repo = temp_dir.path().join("missing");
+    let include = vec!["../outside.txt".to_string()];
+    let options = FileSelectionOptions {
+        extend_exclude: None,
+        exclude: None,
+        include: Some(&include),
+        legacy_excludes: false,
+    };
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), true);
+
+    let error = list_files_in_repo(&missing_repo, &options, &mut reporter)
+        .unwrap_err();
+
+    assert!(error.contains("invalid include path"));
+    let (_, diagnostic) = reporter.into_parts();
+    assert!(diagnostic.is_empty());
 }
 
 #[test]

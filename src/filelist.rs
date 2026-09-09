@@ -65,7 +65,7 @@ impl ExclusionMatcher {
         };
         let mut custom_patterns = Vec::new();
         for pattern in patterns {
-            for normalized in exclusion_glob_variants(pattern) {
+            for normalized in exclusion_glob_variants(pattern)? {
                 let folded = simple_fold(normalized);
                 let glob = Pattern::new(&folded).map_err(|error| {
                     format!("invalid exclusion glob '{pattern}': {error}")
@@ -111,32 +111,77 @@ impl ExclusionMatcher {
     }
 }
 
-fn exclusion_glob_variants(pattern: &str) -> Vec<String> {
+fn exclusion_glob_variants(pattern: &str) -> Result<Vec<String>, String> {
     let normalized = pattern.replace('\\', "/");
+    let (normalized, anchored) = if let Some(anchored) =
+        normalized.strip_prefix('/')
+    {
+        if anchored.is_empty() {
+            return Err(format!(
+                "invalid exclusion glob '{pattern}': root anchor must be followed by a pattern"
+            ));
+        }
+        if anchored.starts_with('/') {
+            return Err(format!(
+                "invalid exclusion glob '{pattern}': only one leading '/' root anchor is allowed"
+            ));
+        }
+        (anchored, true)
+    } else {
+        (normalized.as_str(), false)
+    };
     if normalized.ends_with('/') {
         let directory = normalized.trim_end_matches('/');
-        return vec![directory.to_string(), format!("{directory}/**")];
+        return Ok(vec![directory.to_string(), format!("{directory}/**")]);
     }
-    if normalized.contains('/') {
-        vec![normalized]
+    if anchored || normalized.contains('/') {
+        Ok(vec![normalized.to_string()])
     } else {
-        vec![format!("**/{normalized}")]
+        Ok(vec![format!("**/{normalized}")])
     }
 }
 
-#[cfg(windows)]
-fn is_git_component(component: &OsStr) -> bool {
-    component.to_string_lossy().eq_ignore_ascii_case(".git")
-}
-
-#[cfg(not(windows))]
-fn is_git_component(component: &OsStr) -> bool {
+fn is_exact_git_component(component: &OsStr) -> bool {
     component == ".git"
 }
 
-fn has_git_component(path: &Path) -> bool {
-    path.components()
-        .any(|component| is_git_component(component.as_os_str()))
+fn is_git_case_variant(component: &OsStr) -> bool {
+    component
+        .to_str()
+        .is_some_and(|component| component.eq_ignore_ascii_case(".git"))
+}
+
+fn is_git_metadata_component(
+    parent: &Path,
+    component: &OsStr,
+) -> std::io::Result<bool> {
+    if is_exact_git_component(component) {
+        return Ok(true);
+    }
+    if !is_git_case_variant(component) {
+        return Ok(false);
+    }
+
+    let git_path = parent.join(".git");
+    match git_path.symlink_metadata() {
+        Ok(_) => Ok(Handle::from_path(parent.join(component))?
+            == Handle::from_path(git_path)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn has_git_component(repo_path: &Path, path: &Path) -> std::io::Result<bool> {
+    let mut parent = repo_path.to_path_buf();
+    for component in path.components() {
+        if is_git_metadata_component(&parent, component.as_os_str())? {
+            return Ok(true);
+        }
+        parent.push(component);
+    }
+    Ok(false)
 }
 
 #[derive(Clone)]
@@ -168,7 +213,7 @@ fn normalize_include(selector: &str) -> Result<String, String> {
                     "invalid include path '{selector}': parent traversal is not allowed"
                 ));
             }
-            component if is_git_component(OsStr::new(component)) => {
+            component if is_exact_git_component(OsStr::new(component)) => {
                 return Err(format!(
                     "invalid include path '{selector}': .git metadata cannot be included"
                 ));
@@ -279,6 +324,21 @@ fn resolve_include_component(
     let entries = include_directory_entries(parent, selector)?;
     let actual =
         actual_include_path(entries, &requested, component, selector)?;
+    let actual_component = actual.file_name().ok_or_else(|| {
+        format!("invalid include path '{selector}': path has no component")
+    })?;
+    let git_metadata = is_git_metadata_component(parent, actual_component)
+        .map_err(|error| {
+            format!(
+                "invalid include path '{selector}': cannot identify whether '{}' is .git metadata: {error}",
+                actual.display()
+            )
+        })?;
+    if git_metadata {
+        return Err(format!(
+            "invalid include path '{selector}': .git metadata cannot be included"
+        ));
+    }
     Ok(Some((actual, metadata)))
 }
 
@@ -341,14 +401,11 @@ pub fn list_files_in_repo<N: Write, D: Write>(
     options: &FileSelectionOptions<'_>,
     reporter: &mut ProgressReporter<N, D>,
 ) -> Result<Vec<String>, String> {
-    let mut file_list = BTreeSet::new();
     let exclusions = Arc::new(ExclusionMatcher::new(
         options.legacy_excludes,
         options.extend_exclude,
         options.exclude,
     )?);
-    walk_normal(repo_path, &exclusions, reporter, &mut file_list);
-
     let selectors = options
         .include
         .unwrap_or_default()
@@ -358,6 +415,9 @@ pub fn list_files_in_repo<N: Write, D: Write>(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+
+    let mut file_list = BTreeSet::new();
+    walk_normal(repo_path, &exclusions, reporter, &mut file_list);
     if !selectors.is_empty() {
         walk_includes(repo_path, &selectors, reporter, &mut file_list);
     }
@@ -384,7 +444,7 @@ fn walk_normal<N: Write, D: Write>(
             let Ok(relative) = entry.path().strip_prefix(&filter_root) else {
                 return false;
             };
-            if has_git_component(relative) {
+            if has_git_component(&filter_root, relative).unwrap_or(true) {
                 return false;
             }
             !entry.file_type().is_some_and(|kind| kind.is_dir())
@@ -434,7 +494,7 @@ fn walk_includes<N: Write, D: Write>(
             let Ok(relative) = entry.path().strip_prefix(&filter_root) else {
                 return false;
             };
-            !has_git_component(relative)
+            !has_git_component(&filter_root, relative).unwrap_or(true)
                 && include_entry(&filter_selectors, &repository_path(relative))
         });
 
