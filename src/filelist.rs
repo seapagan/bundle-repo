@@ -99,6 +99,9 @@ impl ExclusionMatcher {
     }
 
     fn matches_custom(&self, repository_path: &str) -> bool {
+        if self.custom_patterns.is_empty() {
+            return false;
+        }
         let folded = simple_fold(repository_path.to_string());
         let options = MatchOptions {
             case_sensitive: true,
@@ -376,24 +379,31 @@ fn resolve_include(
     Ok(None)
 }
 
+fn selected_path(selector: &IncludeSelector, path: &str) -> bool {
+    path == selector.path
+        || (selector.directory
+            && path
+                .strip_prefix(&selector.path)
+                .is_some_and(|suffix| suffix.starts_with('/')))
+}
+
 fn include_entry(selectors: &[IncludeSelector], path: &str) -> bool {
     if path.is_empty() {
         return true;
     }
     selectors.iter().any(|selector| {
-        path == selector.path
-            || selector.path.starts_with(&format!("{path}/"))
-            || (selector.directory
-                && path.starts_with(&format!("{}/", selector.path)))
+        selected_path(selector, path)
+            || selector
+                .path
+                .strip_prefix(path)
+                .is_some_and(|suffix| suffix.starts_with('/'))
     })
 }
 
 fn include_file(selectors: &[IncludeSelector], path: &str) -> bool {
-    selectors.iter().any(|selector| {
-        path == selector.path
-            || (selector.directory
-                && path.starts_with(&format!("{}/", selector.path)))
-    })
+    selectors
+        .iter()
+        .any(|selector| selected_path(selector, path))
 }
 
 pub fn list_files_in_repo<N: Write, D: Write>(
@@ -447,9 +457,12 @@ fn walk_normal<N: Write, D: Write>(
             if has_git_component(&filter_root, relative).unwrap_or(true) {
                 return false;
             }
-            !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !filter_exclusions
-                    .matches_directory(&repository_path(relative))
+            if !entry.file_type().is_some_and(|kind| kind.is_dir())
+                || filter_exclusions.custom_patterns.is_empty()
+            {
+                return true;
+            }
+            !filter_exclusions.matches_directory(&repository_path(relative))
         });
 
     for result in builder.build() {

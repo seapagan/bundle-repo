@@ -478,6 +478,26 @@ fn test_include_file_below_ignored_directory_is_narrow() {
 }
 
 #[test]
+fn test_include_relationships_respect_component_boundaries() {
+    let selectors = [
+        IncludeSelector {
+            path: "foo".to_string(),
+            directory: true,
+        },
+        IncludeSelector {
+            path: "selected/file.txt".to_string(),
+            directory: false,
+        },
+    ];
+
+    assert!(include_entry(&selectors, "selected"));
+    assert!(include_file(&selectors, "foo/child.txt"));
+    assert!(include_file(&selectors, "selected/file.txt"));
+    assert!(!include_file(&selectors, "foobar/child.txt"));
+    assert!(!include_file(&selectors, "selected/file.txt/child"));
+}
+
+#[test]
 fn test_alternate_case_include_file_uses_filesystem_spelling() {
     let temp_dir = TempDir::new().unwrap();
     git2::Repository::init(temp_dir.path()).unwrap();
