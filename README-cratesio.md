@@ -548,13 +548,16 @@ These exclusion values are case-insensitive repository-path globs. `*` and `?`
 do not cross `/`, `**` is recursive, and character classes are supported. A
 pattern without `/` matches that name at any depth. A slash-containing pattern
 is relative to the repository root, and a trailing `/` excludes a directory
-subtree. For example:
+subtree. One leading `/` explicitly anchors any pattern to the repository root;
+`/` alone and multiple leading slashes are invalid. For example:
 
 - `*.md` matches Markdown filenames at every depth.
 - `docs/*` matches one component directly under `docs`; matching a directory
   also excludes its subtree.
 - `docs/**` matches recursively below `docs`.
 - `target` matches a file or directory named `target` at any depth.
+- `/target` matches `target` only at the repository root.
+- `/docs/` excludes the root-level `docs` subtree.
 
 `extend_exclude` adds patterns to the active BundleRepo exclusion list. That
 list is empty by default and contains the legacy profile when
