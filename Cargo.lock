@@ -232,6 +232,7 @@ dependencies = [
  "infer",
  "regex",
  "rust-embed",
+ "same-file",
  "secrets_scanner",
  "serde",
  "sha2 0.11.0",

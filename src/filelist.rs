@@ -2,6 +2,7 @@ use casefold::simple_fold;
 use glob::{MatchOptions, Pattern};
 use ignore::WalkBuilder;
 use regex::Regex;
+use same_file::Handle;
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::io::Write;
@@ -147,6 +148,7 @@ struct IncludeSelector {
 fn normalize_include(selector: &str) -> Result<String, String> {
     let normalized = selector.replace('\\', "/");
     let windows_absolute = normalized.as_bytes().get(1) == Some(&b':')
+        && normalized.as_bytes().get(2) == Some(&b'/')
         && normalized
             .as_bytes()
             .first()
@@ -195,6 +197,91 @@ fn include_metadata(
     }
 }
 
+fn include_directory_entries(
+    parent: &Path,
+    selector: &str,
+) -> Result<Vec<std::fs::DirEntry>, String> {
+    std::fs::read_dir(parent)
+        .map_err(|error| {
+            format!(
+                "invalid include path '{selector}': cannot read '{}': {error}",
+                parent.display()
+            )
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            format!(
+                "invalid include path '{selector}': cannot read '{}': {error}",
+                parent.display()
+            )
+        })
+}
+
+fn actual_include_path(
+    entries: Vec<std::fs::DirEntry>,
+    requested: &Path,
+    component: &str,
+    selector: &str,
+) -> Result<PathBuf, String> {
+    if let Some(entry) = entries
+        .iter()
+        .find(|entry| entry.file_name() == OsStr::new(component))
+    {
+        return Ok(entry.path());
+    }
+
+    let identify = |path: &Path, error| {
+        format!(
+            "invalid include path '{selector}': cannot identify '{}': {error}",
+            path.display()
+        )
+    };
+    let requested_handle = Handle::from_path(requested)
+        .map_err(|error| identify(requested, error))?;
+    let mut matches = Vec::new();
+    for entry in entries {
+        let path = entry.path();
+        let file_type =
+            entry.file_type().map_err(|error| identify(&path, error))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let handle = Handle::from_path(&path)
+            .map_err(|error| identify(&path, error))?;
+        if handle == requested_handle {
+            matches.push(path);
+        }
+    }
+
+    match matches.len() {
+        0 => Err(format!(
+            "invalid include path '{selector}': resolved component '{component}' has no matching directory entry"
+        )),
+        1 => Ok(matches.pop().unwrap()),
+        _ => Err(format!(
+            "invalid include path '{selector}': component '{component}' is ambiguous"
+        )),
+    }
+}
+
+fn resolve_include_component(
+    parent: &Path,
+    component: &str,
+    selector: &str,
+) -> Result<Option<(PathBuf, std::fs::Metadata)>, String> {
+    let requested = parent.join(component);
+    let Some(metadata) = include_metadata(&requested, selector)? else {
+        return Ok(None);
+    };
+    if metadata.file_type().is_symlink() {
+        return Ok(None);
+    }
+    let entries = include_directory_entries(parent, selector)?;
+    let actual =
+        actual_include_path(entries, &requested, component, selector)?;
+    Ok(Some((actual, metadata)))
+}
+
 fn resolve_include(
     repo_path: &Path,
     selector: &str,
@@ -203,10 +290,12 @@ fn resolve_include(
     let mut current = repo_path.to_path_buf();
     let component_count = path.split('/').count();
     for (index, component) in path.split('/').enumerate() {
-        current.push(component);
-        let Some(metadata) = include_metadata(&current, selector)? else {
+        let Some((actual, metadata)) =
+            resolve_include_component(&current, component, selector)?
+        else {
             return Ok(None);
         };
+        current = actual;
         if metadata.file_type().is_symlink() {
             return Ok(None);
         }
@@ -218,7 +307,11 @@ fn resolve_include(
                 return Ok(None);
             }
             return Ok(Some(IncludeSelector {
-                path,
+                path: repository_path(
+                    current.strip_prefix(repo_path).map_err(|error| {
+                        format!("invalid include path '{selector}': {error}")
+                    })?,
+                ),
                 directory: metadata.is_dir(),
             }));
         }

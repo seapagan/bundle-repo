@@ -416,6 +416,93 @@ fn test_include_file_below_ignored_directory_is_narrow() {
 }
 
 #[test]
+fn test_alternate_case_include_file_uses_filesystem_spelling() {
+    let temp_dir = TempDir::new().unwrap();
+    git2::Repository::init(temp_dir.path()).unwrap();
+    fs::write(temp_dir.path().join(".gitignore"), "MixedCase.txt\n").unwrap();
+    create_test_files(&temp_dir, &["MixedCase.txt"]);
+    let alternate = "mixedcase.TXT";
+    let alternate_resolves =
+        temp_dir.path().join(alternate).symlink_metadata().is_ok();
+    let include = vec![alternate.to_string()];
+
+    let files = list_files(temp_dir.path(), None, None, Some(&include), false)
+        .unwrap();
+
+    assert_eq!(
+        files.contains(&"MixedCase.txt".to_string()),
+        alternate_resolves
+    );
+    assert!(!files.contains(&alternate.to_string()));
+}
+
+#[test]
+fn test_alternate_case_include_directory_uses_filesystem_spelling() {
+    let temp_dir = TempDir::new().unwrap();
+    git2::Repository::init(temp_dir.path()).unwrap();
+    fs::write(temp_dir.path().join(".gitignore"), "Generated/\n").unwrap();
+    create_test_files(&temp_dir, &["Generated/Nested/Schema.json"]);
+    let alternate = "generated";
+    let alternate_resolves =
+        temp_dir.path().join(alternate).symlink_metadata().is_ok();
+    let include = vec![format!("{alternate}/")];
+
+    let files = list_files(temp_dir.path(), None, None, Some(&include), false)
+        .unwrap();
+
+    assert_eq!(
+        files.contains(&"Generated/Nested/Schema.json".to_string()),
+        alternate_resolves
+    );
+    assert!(!files.contains(&"generated/Nested/Schema.json".to_string()));
+}
+
+#[test]
+fn test_ambiguous_alternate_case_include_is_an_error() {
+    let temp_dir = TempDir::new().unwrap();
+    git2::Repository::init(temp_dir.path()).unwrap();
+    fs::write(
+        temp_dir.path().join(".gitignore"),
+        "Original.txt\nAlias.txt\n",
+    )
+    .unwrap();
+    create_test_files(&temp_dir, &["Original.txt"]);
+    fs::hard_link(
+        temp_dir.path().join("Original.txt"),
+        temp_dir.path().join("Alias.txt"),
+    )
+    .unwrap();
+    let alternate = "ORIGINAL.TXT";
+    let include = vec![alternate.to_string()];
+
+    let result =
+        list_files(temp_dir.path(), None, None, Some(&include), false);
+
+    if temp_dir.path().join(alternate).symlink_metadata().is_ok() {
+        let error = result.unwrap_err();
+        assert!(error.contains("invalid include path 'ORIGINAL.TXT'"));
+        assert!(error.contains("ambiguous"));
+    } else {
+        assert!(!result.unwrap().iter().any(|path| path.ends_with(".txt")));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_include_accepts_relative_colon_filename() {
+    let temp_dir = TempDir::new().unwrap();
+    git2::Repository::init(temp_dir.path()).unwrap();
+    fs::write(temp_dir.path().join(".gitignore"), "a:b\n").unwrap();
+    create_test_files(&temp_dir, &["a:b"]);
+    let include = vec!["a:b".to_string()];
+
+    let files = list_files(temp_dir.path(), None, None, Some(&include), false)
+        .unwrap();
+
+    assert!(files.contains(&"a:b".to_string()));
+}
+
+#[test]
 fn test_invalid_glob_is_an_error() {
     let temp_dir = TempDir::new().unwrap();
     let invalid = vec!["[unterminated".to_string()];
@@ -434,6 +521,7 @@ fn test_invalid_include_selectors_are_errors() {
     let cases = [
         absolute.as_str(),
         r"C:\temp\file.txt",
+        "C:/temp/file.txt",
         "../file.txt",
         "foo/../file.txt",
         "",
