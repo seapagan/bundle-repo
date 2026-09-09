@@ -487,7 +487,7 @@ fn test_invalid_exclusion_glob_creates_no_output() {
     )
     .unwrap_err();
 
-    assert_eq!(error.exit_code(), 1);
+    assert_eq!(error.exit_code(), 6);
     assert!(error.to_string().contains("invalid exclusion glob"));
     assert!(!output_path.exists());
 }
@@ -516,7 +516,7 @@ fn test_invalid_include_creates_no_output() {
     )
     .unwrap_err();
 
-    assert_eq!(error.exit_code(), 1);
+    assert_eq!(error.exit_code(), 6);
     assert!(error.to_string().contains("invalid include path"));
     assert!(!output_path.exists());
 }
@@ -717,7 +717,7 @@ fn test_file_selection_error_has_prefix_and_stable_exit_code() {
             .to_string(),
     );
 
-    assert_eq!(error.exit_code(), 1);
+    assert_eq!(error.exit_code(), 6);
     assert_eq!(
         error.to_string(),
         "Error: invalid include path '../secret': parent traversal is not allowed"

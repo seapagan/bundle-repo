@@ -163,7 +163,7 @@ impl ApplicationError {
     const fn exit_code(&self) -> i32 {
         match self {
             Self::Tokenizer(_) => 1,
-            Self::FileSelection(_) => 1,
+            Self::FileSelection(_) => 6,
             Self::Clone(_) => 2,
             Self::CurrentDirectory(_) => 3,
             Self::Output(_) => 4,
