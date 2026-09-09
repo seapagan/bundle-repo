@@ -658,6 +658,32 @@ fn test_include_git_boundary_follows_filesystem_case_semantics() {
 }
 
 #[test]
+fn test_distinct_hard_linked_git_case_variant_is_not_structural() {
+    let temp_dir = TempDir::new().unwrap();
+    let git = temp_dir.path().join(".git");
+    let variant = temp_dir.path().join(".GIT");
+    fs::write(&git, "gitdir: metadata").unwrap();
+    if variant.exists() || fs::hard_link(&git, &variant).is_err() {
+        return;
+    }
+
+    let files = list_files(temp_dir.path(), None, None, None, false).unwrap();
+    assert_eq!(files, vec![".GIT"]);
+
+    let exclude = vec![".GIT".to_string()];
+    let include = vec![".GIT".to_string()];
+    let files = list_files(
+        temp_dir.path(),
+        None,
+        Some(&exclude),
+        Some(&include),
+        false,
+    )
+    .unwrap();
+    assert_eq!(files, vec![".GIT"]);
+}
+
+#[test]
 fn test_invalid_include_is_validated_before_normal_walk_diagnostics() {
     let temp_dir = TempDir::new().unwrap();
     let missing_repo = temp_dir.path().join("missing");

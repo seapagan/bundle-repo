@@ -165,10 +165,26 @@ fn is_git_metadata_component(
         return Ok(false);
     }
 
-    let git_path = parent.join(".git");
-    match git_path.symlink_metadata() {
-        Ok(_) => Ok(Handle::from_path(parent.join(component))?
-            == Handle::from_path(git_path)?),
+    let mut component_entry = false;
+    let mut git_entry = false;
+    for entry in parent.read_dir()? {
+        let name = entry?.file_name();
+        component_entry |= name == component;
+        git_entry |= name == ".git";
+    }
+    if !component_entry {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "path component disappeared during .git boundary check",
+        ));
+    }
+    if git_entry {
+        return Ok(false);
+    }
+
+    let component_handle = Handle::from_path(parent.join(component))?;
+    match Handle::from_path(parent.join(".git")) {
+        Ok(git_handle) => Ok(component_handle == git_handle),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             Ok(false)
         }
