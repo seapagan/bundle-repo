@@ -308,6 +308,20 @@ fn gzip_options(args: &cli::Flags, config: &Params) -> (bool, u32) {
     }
 }
 
+fn merge_optional_lists(
+    cli: &Option<Vec<String>>,
+    configured: &Option<Vec<String>>,
+) -> Option<Vec<String>> {
+    match (cli, configured) {
+        (Some(cli), Some(configured)) => {
+            Some([cli.clone(), configured.clone()].concat())
+        }
+        (Some(cli), None) => Some(cli.clone()),
+        (None, Some(configured)) => Some(configured.clone()),
+        (None, None) => None,
+    }
+}
+
 fn extended_excludes(
     args: &cli::Flags,
     config: &Params,
@@ -315,43 +329,19 @@ fn extended_excludes(
     if args.exclude.is_some() || config.exclude.is_some() {
         return None;
     }
-    match (&args.extend_exclude, &config.extend_exclude) {
-        (Some(cli_excludes), Some(config_excludes)) => {
-            Some([cli_excludes.clone(), config_excludes.clone()].concat())
-        }
-        (Some(cli_excludes), None) => Some(cli_excludes.clone()),
-        (None, Some(config_excludes)) => Some(config_excludes.clone()),
-        (None, None) => None,
-    }
+    merge_optional_lists(&args.extend_exclude, &config.extend_exclude)
 }
 
-fn utf8_enabled(args: &cli::Flags, configured: bool) -> bool {
-    !args.no_utf8 && (args.utf8 || configured)
-}
-
-fn secret_scan_enabled(args: &cli::Flags, configured: bool) -> bool {
-    if args.no_secret_scan {
-        return false;
-    }
-    args.secret_scan || configured
+const fn paired_boolean_enabled(
+    negative: bool,
+    positive: bool,
+    configured: bool,
+) -> bool {
+    !negative && (positive || configured)
 }
 
 fn included_paths(args: &cli::Flags, config: &Params) -> Option<Vec<String>> {
-    match (&args.include, &config.include) {
-        (Some(cli), Some(config)) => {
-            Some([cli.clone(), config.clone()].concat())
-        }
-        (Some(cli), None) => Some(cli.clone()),
-        (None, Some(config)) => Some(config.clone()),
-        (None, None) => None,
-    }
-}
-
-fn legacy_excludes_enabled(args: &cli::Flags, configured: bool) -> bool {
-    if args.no_legacy_excludes {
-        return false;
-    }
-    args.legacy_excludes || configured
+    merge_optional_lists(&args.include, &config.include)
 }
 
 impl Params {
@@ -379,14 +369,19 @@ impl Params {
             extend_exclude,
             exclude: args.exclude.clone().or(config.exclude),
             include,
-            legacy_excludes: legacy_excludes_enabled(
-                args,
+            legacy_excludes: paired_boolean_enabled(
+                args.no_legacy_excludes,
+                args.legacy_excludes,
                 config.legacy_excludes,
             ),
-            utf8: utf8_enabled(args, config.utf8),
+            utf8: paired_boolean_enabled(args.no_utf8, args.utf8, config.utf8),
             gzip,
             gzip_level,
-            secret_scan: secret_scan_enabled(args, config.secret_scan),
+            secret_scan: paired_boolean_enabled(
+                args.no_secret_scan,
+                args.secret_scan,
+                config.secret_scan,
+            ),
         }
     }
 }
