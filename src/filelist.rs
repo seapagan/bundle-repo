@@ -296,9 +296,6 @@ fn resolve_include(
             return Ok(None);
         };
         current = actual;
-        if metadata.file_type().is_symlink() {
-            return Ok(None);
-        }
         if index + 1 < component_count && !metadata.is_dir() {
             return Ok(None);
         }
