@@ -611,7 +611,7 @@ the active BundleRepo list and disables `extend_exclude`.
 
 ## Ignored Files
 
-BundleRepo includes useful tracked and unignored repository context by default.
+BundleRepo includes useful unignored repository context by default.
 Licences, lockfiles, requirements files, `renovate.json`, `.github`,
 `.gitignore`, `.vscode`, and other dotfiles are normally eligible. A `.git`
 path component is always excluded and cannot be overridden.
@@ -623,9 +623,8 @@ a blanket ignore bypass.
 Use a literal repository-relative include to recover one ignored path:
 
 ```bash
-bundlerepo --include .gitignore
 bundlerepo --include generated/schema.json
-bundlerepo --include .github/
+bundlerepo --include build/reports/
 ```
 
 An included directory is recursive, but only its selected subtree bypasses
