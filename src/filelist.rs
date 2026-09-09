@@ -148,12 +148,6 @@ fn is_exact_git_component(component: &OsStr) -> bool {
     component == ".git"
 }
 
-fn is_git_case_variant(component: &OsStr) -> bool {
-    component
-        .to_str()
-        .is_some_and(|component| component.eq_ignore_ascii_case(".git"))
-}
-
 fn is_git_metadata_component(
     parent: &Path,
     component: &OsStr,
@@ -161,7 +155,10 @@ fn is_git_metadata_component(
     if is_exact_git_component(component) {
         return Ok(true);
     }
-    if !is_git_case_variant(component) {
+    if !component
+        .to_str()
+        .is_some_and(|component| component.eq_ignore_ascii_case(".git"))
+    {
         return Ok(false);
     }
 

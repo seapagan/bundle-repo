@@ -340,15 +340,11 @@ const fn paired_boolean_enabled(
     !negative && (positive || configured)
 }
 
-fn included_paths(args: &cli::Flags, config: &Params) -> Option<Vec<String>> {
-    merge_optional_lists(&args.include, &config.include)
-}
-
 impl Params {
     pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
         let (gzip, gzip_level) = gzip_options(args, &config);
         let extend_exclude = extended_excludes(args, &config);
-        let include = included_paths(args, &config);
+        let include = merge_optional_lists(&args.include, &config.include);
 
         Params {
             output_file: args
