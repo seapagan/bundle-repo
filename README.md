@@ -1,9 +1,9 @@
 # BundleRepo <!-- omit in toc -->
 
-**BundleRepo** is a beta tool designed to clone and pack a local or remote
-(GitHub only for now) Git repository into a comprehensive XML file. The packed
-XML includes detailed metadata about each file, such as the size in bytes and
-the number of lines, making it suitable for large language model (LLM)
+**BundleRepo** is a command-line tool designed to clone and pack a local or
+remote (GitHub only for now) Git repository into a comprehensive XML file. The
+packed XML includes detailed metadata about each file, such as the size in bytes
+and the number of lines, making it suitable for large language model (LLM)
 consumption, code analysis, and repository review.
 
 XML was chosen for the file output format since it is very well structured and
@@ -86,7 +86,6 @@ invalid locale data falls back to deterministic English formatting.
 - [Ignored Files](#ignored-files)
 - [Planned Improvements](#planned-improvements)
 - [XML Layout](#xml-layout)
-- [Beta Status](#beta-status)
 - [Source distribution](#source-distribution)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
@@ -614,14 +613,13 @@ the active BundleRepo list and disables `extend_exclude`.
 
 ## Ignored Files
 
-BundleRepo includes useful unignored repository context by default.
-Licences, lockfiles, requirements files, `renovate.json`, `.github`,
-`.gitignore`, `.vscode`, and other dotfiles are normally eligible. A `.git`
-path component is always excluded and cannot be overridden.
+BundleRepo respects repository ignore rules by default, including `.ignore`,
+`.gitignore`, `.git/info/exclude`, global Git ignore rules, and applicable
+parent ignore files. An explicitly included file or directory can override these
+rules, as well as BundleRepo exclusion rules, for the current bundle.
 
-The normal walk respects `.ignore`, `.gitignore`, `.git/info/exclude`, global
-Git ignore rules, and applicable parent ignore files. BundleRepo does not offer
-a blanket ignore bypass.
+A `.git` path component is always excluded and cannot be overridden or
+explicitly included.
 
 Use a literal repository-relative include to recover one ignored path:
 
@@ -749,17 +747,6 @@ content, and adds a diagnostic comment naming the first unsupported code point.
 
 Plain file, clipboard, and plain stdout output use the same serialized XML
 bytes. Gzip output compresses those bytes without changing the document.
-
-## Beta Status
-
-> [!WARNING]
->
-> This tool is currently in **beta**. While the core functionality works, there
-> may be edge cases or features yet to be fully refined. Feedback and
-> contributions are welcome to improve and stabilize the tool.
->
-> There is a pressing need to improve the test suite to ensure the tool works as
-> expected in a variety of scenarios. This is a priority for the next release.
 
 ## Source distribution
 
