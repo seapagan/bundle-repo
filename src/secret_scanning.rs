@@ -18,6 +18,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 
 const PATH_COMPONENT_SCAN_PATH: &str = "repository-path-component";
+const METADATA_SCANNER_PATH: &str = ".bundlerepo.toml";
 const MAX_SCAN_WORKERS: usize = 28;
 const PARALLEL_SCAN_THRESHOLD: usize = 1024 * 1024;
 
@@ -132,6 +133,16 @@ impl Error for SecretScanError {
 }
 
 impl SecretScanner {
+    pub(crate) fn contains_secret(
+        &self,
+        text: &str,
+    ) -> Result<bool, SecretScanError> {
+        Ok(!self
+            .scan(METADATA_SCANNER_PATH, text, ScanSchedule::Content)?
+            .findings
+            .is_empty())
+    }
+
     pub(crate) fn from_bundled() -> Result<Self, SecretScanError> {
         let workers =
             resolved_worker_count(std::thread::available_parallelism().ok());

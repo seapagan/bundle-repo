@@ -1,5 +1,7 @@
 use super::*;
+use clap::Parser;
 use config::{Config, File, FileFormat};
+use std::collections::BTreeMap;
 
 #[test]
 fn test_vec_string_loading() {
@@ -141,6 +143,7 @@ fn test_params_default() {
     assert!(!params.utf8);
     assert!(!params.gzip);
     assert_eq!(params.gzip_level, 6);
+    assert!(params.metadata.is_empty());
 }
 
 #[test]
@@ -182,6 +185,22 @@ fn test_params_from_config() {
     );
     assert!(params.legacy_excludes);
     assert!(!params.utf8);
+    assert!(params.metadata.is_empty());
+}
+
+#[test]
+fn test_cli_resolution_preserves_config_metadata() {
+    let metadata = BTreeMap::from([("key".to_string(), "value".to_string())]);
+    let config = Params {
+        metadata: metadata.clone(),
+        ..Params::default()
+    };
+    let args = crate::cli::Flags::parse_from(["program", "--stdout"]);
+
+    let params = Params::from_args_and_config(&args, config);
+
+    assert_eq!(params.metadata, metadata);
+    assert!(params.stdout);
 }
 
 #[test]

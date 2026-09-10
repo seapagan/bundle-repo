@@ -4,8 +4,7 @@ use std::process::exit;
 use std::time::Instant;
 
 use clap::Parser;
-use config::{Config, File, FileFormat};
-use dirs_next::home_dir;
+use configuration::load_config;
 use structs::Params;
 use tabled::{
     Table, Tabled,
@@ -18,6 +17,7 @@ use tempfile::tempdir;
 use tokenizer::{Model, TokenizerType};
 
 mod cli;
+mod configuration;
 mod embedded;
 mod filelist;
 mod number_format;
@@ -39,43 +39,6 @@ struct SummaryTable {
     // metric: &'static str,
     metric: String,
     value: String,
-}
-
-fn load_config() -> (Params, Option<String>) {
-    let global_config_path =
-        home_dir().map(|home| home.join(".config/bundlerepo/config.toml"));
-    load_config_from_paths(
-        global_config_path.as_deref(),
-        Path::new(".bundlerepo.toml"),
-    )
-}
-
-fn load_config_from_paths(
-    global_config_path: Option<&Path>,
-    local_config_path: &Path,
-) -> (Params, Option<String>) {
-    let mut config_builder = Config::builder();
-
-    if let Some(global_config_path) = global_config_path
-        && global_config_path.exists()
-    {
-        config_builder = config_builder.add_source(File::new(
-            global_config_path.to_str().unwrap(),
-            FileFormat::Toml,
-        ));
-    }
-
-    if local_config_path.exists() {
-        config_builder = config_builder.add_source(File::new(
-            local_config_path.to_str().unwrap(),
-            FileFormat::Toml,
-        ));
-    }
-
-    match config_builder.build() {
-        Ok(config) => (config.into(), None),
-        Err(error) => (Params::default(), Some(error.to_string())),
-    }
 }
 
 fn report_success<N: std::io::Write, D: std::io::Write>(
@@ -151,6 +114,7 @@ fn prepare_tokenizer<N: std::io::Write, D: std::io::Write>(
 
 #[derive(Debug)]
 enum ApplicationError {
+    Metadata(configuration::MetadataError),
     Tokenizer(String),
     FileSelection(String),
     Clone(git2::Error),
@@ -162,6 +126,7 @@ enum ApplicationError {
 impl ApplicationError {
     const fn exit_code(&self) -> i32 {
         match self {
+            Self::Metadata(_) => 1,
             Self::Tokenizer(_) => 1,
             Self::FileSelection(_) => 6,
             Self::Clone(_) => 2,
@@ -175,6 +140,7 @@ impl ApplicationError {
 impl fmt::Display for ApplicationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Metadata(error) => write!(formatter, "Error: {error}"),
             Self::Tokenizer(error) => formatter.write_str(error),
             Self::FileSelection(error) => write!(formatter, "Error: {error}"),
             Self::Clone(error) | Self::CurrentDirectory(error) => {
@@ -194,12 +160,18 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
     args: &cli::Flags,
     params: &Params,
     repository_path: &Path,
+    scanner_slot: &mut Option<secret_scanning::SecretScanner>,
     reporter: &mut progress::ProgressReporter<N, D>,
     timings: &mut timings::ProcessingTimings,
 ) -> Result<(), ApplicationError> {
     let (model, tokenizer) = prepare_tokenizer(params, reporter, timings)
         .map_err(ApplicationError::Tokenizer)?;
-    let scanner = prepare_secret_scanner(params, reporter, timings)?;
+    let scanner = if params.secret_scan {
+        ensure_secret_scanner(scanner_slot, reporter, timings)?;
+        scanner_slot.as_ref()
+    } else {
+        None
+    };
     let temp_dir = tempdir().unwrap();
 
     let repo_folder = if let Some(ref repo_input) = args.repo {
@@ -229,7 +201,7 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
     )
     .map_err(ApplicationError::FileSelection)?;
     let path_scan =
-        scan_repository_paths(file_list, scanner.as_ref(), reporter, timings)?;
+        scan_repository_paths(file_list, scanner, reporter, timings)?;
     let file_tree = filelist::group_files_by_directory(path_scan.included);
 
     reporter.phase("Reading files and generating XML").unwrap();
@@ -239,7 +211,7 @@ fn run_application<N: std::io::Write, D: std::io::Write>(
         &repo_folder,
         &tokenizer,
         model.display_name(),
-        scanner.as_ref(),
+        scanner,
         reporter,
         timings,
     )
@@ -275,21 +247,48 @@ fn scan_repository_paths<N: std::io::Write, D: std::io::Write>(
     Ok(scan)
 }
 
-fn prepare_secret_scanner<N: std::io::Write, D: std::io::Write>(
-    params: &Params,
+fn ensure_secret_scanner<N: std::io::Write, D: std::io::Write>(
+    slot: &mut Option<secret_scanning::SecretScanner>,
     reporter: &mut progress::ProgressReporter<N, D>,
     timings: &mut timings::ProcessingTimings,
-) -> Result<Option<secret_scanning::SecretScanner>, ApplicationError> {
-    if !params.secret_scan {
-        return Ok(None);
+) -> Result<(), ApplicationError> {
+    if slot.is_some() {
+        return Ok(());
     }
     reporter.phase("Loading secret scanner").unwrap();
     let started = Instant::now();
     let scanner = secret_scanning::SecretScanner::from_bundled();
     timings.secret_scanner_load += started.elapsed();
-    scanner
-        .map(Some)
-        .map_err(|error| ApplicationError::SecretScanner(error.to_string()))
+    *slot = Some(scanner.map_err(|error| {
+        ApplicationError::SecretScanner(error.to_string())
+    })?);
+    Ok(())
+}
+
+fn prepare_metadata<N: std::io::Write, D: std::io::Write>(
+    sources: &[configuration::MetadataSource],
+    params: &mut Params,
+    scanner: &mut Option<secret_scanning::SecretScanner>,
+    reporter: &mut progress::ProgressReporter<N, D>,
+    timings: &mut timings::ProcessingTimings,
+) -> Result<(), ApplicationError> {
+    if !sources.iter().any(|source| !source.entries.is_empty()) {
+        return Ok(());
+    }
+    ensure_secret_scanner(scanner, reporter, timings)?;
+    let started = Instant::now();
+    let metadata = configuration::validate_and_merge_metadata(
+        sources,
+        scanner.as_ref().unwrap(),
+    );
+    timings.secret_scanning += started.elapsed();
+    params.metadata = metadata.map_err(|error| match error {
+        configuration::MetadataError::Scanner { .. } => {
+            ApplicationError::SecretScanner(error.to_string())
+        }
+        _ => ApplicationError::Metadata(error),
+    })?;
+    Ok(())
 }
 
 fn classify_output_error(error: std::io::Error) -> ApplicationError {
@@ -314,19 +313,38 @@ fn main() {
     }
 
     // Load config values
-    let (config, config_error) = load_config();
-    let params = Params::from_args_and_config(&args, config);
+    let loaded = match load_config() {
+        Ok(config) => config,
+        Err(error) => {
+            let mut reporter = progress::ProgressReporter::terminal(false);
+            reporter.error(&format!("Error: {error}")).unwrap();
+            exit(1);
+        }
+    };
+    let mut params = Params::from_args_and_config(&args, loaded.params);
     let mut reporter = progress::ProgressReporter::terminal(params.stdout);
-
-    if let Some(error) = config_error {
-        reporter
-            .error(&format!("Error: loading config: {error}"))
-            .unwrap();
-    }
 
     if let Err(error) = xml_output::validate_output_options(&params) {
         reporter.error(&format!("Error: {error}")).unwrap();
         exit(1);
+    }
+
+    let mut scanner = None;
+    if let Err(error) = prepare_metadata(
+        &loaded.metadata_sources,
+        &mut params,
+        &mut scanner,
+        &mut reporter,
+        &mut timings,
+    ) {
+        reporter.error(&error.to_string()).unwrap();
+        exit(error.exit_code());
+    }
+
+    if let Some(error) = loaded.legacy_error {
+        reporter
+            .error(&format!("Error: loading config: {error}"))
+            .unwrap();
     }
 
     reporter
@@ -341,6 +359,7 @@ fn main() {
         &args,
         &params,
         Path::new("."),
+        &mut scanner,
         &mut reporter,
         &mut timings,
     ) {

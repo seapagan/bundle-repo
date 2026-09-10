@@ -92,6 +92,77 @@ fn synthetic_github_pat() -> String {
 }
 
 #[test]
+fn metadata_secrets_fail_before_repository_and_output_work_with_both_scan_modes()
+ {
+    let secret = synthetic_github_pat();
+    for scan_mode in ["--secret-scan", "--no-secret-scan"] {
+        for entry in [
+            format!("safe_name = '{secret}'"),
+            format!("'{secret}' = ''"),
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let directory = parent.path().join(&secret);
+            fs::create_dir(&directory).unwrap();
+            fs::write(
+                directory.join(".bundlerepo.toml"),
+                format!("[metadata]\n{entry}\n"),
+            )
+            .unwrap();
+            let target = directory.join("missing/output.xml");
+            let output = command(&directory)
+                .arg(scan_mode)
+                .arg("--file")
+                .arg(&target)
+                .env("TMPDIR", directory.join("missing/temp"))
+                .env("TMP", directory.join("missing/temp"))
+                .env("TEMP", directory.join("missing/temp"))
+                .env("BUNDLEREPO_PHASE_TIMINGS", "1")
+                .output()
+                .unwrap();
+            assert!(!contains_bytes(&output.stdout, secret.as_bytes()));
+            assert!(!contains_bytes(&output.stderr, secret.as_bytes()));
+            assert_eq!(output.status.code(), Some(1));
+            assert!(contains_bytes(
+                &output.stderr,
+                b"Detected a secret in metadata"
+            ));
+            assert!(!contains_bytes(&output.stdout, b"Loading tokenizer"));
+            assert!(!contains_bytes(&output.stdout, b"BundleRepo"));
+            assert!(!contains_bytes(&output.stderr, b"Not a git repository"));
+            assert!(!contains_bytes(&output.stderr, b"Failed to write XML"));
+            assert!(!target.exists());
+        }
+    }
+}
+
+#[test]
+fn metadata_secrets_fail_before_clone_and_stdout_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let secret = synthetic_github_pat();
+    fs::write(
+        directory.path().join(".bundlerepo.toml"),
+        format!("[metadata]\nname = '{secret}'\n"),
+    )
+    .unwrap();
+    let output = command(directory.path())
+        .args(["invalid-repository", "--stdout", "--no-secret-scan"])
+        .env("BUNDLEREPO_PHASE_TIMINGS", "1")
+        .output()
+        .unwrap();
+    assert!(!contains_bytes(&output.stdout, secret.as_bytes()));
+    assert!(!contains_bytes(&output.stderr, secret.as_bytes()));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(contains_bytes(
+        &output.stderr,
+        b"Detected a secret in metadata"
+    ));
+    assert!(!contains_bytes(&output.stderr, b"Loading tokenizer"));
+    assert!(!contains_bytes(&output.stderr, b"Cloning"));
+    assert!(!contains_bytes(&output.stderr, b"panicked"));
+}
+
+#[test]
 fn default_captured_output_is_plain() {
     let repository = initialize_repository("example content");
     let output =

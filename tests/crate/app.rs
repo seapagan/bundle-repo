@@ -4,6 +4,7 @@ use crate::text_processing::{
     BinaryReason, ProcessedFile, read_classify_and_decode,
 };
 use clap::Parser;
+use config::Config;
 use git2::{Repository, Signature};
 use std::fs;
 
@@ -29,6 +30,147 @@ fn initialize_repository(path: &Path) {
 }
 
 #[test]
+fn test_application_ensure_secret_scanner_reuses_instance_and_load_measurement()
+ {
+    let mut slot = None;
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+    ensure_secret_scanner(&mut slot, &mut reporter, &mut timings).unwrap();
+    let address = slot.as_ref().unwrap() as *const _;
+    let elapsed = timings.secret_scanner_load;
+    ensure_secret_scanner(&mut slot, &mut reporter, &mut timings).unwrap();
+    assert_eq!(address, slot.as_ref().unwrap() as *const _);
+    assert_eq!(elapsed, timings.secret_scanner_load);
+    let (normal, diagnostic) = reporter.into_parts();
+    assert_eq!(
+        String::from_utf8(normal)
+            .unwrap()
+            .matches("Loading secret scanner")
+            .count(),
+        1
+    );
+    assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_application_metadata_scanner_lifecycle_matrix() {
+    for (content, secret_scan, loads) in [
+        ("", false, 0),
+        ("", true, 1),
+        ("[metadata]\nname = 'safe'", false, 1),
+        ("[metadata]\nname = 'safe'", true, 1),
+        ("[metadata]", false, 0),
+    ] {
+        check_metadata_scanner_lifecycle(content, secret_scan, loads);
+    }
+}
+
+#[test]
+fn test_application_metadata_errors_and_timing_records_never_expose_input() {
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    let directory = tempdir().unwrap();
+    let local = directory.path().join(".bundlerepo.toml");
+    let mut slot = None;
+    for entry in [format!("'{secret}' = ''"), format!("safe = '{secret}'")] {
+        fs::write(&local, format!("[metadata]\n{entry}")).unwrap();
+        let loaded =
+            configuration::load_config_from_paths(None, &local).unwrap();
+        let mut params = loaded.params;
+        let mut reporter =
+            progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+        let mut timings = timings::ProcessingTimings::default();
+        let error = prepare_metadata(
+            &loaded.metadata_sources,
+            &mut params,
+            &mut slot,
+            &mut reporter,
+            &mut timings,
+        )
+        .unwrap_err();
+        assert_eq!(error.exit_code(), 1);
+        assert!(!format!("{error} {error:?}").contains(&secret));
+        assert!(params.metadata.is_empty());
+        assert_eq!(timings.tokenizer_load, std::time::Duration::ZERO);
+        reporter.error(&error.to_string()).unwrap();
+        let (normal, diagnostic) = reporter.into_parts();
+        assert!(!String::from_utf8(normal).unwrap().contains(&secret));
+        assert!(!String::from_utf8(diagnostic).unwrap().contains(&secret));
+        let mut records = Vec::new();
+        timings.write_records(&mut records).unwrap();
+        assert!(!String::from_utf8(records).unwrap().contains(&secret));
+    }
+}
+
+fn check_metadata_scanner_lifecycle(
+    content: &str,
+    secret_scan: bool,
+    loads: usize,
+) {
+    let directory = tempdir().unwrap();
+    initialize_repository(directory.path());
+    let local = directory.path().join(".bundlerepo.toml");
+    fs::write(&local, content).unwrap();
+    let loaded = configuration::load_config_from_paths(None, &local).unwrap();
+    let mut params = Params {
+        secret_scan,
+        output_file: Some(
+            directory
+                .path()
+                .join("output.xml")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        ..loaded.params
+    };
+    let mut slot = None;
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+    prepare_metadata(
+        &loaded.metadata_sources,
+        &mut params,
+        &mut slot,
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+    let preflight_address = slot.as_ref().map(|scanner| scanner as *const _);
+    let preflight_load = timings.secret_scanner_load;
+    run_application(
+        &Flags::parse_from(["program"]),
+        &params,
+        directory.path(),
+        &mut slot,
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+    if let Some(address) = preflight_address {
+        assert_eq!(address, slot.as_ref().unwrap() as *const _);
+        assert_eq!(preflight_load, timings.secret_scanner_load);
+        assert_eq!(params.metadata["name"], "safe");
+    }
+    let (normal, diagnostic) = reporter.into_parts();
+    let normal = String::from_utf8(normal).unwrap();
+    assert_eq!(normal.matches("Loading secret scanner").count(), loads);
+    assert_eq!(
+        normal.contains("Scanning repository paths for secrets"),
+        secret_scan
+    );
+    assert!(diagnostic.is_empty());
+    if loads == 0 {
+        assert!(slot.is_none());
+    }
+    if preflight_address.is_none() && secret_scan {
+        assert!(
+            normal.find("Loading tokenizer").unwrap()
+                < normal.find("Loading secret scanner").unwrap()
+        );
+    }
+}
+
+#[test]
 fn test_local_config_overrides_global_config() {
     let temp_dir = tempdir().unwrap();
     let global_config = temp_dir.path().join("global.toml");
@@ -44,14 +186,17 @@ fn test_local_config_overrides_global_config() {
     )
     .unwrap();
 
-    let (params, error) =
-        load_config_from_paths(Some(&global_config), &local_config);
+    let loaded = configuration::load_config_from_paths(
+        Some(&global_config),
+        &local_config,
+    )
+    .unwrap();
 
-    assert!(error.is_none());
-    assert_eq!(params.model.as_deref(), Some("gpt5"));
-    assert!(params.line_numbers);
-    assert!(params.gzip);
-    assert_eq!(params.gzip_level, 3);
+    assert!(loaded.legacy_error.is_none());
+    assert_eq!(loaded.params.model.as_deref(), Some("gpt5"));
+    assert!(loaded.params.line_numbers);
+    assert!(loaded.params.gzip);
+    assert_eq!(loaded.params.gzip_level, 3);
 }
 
 #[test]
@@ -66,11 +211,14 @@ fn test_invalid_config_falls_back_to_defaults() {
     .unwrap();
     fs::write(&local_config, "model = [").unwrap();
 
-    let (params, error) =
-        load_config_from_paths(Some(&global_config), &local_config);
+    let loaded = configuration::load_config_from_paths(
+        Some(&global_config),
+        &local_config,
+    )
+    .unwrap();
 
-    assert_eq!(params, Params::default());
-    let error = error.unwrap();
+    assert_eq!(loaded.params, Params::default());
+    let error = loaded.legacy_error.unwrap();
     assert!(error.contains("TOML parse error"));
     assert!(error.contains("expected `]`"));
 }
@@ -444,6 +592,7 @@ fn test_application_runs_local_repository_and_reports_success() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -482,6 +631,7 @@ fn test_invalid_exclusion_glob_creates_no_output() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -511,6 +661,7 @@ fn test_invalid_include_creates_no_output() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -556,6 +707,7 @@ fn test_included_ignored_files_keep_secret_and_binary_protection() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -593,6 +745,7 @@ fn test_application_redacts_secrets_by_default() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -638,6 +791,7 @@ fn test_application_secret_scan_opt_out_restores_original_content() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -682,6 +836,7 @@ fn test_application_omits_secret_bearing_paths() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -739,6 +894,7 @@ fn test_application_maps_tokenizer_failure_to_exit_code() {
         &args,
         &params,
         Path::new("."),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -765,6 +921,7 @@ fn test_application_maps_clone_failure_to_exit_code() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -787,6 +944,7 @@ fn test_application_maps_discovery_failure_to_exit_code() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )
@@ -819,6 +977,7 @@ fn test_application_maps_output_failure_to_exit_code() {
         &args,
         &params,
         temp_dir.path(),
+        &mut None,
         &mut reporter,
         &mut timings,
     )

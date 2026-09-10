@@ -35,9 +35,9 @@ use std::fs::File;
 use std::path::PathBuf;
 
 #[derive(Debug, Eq, PartialEq)]
-struct InvalidXml10Char {
-    byte_index: usize,
-    character: char,
+pub(crate) struct InvalidXml10Char {
+    pub(crate) byte_index: usize,
+    pub(crate) character: char,
 }
 
 pub(crate) struct RepositoryInventory {
@@ -226,7 +226,9 @@ fn validate_skipped_xml_metadata(
     Ok(())
 }
 
-fn first_invalid_xml10_char(value: &str) -> Option<InvalidXml10Char> {
+pub(crate) fn first_invalid_xml10_char(
+    value: &str,
+) -> Option<InvalidXml10Char> {
     value
         .char_indices()
         .find(|(_, character)| !is_xml10_char(*character))
@@ -255,10 +257,11 @@ fn validate_folder_xml_metadata(folder: &FolderNode) -> io::Result<()> {
 }
 
 fn validate_xml_attribute(value: &str, role: &str) -> io::Result<()> {
-    let invalid = value.char_indices().find(|(_, character)| {
-        *character == '\t' || !is_xml10_char(*character)
-    });
-    let Some((byte_index, character)) = invalid else {
+    let Some(InvalidXml10Char {
+        byte_index,
+        character,
+    }) = first_invalid_xml_attribute_char(value)
+    else {
         return Ok(());
     };
     let reason = if character == '\t' {
@@ -274,6 +277,20 @@ fn validate_xml_attribute(value: &str, role: &str) -> io::Result<()> {
             format_code_point(character),
         ),
     ))
+}
+
+pub(crate) fn first_invalid_xml_attribute_char(
+    value: &str,
+) -> Option<InvalidXml10Char> {
+    value
+        .char_indices()
+        .find(|(_, character)| {
+            *character == '\t' || !is_xml10_char(*character)
+        })
+        .map(|(byte_index, character)| InvalidXml10Char {
+            byte_index,
+            character,
+        })
 }
 
 fn write_characters<W: Write>(
