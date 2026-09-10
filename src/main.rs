@@ -332,7 +332,7 @@ fn main() {
     reporter
         .header(
             env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_AUTHORS"),
+            cli::AUTHOR,
             env!("CARGO_PKG_DESCRIPTION"),
         )
         .unwrap();

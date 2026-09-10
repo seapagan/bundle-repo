@@ -4,7 +4,7 @@ use super::*;
 fn test_version_info() {
     let version_str = version_info();
     assert!(version_str.contains(env!("CARGO_PKG_VERSION")));
-    assert!(version_str.contains(env!("CARGO_PKG_AUTHORS")));
+    assert!(version_str.contains(AUTHOR));
     assert!(version_str.contains(env!("CARGO_PKG_DESCRIPTION")));
 }
 
@@ -323,7 +323,7 @@ fn test_header_preserves_exact_plain_text() {
     reporter
         .header(
             env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_AUTHORS"),
+            AUTHOR,
             env!("CARGO_PKG_DESCRIPTION"),
         )
         .unwrap();
@@ -334,7 +334,7 @@ fn test_header_preserves_exact_plain_text() {
         format!(
             "\nBundleRepo Version {}, \u{00A9} 2024-2026 {}\n\n{}\n\n",
             env!("CARGO_PKG_VERSION"),
-            env!("CARGO_PKG_AUTHORS"),
+            AUTHOR,
             env!("CARGO_PKG_DESCRIPTION"),
         )
     );

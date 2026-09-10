@@ -3,6 +3,8 @@ use clap::{ArgAction, Parser};
 use crate::structs::{DEFAULT_MODEL, DEFAULT_OUTPUT_FILE};
 use crate::tokenizer::MODEL_VALUES;
 
+pub(crate) const AUTHOR: &str = "Grant Ramsay <seapagan@gmail.com>";
+
 fn parse_gzip_level(value: &str) -> Result<u32, String> {
     match value.parse::<u32>() {
         Ok(level @ 1..=9) => Ok(level),
@@ -13,7 +15,7 @@ fn parse_gzip_level(value: &str) -> Result<u32, String> {
 #[derive(Parser, Debug)]
 #[command(
     name = "bundlerepo",
-    author = env!("CARGO_PKG_AUTHORS"),
+    author = AUTHOR,
     about = env!("CARGO_PKG_DESCRIPTION"),
     long_about = None,
 )]
@@ -189,15 +191,9 @@ pub struct Flags {
 
 pub fn version_info() -> String {
     let version = env!("CARGO_PKG_VERSION");
-    let authors = env!("CARGO_PKG_AUTHORS");
     let description = env!("CARGO_PKG_DESCRIPTION");
 
     // Provide default values if fields are empty
-    let authors = if authors.is_empty() {
-        "Unknown"
-    } else {
-        authors
-    };
     let description = if description.is_empty() {
         "No description provided"
     } else {
@@ -208,7 +204,7 @@ pub fn version_info() -> String {
         "BundleRepo v{}\n\
         \n{}\n\
         \nReleased under the MIT license by {}\n",
-        version, description, authors
+        version, description, AUTHOR
     )
 }
 
