@@ -107,7 +107,7 @@ fn test_metadata_secret_diagnostics_are_anonymous_or_use_a_scanned_key() {
 }
 
 #[test]
-fn test_contextual_bundled_secret_fails_as_safe_value_error() {
+fn test_contextual_bundled_secret_with_full_match_is_anonymous() {
     let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
     let source = format!("[metadata]\nadafruit_api_key = '{value}'\n");
     let loaded = load_local(&source);
@@ -117,10 +117,75 @@ fn test_contextual_bundled_secret_fails_as_safe_value_error() {
     ));
     let diagnostic = format!("{error} {error:?}");
 
-    assert!(diagnostic.contains("entry 'adafruit_api_key'"));
+    assert!(!diagnostic.contains("adafruit_api_key"));
     assert!(diagnostic.contains("line 2"));
     assert!(!diagnostic.contains(value));
     assert!(!diagnostic.contains(&format!("adafruit_api_key = {value}")));
+}
+
+#[test]
+fn test_contextual_value_secret_reports_safe_key() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-value'
+regex = 'safe_name = ([A-Z]{8})'
+keywords = ['safe_name']
+secretGroup = 1
+"#;
+    let scanner =
+        crate::secret_scanning::SecretScanner::from_rules_for_workers(
+            rules, 1,
+        )
+        .unwrap();
+    let loaded = load_local("[metadata]\nsafe_name = 'SECRETAA'\n");
+    let error = metadata_error(validate_and_merge_metadata(
+        &loaded.metadata_sources,
+        &scanner,
+    ));
+    let diagnostic = format!("{error} {error:?}");
+
+    assert!(diagnostic.contains("entry 'safe_name'"));
+    assert!(diagnostic.contains("line 2"));
+    assert!(!diagnostic.contains("SECRETAA"));
+}
+
+#[test]
+fn test_contextual_key_secret_diagnostic_is_anonymous_everywhere() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-key'
+regex = '(contextual_secret_key) = ordinary'
+keywords = ['contextual_secret_key']
+secretGroup = 1
+"#;
+    let scanner =
+        crate::secret_scanning::SecretScanner::from_rules_for_workers(
+            rules, 1,
+        )
+        .unwrap();
+    let loaded =
+        load_local("[metadata]\ncontextual_secret_key = 'ordinary'\n");
+    let error = metadata_error(validate_and_merge_metadata(
+        &loaded.metadata_sources,
+        &scanner,
+    ));
+    let display = error.to_string();
+    let debug = format!("{error:?}");
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    reporter.error(&display).unwrap();
+    let (stdout, stderr) = reporter.into_parts();
+
+    for diagnostic in [display.as_bytes(), debug.as_bytes(), &stdout, &stderr]
+    {
+        assert!(
+            !diagnostic
+                .windows(b"contextual_secret_key".len())
+                .any(|window| window == b"contextual_secret_key")
+        );
+    }
+    assert!(display.contains("Detected a secret in metadata key"));
+    assert!(display.contains("line 2"));
 }
 
 #[test]

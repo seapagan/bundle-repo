@@ -1,4 +1,5 @@
 use super::SecretScanError;
+use std::ops::Range;
 
 const MAX_LABEL_LEN: usize = 80;
 
@@ -99,16 +100,27 @@ fn normalize_finding(
     text: &str,
     mut finding: SafeFinding,
 ) -> Result<SafeFinding, SecretScanError> {
-    if finding.start >= finding.end || finding.end > text.len() {
+    let span = validated_secret_span(text, finding.start, finding.end)?;
+    finding.start = span.start;
+    finding.end = span.end;
+    Ok(finding)
+}
+
+pub(super) fn validated_secret_span(
+    text: &str,
+    mut start: usize,
+    mut end: usize,
+) -> Result<Range<usize>, SecretScanError> {
+    if start >= end || end > text.len() {
         return Err(SecretScanError::InvalidSpan);
     }
-    while !text.is_char_boundary(finding.start) {
-        finding.start -= 1;
+    while !text.is_char_boundary(start) {
+        start -= 1;
     }
-    while !text.is_char_boundary(finding.end) {
-        finding.end += 1;
+    while !text.is_char_boundary(end) {
+        end += 1;
     }
-    Ok(finding)
+    Ok(start..end)
 }
 
 fn preserve_line_terminators(removed: &str, output: &mut String) {

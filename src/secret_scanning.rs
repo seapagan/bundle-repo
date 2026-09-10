@@ -8,7 +8,7 @@ use partitions::{PartitionedScanners, build_partitioned_scanners};
 use redaction::redact_findings;
 use redaction::{
     SafeFinding, common_secret_type, normalize_secret_type, normalized_ranges,
-    redact_ranges,
+    redact_ranges, validated_secret_span,
 };
 #[cfg(test)]
 use secrets_scanner::{Finding, Scanner};
@@ -29,6 +29,13 @@ pub(crate) fn synthetic_github_pat() -> String {
 
 pub(crate) struct SecretScanner {
     scanners: PartitionedScanners,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MetadataPairSecret {
+    Clean,
+    Value,
+    Unsafe,
 }
 
 pub(crate) struct SecretRedaction {
@@ -147,10 +154,23 @@ impl SecretScanner {
         &self,
         key: &str,
         value: &str,
-    ) -> Result<bool, SecretScanError> {
+    ) -> Result<MetadataPairSecret, SecretScanError> {
         // Scanner-only canonical form: exact key, fixed delimiter, exact value.
         let pair = format!("{key} = {value}");
-        self.contains_secret(&pair)
+        let result =
+            self.scan(METADATA_SCANNER_PATH, &pair, ScanSchedule::Content)?;
+        Ok(classify_metadata_pair_result(&pair, key.len() + 3, result))
+    }
+
+    #[cfg(test)]
+    fn classify_metadata_pair_result_for_tests(
+        &self,
+        key: &str,
+        value: &str,
+        result: ScanResult,
+    ) -> MetadataPairSecret {
+        let pair = format!("{key} = {value}");
+        classify_metadata_pair_result(&pair, key.len() + 3, result)
     }
 
     pub(crate) fn from_bundled() -> Result<Self, SecretScanError> {
@@ -320,6 +340,32 @@ impl SecretScanner {
             .map(|finding| finding.rule_id)
             .collect()
     }
+}
+
+fn classify_metadata_pair_result(
+    pair: &str,
+    value_start: usize,
+    result: ScanResult,
+) -> MetadataPairSecret {
+    if result.findings_truncated {
+        return MetadataPairSecret::Unsafe;
+    }
+    if result.findings.is_empty() {
+        return MetadataPairSecret::Clean;
+    }
+    for finding in result.findings {
+        let Ok(span) = validated_secret_span(
+            pair,
+            finding.secret_start_offset,
+            finding.secret_end_offset,
+        ) else {
+            return MetadataPairSecret::Unsafe;
+        };
+        if span.start < value_start {
+            return MetadataPairSecret::Unsafe;
+        }
+    }
+    MetadataPairSecret::Value
 }
 
 fn scanner_config() -> ScanConfig {

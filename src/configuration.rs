@@ -9,7 +9,7 @@ use toml::de::{DeTable, DeValue};
 use toml_parser::Source;
 use toml_parser::parser::{Event, EventKind, RecursionGuard, parse_document};
 
-use crate::secret_scanning::SecretScanner;
+use crate::secret_scanning::{MetadataPairSecret, SecretScanner};
 use crate::structs::Params;
 use crate::xml_output::{
     first_invalid_xml_attribute_char, first_invalid_xml10_char,
@@ -221,6 +221,7 @@ impl MetadataCandidate {
             }
             error
         })?;
+        scan_metadata_pair(scanner, self, value, identity)?;
         scan_metadata_text(
             scanner,
             value,
@@ -228,19 +229,6 @@ impl MetadataCandidate {
             self.value_line,
             Some(&self.key),
         )?;
-        if scanner
-            .contains_metadata_pair_secret(&self.key, value)
-            .map_err(|_| MetadataError::Scanner {
-                identity,
-                line: self.value_line,
-            })?
-        {
-            return Err(MetadataError::Secret {
-                identity,
-                line: self.value_line,
-                key: Some(self.key.clone()),
-            });
-        }
         if let Some(invalid) = first_invalid_xml10_char(value) {
             return Err(self.xml_error(
                 identity,
@@ -285,6 +273,33 @@ impl MetadataCandidate {
                 })
             }
         }
+    }
+}
+
+fn scan_metadata_pair(
+    scanner: &SecretScanner,
+    entry: &MetadataCandidate,
+    value: &str,
+    identity: ConfigSourceIdentity,
+) -> Result<(), MetadataError> {
+    let finding = scanner
+        .contains_metadata_pair_secret(&entry.key, value)
+        .map_err(|_| MetadataError::Scanner {
+            identity,
+            line: entry.value_line,
+        })?;
+    match finding {
+        MetadataPairSecret::Clean => Ok(()),
+        MetadataPairSecret::Value => Err(MetadataError::Secret {
+            identity,
+            line: entry.value_line,
+            key: Some(entry.key.clone()),
+        }),
+        MetadataPairSecret::Unsafe => Err(MetadataError::Secret {
+            identity,
+            line: entry.key_line,
+            key: None,
+        }),
     }
 }
 

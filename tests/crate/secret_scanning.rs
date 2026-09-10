@@ -99,6 +99,7 @@ id = 'contextual-metadata'
 regex = '(?i)contextual_api_key = ([a-z0-9]{32})'
 path = '^\.bundlerepo\.toml$'
 keywords = ['contextual_api_key']
+secretGroup = 1
 "#;
     let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
     let key = "contextual_api_key";
@@ -106,7 +107,60 @@ keywords = ['contextual_api_key']
 
     assert!(!scanner.contains_secret(key).unwrap());
     assert!(!scanner.contains_secret(value).unwrap());
-    assert!(scanner.contains_metadata_pair_secret(key, value).unwrap());
+    assert_eq!(
+        scanner.contains_metadata_pair_secret(key, value).unwrap(),
+        MetadataPairSecret::Value
+    );
+}
+
+#[test]
+fn test_metadata_pair_scan_classifies_key_secret_as_unsafe() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-key'
+regex = '(contextual_secret_key) = ordinary'
+keywords = ['contextual_secret_key']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let key = "contextual_secret_key";
+    let value = "ordinary";
+
+    assert!(!scanner.contains_secret(key).unwrap());
+    assert!(!scanner.contains_secret(value).unwrap());
+    assert_eq!(
+        scanner.contains_metadata_pair_secret(key, value).unwrap(),
+        MetadataPairSecret::Unsafe
+    );
+}
+
+#[test]
+fn test_metadata_pair_scan_invalid_span_is_unsafe() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-value'
+regex = 'safe = (SECRETAA)'
+keywords = ['SECRETAA']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let mut finding = scanner
+        .scan_findings(METADATA_SCANNER_PATH, "safe = SECRETAA")
+        .unwrap()
+        .pop()
+        .unwrap();
+    finding.secret_start_offset = finding.secret_end_offset;
+    let result = ScanResult {
+        findings: vec![finding],
+        findings_truncated: false,
+    };
+
+    assert_eq!(
+        scanner.classify_metadata_pair_result_for_tests(
+            "safe", "SECRETAA", result
+        ),
+        MetadataPairSecret::Unsafe
+    );
 }
 
 #[test]
@@ -116,7 +170,10 @@ fn test_bundled_contextual_detector_matches_metadata_pair() {
 
     assert!(!scanner().contains_secret(key).unwrap());
     assert!(!scanner().contains_secret(value).unwrap());
-    assert!(scanner().contains_metadata_pair_secret(key, value).unwrap());
+    assert_eq!(
+        scanner().contains_metadata_pair_secret(key, value).unwrap(),
+        MetadataPairSecret::Unsafe
+    );
     let findings = scanner()
         .scan_findings(METADATA_SCANNER_PATH, &format!("{key} = {value}"))
         .unwrap();

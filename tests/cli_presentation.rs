@@ -143,8 +143,10 @@ fn contextual_metadata_secret_stops_both_scan_modes_before_repository_work() {
         assert_eq!(output.status.code(), Some(1));
         assert!(contains_bytes(
             &output.stderr,
-            b"Detected a secret in metadata entry 'adafruit_api_key'"
+            b"Detected a secret in metadata key"
         ));
+        assert!(!contains_bytes(&output.stdout, b"adafruit_api_key"));
+        assert!(!contains_bytes(&output.stderr, b"adafruit_api_key"));
         assert!(!contains_bytes(&output.stdout, value.as_bytes()));
         assert!(!contains_bytes(&output.stderr, value.as_bytes()));
         assert!(!contains_bytes(&output.stdout, b"Loading tokenizer"));
