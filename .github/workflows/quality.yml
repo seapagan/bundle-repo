@@ -52,7 +52,7 @@ jobs:
           shared-key: advisory-quality-${{ matrix.slug }}
 
       - name: Install Cargo Make
-        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
         with:
           tool: cargo-make@0.37.24
 
