@@ -402,6 +402,25 @@ fn test_parse_error_inside_metadata_is_fatal_and_safe() {
 }
 
 #[test]
+fn test_80_component_metadata_key_stays_below_parser_recursion_limit() {
+    let key = (0..80)
+        .map(|index| format!("part{index}"))
+        .collect::<Vec<_>>()
+        .join(".");
+    let input = format!("[metadata]\n{key} = 'safe'\n");
+    let (_, errors) = DeTable::parse_recoverable(&input);
+
+    assert!(!errors.iter().any(|error| {
+        error.span().is_none() && error.message() == "recursion limit"
+    }));
+    let regions = metadata_syntax_regions(&input);
+    assert_eq!(metadata_recursion_limit_offset(&input, &regions), None);
+    assert!(
+        parse_metadata(&input, ConfigSourceIdentity::RepositoryLocal,).is_ok()
+    );
+}
+
+#[test]
 fn test_spanless_recursion_error_inside_metadata_is_fatal_and_safe() {
     let key = (0..81)
         .map(|index| format!("part{index}"))
