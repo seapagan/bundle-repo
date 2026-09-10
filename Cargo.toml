@@ -50,7 +50,7 @@ tabled = "0.22.0"
 tempfile = "3.8"
 tiktoken-rs = "0.12.0"
 tokenizers = "0.23"
-toml = { version = "=1.1.4", default-features = false, features = [
+toml = { version = "=1.1.5", default-features = false, features = [
   "display",
   "parse",
   "serde",
