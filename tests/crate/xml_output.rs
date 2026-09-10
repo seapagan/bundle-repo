@@ -19,6 +19,159 @@ struct ParsedFile {
     comments: Vec<String>,
 }
 
+#[derive(Debug, Default, PartialEq)]
+struct ParsedMetadata {
+    summary: String,
+    entries: Vec<(String, String)>,
+}
+
+fn parse_metadata(xml: &[u8]) -> Option<ParsedMetadata> {
+    let mut parsed = None;
+    let mut element = String::new();
+    for event in parse_document(xml) {
+        match event {
+            ReaderXmlEvent::StartElement {
+                name, attributes, ..
+            } => {
+                element = name.local_name;
+                if element == "repository_metadata" {
+                    parsed = Some(ParsedMetadata::default());
+                } else if element == "entry" {
+                    if let Some(metadata) = &mut parsed {
+                        metadata.entries.push((
+                            reader_attribute(&attributes, "key"),
+                            String::new(),
+                        ));
+                    }
+                }
+            }
+            ReaderXmlEvent::Characters(text)
+            | ReaderXmlEvent::Whitespace(text) => {
+                if let Some(metadata) = &mut parsed {
+                    match element.as_str() {
+                        "summary" => metadata.summary.push_str(&text),
+                        "entry" => metadata
+                            .entries
+                            .last_mut()
+                            .unwrap()
+                            .1
+                            .push_str(&text),
+                        _ => {}
+                    }
+                }
+            }
+            ReaderXmlEvent::EndElement { name } => {
+                if name.local_name == "repository_metadata" {
+                    break;
+                }
+                element.clear();
+            }
+            _ => {}
+        }
+    }
+    parsed
+}
+
+fn parse_top_level_sections(xml: &[u8]) -> Vec<String> {
+    let mut depth = 0;
+    let mut sections = Vec::new();
+    for event in parse_document(xml) {
+        match event {
+            ReaderXmlEvent::StartElement { name, .. } => {
+                if depth == 1 {
+                    sections.push(name.local_name);
+                }
+                depth += 1;
+            }
+            ReaderXmlEvent::EndElement { .. } => depth -= 1,
+            _ => {}
+        }
+    }
+    sections
+}
+
+fn parse_element_text(xml: &[u8], expected: &str) -> String {
+    let mut active = false;
+    let mut text = String::new();
+    for event in parse_document(xml) {
+        match event {
+            ReaderXmlEvent::StartElement { name, .. } => {
+                active = name.local_name == expected
+            }
+            ReaderXmlEvent::Characters(value)
+            | ReaderXmlEvent::Whitespace(value)
+                if active =>
+            {
+                text.push_str(&value)
+            }
+            ReaderXmlEvent::EndElement { name }
+                if name.local_name == expected =>
+            {
+                break;
+            }
+            _ => {}
+        }
+    }
+    text
+}
+
+fn metadata_source(
+    identity: crate::configuration::ConfigSourceIdentity,
+    entries: &[(&str, &str)],
+) -> crate::configuration::MetadataSource {
+    use crate::configuration::{
+        CandidateValue, MetadataCandidate, MetadataSource,
+    };
+    MetadataSource {
+        identity,
+        entries: entries
+            .iter()
+            .map(|(key, value)| MetadataCandidate {
+                key: (*key).to_string(),
+                key_line: 1,
+                value_line: 1,
+                value: CandidateValue::String((*value).to_string()),
+            })
+            .collect(),
+    }
+}
+
+fn metadata_params(entries: &[(&str, &str)]) -> Params {
+    let source = metadata_source(
+        crate::configuration::ConfigSourceIdentity::Global,
+        entries,
+    );
+    Params {
+        metadata: crate::configuration::validate_and_merge_metadata(
+            &[source],
+            &SecretScanner::from_bundled().unwrap(),
+        )
+        .unwrap(),
+        ..Params::default()
+    }
+}
+
+fn serialize_metadata_fixture(
+    flags: &Params,
+    skipped: &[SkippedRepositoryItem],
+) -> Vec<u8> {
+    let temp_dir = tempdir().unwrap();
+    fs::write(temp_dir.path().join("test.txt"), "ordinary text").unwrap();
+    let mut tree = FileTree::default();
+    tree.file_paths.push("test.txt".to_string());
+    tree.folder_node.files.push("test.txt".to_string());
+    serialize_repository_xml(
+        flags,
+        &tree,
+        skipped,
+        temp_dir.path(),
+        None,
+        &mut ProgressReporter::new(Vec::new(), Vec::new(), true),
+        &mut ProcessingTimings::default(),
+    )
+    .unwrap()
+}
+
 fn parse_document(xml: &[u8]) -> Vec<ReaderXmlEvent> {
     let mut events = Vec::new();
     let mut reached_end = false;

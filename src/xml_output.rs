@@ -12,6 +12,7 @@ use crate::text_processing::{
 use crate::timings::ProcessingTimings;
 use crate::tokenizer::TokenizerType;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fs::metadata;
 use std::io::{self, Cursor, Write};
 use std::path::Path;
@@ -194,6 +195,7 @@ fn serialize_repository_xml<N: Write, D: Write>(
         .write(XmlEvent::start_element("repository"))
         .map_err(map_xml_error)?;
     write_file_summary(&mut writer, flags)?;
+    write_repository_metadata(&mut writer, &flags.metadata)?;
     write_repository_structure(&mut writer, &file_tree.folder_node)?;
     write_repository_skipped(&mut writer, skipped)?;
     write_repository_files_to_xml(
@@ -315,6 +317,50 @@ fn write_characters<W: Write>(
 
 fn format_code_point(character: char) -> String {
     format!("U+{:04X}", character as u32)
+}
+
+fn write_repository_metadata<W: Write>(
+    writer: &mut EventWriter<W>,
+    metadata: &BTreeMap<String, String>,
+) -> io::Result<()> {
+    if metadata.is_empty() {
+        return Ok(());
+    }
+    writer
+        .write(XmlEvent::start_element("repository_metadata"))
+        .map_err(map_xml_error)?;
+    write_text_element(
+        writer,
+        "summary",
+        "User-provided repository metadata from BundleRepo configuration.",
+    )?;
+    for (key, value) in metadata {
+        writer
+            .write(XmlEvent::start_element("entry").attr("key", key))
+            .map_err(map_xml_error)?;
+        write_metadata_characters(writer, value)?;
+        writer
+            .write(XmlEvent::end_element())
+            .map_err(map_xml_error)?;
+    }
+    writer.write(XmlEvent::end_element()).map_err(map_xml_error)
+}
+
+fn write_metadata_characters<W: Write>(
+    writer: &mut EventWriter<W>,
+    value: &str,
+) -> io::Result<()> {
+    for (index, text) in value.split('\r').enumerate() {
+        if index > 0 {
+            // Literal CR normalizes during XML parsing; only this fixed
+            // reference bypasses escaping, never user-provided text.
+            writer
+                .write(XmlEvent::raw_characters("&#xD;"))
+                .map_err(map_xml_error)?;
+        }
+        write_characters(writer, text, "repository metadata value")?;
+    }
+    Ok(())
 }
 
 fn write_repository_structure<W: Write>(
@@ -607,7 +653,11 @@ fn write_file_summary<W: Write>(
         "purpose",
         "This file contains a packed representation of the entire repository's contents.\nIt is designed to be easily consumable by AI systems for analysis, code review,\nor other automated processes.",
     )?;
-    let file_format = if flags.secret_scan {
+    let file_format = if !flags.metadata.is_empty() && flags.secret_scan {
+        "The content is organized as follows:\n1. This summary section\n2. Repository metadata: User-provided metadata from BundleRepo configuration.\n3. Repository structure: A hierarchical listing of safely emitted folders and files.\n4. Repository skipped (optional): Safe diagnostics for files or subtrees omitted because a secret was detected in their path.\n5. Repository files: Each emitted file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files, text classified as likely secret-bearing by its path/type, and text that XML 1.0 cannot represent."
+    } else if !flags.metadata.is_empty() {
+        "The content is organized as follows:\n1. This summary section\n2. Repository metadata: User-provided metadata from BundleRepo configuration.\n3. Repository structure: A hierarchical listing of folders and files.\n4. Repository files: Each file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent."
+    } else if flags.secret_scan {
         "The content is organized as follows:\n1. This summary section\n2. Repository structure: A hierarchical listing of safely emitted folders and files.\n3. Repository skipped (optional): Safe diagnostics for files or subtrees omitted because a secret was detected in their path.\n4. Repository files: Each emitted file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files, text classified as likely secret-bearing by its path/type, and text that XML 1.0 cannot represent."
     } else {
         "The content is organized as follows:\n1. This summary section\n2. Repository structure: A hierarchical listing of folders and files.\n3. Repository files: Each file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent."
@@ -628,7 +678,11 @@ fn write_file_summary<W: Write>(
         "usage_guidelines",
         "- This file should be treated as read-only. Any changes should be made to the\n  original repository files, not this packed version.\n- When processing this file, use the file path to distinguish\n  between different files in the repository.\n- Be aware that this file may contain sensitive information. Handle it with\n  the same level of security as you would the original repository.",
     )?;
-    let notes = if flags.secret_scan {
+    let notes = if !flags.metadata.is_empty() && flags.secret_scan {
+        "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Decoded text classified as likely secret-bearing by its path/type retains its\n  canonical file entry with a safe unavailable-content diagnostic.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Configured metadata was mandatorily validated for secrets and XML compatibility."
+    } else if !flags.metadata.is_empty() {
+        "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Repository path and content secret scanning was disabled for this bundle.\n- Configured metadata was mandatorily validated for secrets and XML compatibility."
+    } else if flags.secret_scan {
         "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Decoded text classified as likely secret-bearing by its path/type retains its\n  canonical file entry with a safe unavailable-content diagnostic.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic."
     } else {
         "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Secret scanning was disabled for this bundle."
