@@ -59,9 +59,6 @@
 - revisit the `cargo deny` duplicate-version warnings alongside the pending
   dependency upgrades. Prefer compatible lockfile refreshes that collapse
   transitive versions, and avoid forced or convoluted dependency unification.
-- allow user to add custom metadata to the XML file, this could be used to
-  store information about the repository, such as the name, description, extra
-  instructions, etc. Would use the TOML config file.
 - Generalise the XML `<repository_skipped>` / `<skipped>` mechanism introduced by
   secret scanning so other unrepresentable or unavailable repository items can
   be reported explicitly instead of failing silently or aborting the whole
