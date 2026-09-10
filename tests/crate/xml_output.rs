@@ -36,13 +36,13 @@ fn parse_metadata(xml: &[u8]) -> Option<ParsedMetadata> {
                 element = name.local_name;
                 if element == "repository_metadata" {
                     parsed = Some(ParsedMetadata::default());
-                } else if element == "entry" {
-                    if let Some(metadata) = &mut parsed {
-                        metadata.entries.push((
-                            reader_attribute(&attributes, "key"),
-                            String::new(),
-                        ));
-                    }
+                } else if element == "entry"
+                    && let Some(metadata) = &mut parsed
+                {
+                    metadata.entries.push((
+                        reader_attribute(&attributes, "key"),
+                        String::new(),
+                    ));
                 }
             }
             ReaderXmlEvent::Characters(text)
