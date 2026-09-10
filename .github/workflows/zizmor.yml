@@ -28,7 +28,7 @@ jobs:
       - name: Run Zizmor
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
-          version: 1.29.0
+          version: 1.30.1
           persona: pedantic
           online-audits: true
           advanced-security: false
