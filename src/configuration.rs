@@ -15,6 +15,8 @@ use crate::xml_output::{
     first_invalid_xml_attribute_char, first_invalid_xml10_char,
 };
 
+const TOML_PARSER_RECURSION_LIMIT: usize = 80;
+
 pub(crate) struct LoadedConfig {
     pub(crate) params: Params,
     pub(crate) metadata_sources: Vec<MetadataSource>,
@@ -430,16 +432,28 @@ fn check_metadata_parse_errors(
         return Ok(());
     }
     let regions = metadata_syntax_regions(input);
+    let spanless_metadata_offset = errors
+        .iter()
+        .any(|error| error.span().is_none())
+        .then(|| metadata_recursion_limit_offset(input, &regions))
+        .flatten();
     for error in errors {
-        let Some(span) = error.span() else {
-            continue;
+        let offset = match error.span() {
+            Some(span) => span.start,
+            None if error.message() == "recursion limit" => {
+                let Some(offset) = spanless_metadata_offset else {
+                    continue;
+                };
+                offset
+            }
+            None => continue,
         };
         let owns_error = regions
             .iter()
-            .rfind(|(start, _)| *start <= span.start)
+            .rfind(|(start, _)| *start <= offset)
             .is_some_and(|(_, metadata)| *metadata);
         if owns_error {
-            let (line, column) = source_location(input, span.start);
+            let (line, column) = source_location(input, offset);
             return Err(MetadataError::Parse {
                 identity,
                 line,
@@ -449,6 +463,43 @@ fn check_metadata_parse_errors(
         }
     }
     Ok(())
+}
+
+fn metadata_recursion_limit_offset(
+    input: &str,
+    regions: &[(usize, bool)],
+) -> Option<usize> {
+    let source = Source::new(input);
+    let tokens = source.lex().collect::<Vec<_>>();
+    let mut key_start = None;
+    let mut key_components = 0;
+    let mut deep_keys = Vec::new();
+    let mut receiver = |event: Event| match event.kind() {
+        EventKind::SimpleKey => {
+            key_start.get_or_insert(event.span().start());
+            key_components += 1;
+        }
+        EventKind::KeyValSep
+        | EventKind::StdTableClose
+        | EventKind::ArrayTableClose
+        | EventKind::Newline => {
+            if key_components > TOML_PARSER_RECURSION_LIMIT {
+                deep_keys.push(key_start.unwrap());
+            }
+            key_start = None;
+            key_components = 0;
+        }
+        _ => {}
+    };
+    let mut receiver =
+        RecursionGuard::new(&mut receiver, TOML_PARSER_RECURSION_LIMIT as u32);
+    parse_document(&tokens, &mut receiver, &mut ());
+    deep_keys.into_iter().find(|offset| {
+        regions
+            .iter()
+            .rfind(|(start, _)| start <= offset)
+            .is_some_and(|(_, metadata)| *metadata)
+    })
 }
 
 fn metadata_syntax_regions(input: &str) -> Vec<(usize, bool)> {
@@ -488,7 +539,8 @@ fn metadata_syntax_regions(input: &str) -> Vec<(usize, bool)> {
         _ => {}
     };
     // Match toml's nesting limit while inspecting its physical syntax.
-    let mut receiver = RecursionGuard::new(&mut receiver, 80);
+    let mut receiver =
+        RecursionGuard::new(&mut receiver, TOML_PARSER_RECURSION_LIMIT as u32);
     parse_document(&tokens, &mut receiver, &mut ());
     regions
 }

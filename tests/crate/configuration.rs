@@ -402,6 +402,41 @@ fn test_parse_error_inside_metadata_is_fatal_and_safe() {
 }
 
 #[test]
+fn test_spanless_recursion_error_inside_metadata_is_fatal_and_safe() {
+    let key = (0..81)
+        .map(|index| format!("part{index}"))
+        .collect::<Vec<_>>()
+        .join(".");
+    let input = format!("[metadata]\n{key} = 'safe'\n");
+    let (_, errors) = DeTable::parse_recoverable(&input);
+
+    assert!(errors.iter().any(|error| error.span().is_none()));
+    let error = metadata_error(parse_metadata(
+        &input,
+        ConfigSourceIdentity::RepositoryLocal,
+    ));
+    let diagnostic = format!("{error} {error:?}");
+
+    assert!(matches!(error, MetadataError::Parse { line: 2, .. }));
+    assert!(diagnostic.contains("recursion limit"));
+    assert!(!diagnostic.contains(&key));
+    assert!(!diagnostic.contains("part80"));
+}
+
+#[test]
+fn test_spanless_recursion_error_outside_metadata_keeps_legacy_fallback() {
+    let key = (0..81)
+        .map(|index| format!("part{index}"))
+        .collect::<Vec<_>>()
+        .join(".");
+    let loaded = load_local(&format!("{key} = 'safe'\n"));
+
+    assert_eq!(loaded.params, crate::structs::Params::default());
+    assert!(loaded.legacy_error.is_some());
+    assert!(loaded.metadata_sources.is_empty());
+}
+
+#[test]
 fn test_parse_error_outside_metadata_keeps_legacy_fallback() {
     let loaded =
         load_local("[metadata]\nname = \"safe\"\n[other]\nvalue = [\n");

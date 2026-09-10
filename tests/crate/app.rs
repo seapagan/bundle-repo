@@ -7,6 +7,7 @@ use clap::Parser;
 use config::Config;
 use git2::{Repository, Signature};
 use std::fs;
+use xml::reader::{ParserConfig, XmlEvent as ReaderXmlEvent};
 
 fn create_test_config(toml_content: &str) -> Params {
     let config = Config::builder()
@@ -90,8 +91,6 @@ fn test_application_metadata_errors_and_timing_records_never_expose_input() {
         .unwrap_err();
         assert_eq!(error.exit_code(), 1);
         assert!(!format!("{error} {error:?}").contains(&secret));
-        assert!(params.metadata.is_empty());
-        assert_eq!(timings.tokenizer_load, std::time::Duration::ZERO);
         reporter.error(&error.to_string()).unwrap();
         let (normal, diagnostic) = reporter.into_parts();
         assert!(!String::from_utf8(normal).unwrap().contains(&secret));
@@ -112,15 +111,10 @@ fn check_metadata_scanner_lifecycle(
     let local = directory.path().join(".bundlerepo.toml");
     fs::write(&local, content).unwrap();
     let loaded = configuration::load_config_from_paths(None, &local).unwrap();
+    let output_path = directory.path().join("output.xml");
     let mut params = Params {
         secret_scan,
-        output_file: Some(
-            directory
-                .path()
-                .join("output.xml")
-                .to_string_lossy()
-                .into_owned(),
-        ),
+        output_file: Some(output_path.to_string_lossy().into_owned()),
         ..loaded.params
     };
     let mut slot = None;
@@ -149,7 +143,11 @@ fn check_metadata_scanner_lifecycle(
     if let Some(address) = preflight_address {
         assert_eq!(address, slot.as_ref().unwrap() as *const _);
         assert_eq!(preflight_load, timings.secret_scanner_load);
-        assert_eq!(params.metadata["name"], "safe");
+        let xml = fs::read_to_string(&output_path).unwrap();
+        assert_eq!(
+            parse_metadata_entries(&xml),
+            [("name".into(), "safe".into())]
+        );
     }
     let (normal, diagnostic) = reporter.into_parts();
     let normal = String::from_utf8(normal).unwrap();
@@ -168,6 +166,42 @@ fn check_metadata_scanner_lifecycle(
                 < normal.find("Loading secret scanner").unwrap()
         );
     }
+}
+
+fn parse_metadata_entries(xml: &str) -> Vec<(String, String)> {
+    let mut entries = Vec::new();
+    let mut in_metadata = false;
+    for event in ParserConfig::new().create_reader(xml.as_bytes()) {
+        match event.unwrap() {
+            ReaderXmlEvent::StartElement { name, .. }
+                if name.local_name == "repository_metadata" =>
+            {
+                in_metadata = true;
+            }
+            ReaderXmlEvent::StartElement {
+                name, attributes, ..
+            } if in_metadata && name.local_name == "entry" => {
+                let key = attributes
+                    .into_iter()
+                    .find(|attribute| attribute.name.local_name == "key")
+                    .unwrap()
+                    .value;
+                entries.push((key, String::new()));
+            }
+            ReaderXmlEvent::Characters(text) if in_metadata => {
+                if let Some((_, value)) = entries.last_mut() {
+                    value.push_str(&text);
+                }
+            }
+            ReaderXmlEvent::EndElement { name }
+                if name.local_name == "repository_metadata" =>
+            {
+                break;
+            }
+            _ => {}
+        }
+    }
+    entries
 }
 
 #[test]

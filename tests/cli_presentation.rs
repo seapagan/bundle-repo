@@ -227,6 +227,45 @@ fn metadata_secrets_fail_before_clone_and_stdout_output() {
 }
 
 #[test]
+fn xml_incompatible_metadata_stops_before_repository_and_output_work() {
+    let directory = tempfile::tempdir().unwrap();
+    let private_value = "private_marker_before\\u000Bprivate_marker_after";
+    fs::write(
+        directory.path().join(".bundlerepo.toml"),
+        format!("[metadata]\nvisible = \"{private_value}\"\n"),
+    )
+    .unwrap();
+    let target = directory.path().join("missing/output.xml");
+    let output = command(directory.path())
+        .args(["--no-secret-scan", "--file"])
+        .arg(&target)
+        .env("TMPDIR", directory.path().join("missing/temp"))
+        .env("TMP", directory.path().join("missing/temp"))
+        .env("TEMP", directory.path().join("missing/temp"))
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(contains_bytes(
+        &output.stderr,
+        b"Invalid metadata entry 'visible'"
+    ));
+    assert!(contains_bytes(&output.stderr, b"U+000B"));
+    for private_fragment in [
+        b"private_marker_before".as_slice(),
+        b"private_marker_after".as_slice(),
+    ] {
+        assert!(!contains_bytes(&output.stderr, private_fragment));
+        assert!(!contains_bytes(&output.stdout, private_fragment));
+    }
+    assert!(!contains_bytes(&output.stdout, b"BundleRepo"));
+    assert!(!contains_bytes(&output.stdout, b"Loading tokenizer"));
+    assert!(!contains_bytes(&output.stderr, b"Not a git repository"));
+    assert!(!contains_bytes(&output.stderr, b"Failed to write XML"));
+    assert!(!target.exists());
+}
+
+#[test]
 fn default_captured_output_is_plain() {
     let repository = initialize_repository("example content");
     let output =
