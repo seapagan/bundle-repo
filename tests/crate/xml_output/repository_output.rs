@@ -64,6 +64,10 @@ fn test_output_repo_as_xml() {
     assert!(xml_content.contains("<repository_files>"));
     assert!(xml_content.contains("<file path=\"test.txt\""));
     assert!(xml_content.contains("Test content"));
+    assert!(xml_content.contains(
+        "Repository ignore rules and configured exclusion patterns may omit"
+    ));
+    assert!(xml_content.contains("unless a path was explicitly included"));
 }
 
 #[test]

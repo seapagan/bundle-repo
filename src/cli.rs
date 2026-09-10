@@ -114,7 +114,7 @@ pub struct Flags {
         long = "extend-exclude",
         short = 'e',
         value_name = "PATTERN",
-        help = "Add file/directory pattern to exclude, can be specified multiple times.",
+        help = "Add a repository-relative glob pattern to exclude. Can be specified multiple times.",
         action = ArgAction::Append
     )]
     pub extend_exclude: Option<Vec<String>>,
@@ -123,10 +123,35 @@ pub struct Flags {
         long = "exclude",
         short = 'x',
         value_name = "PATTERN",
-        help = "Replace the existing exclude patterns with the specified pattern(s). Can be specified multiple times.",
+        help = "Replace BundleRepo exclusion patterns with repository-relative glob patterns. Can be specified multiple times.",
         action = ArgAction::Append
     )]
     pub exclude: Option<Vec<String>>,
+
+    #[arg(
+        long = "include",
+        short = 'i',
+        value_name = "PATH",
+        help = "Include a literal repository-relative file or directory path. Can be specified multiple times.",
+        action = ArgAction::Append
+    )]
+    pub include: Option<Vec<String>>,
+
+    #[arg(
+        long = "legacy-excludes",
+        action = ArgAction::SetTrue,
+        conflicts_with = "no_legacy_excludes",
+        help = "Enable the legacy built-in exclusion profile"
+    )]
+    pub legacy_excludes: bool,
+
+    #[arg(
+        long = "no-legacy-excludes",
+        action = ArgAction::SetTrue,
+        conflicts_with = "legacy_excludes",
+        help = "Disable the legacy built-in exclusion profile, overriding configuration"
+    )]
+    pub no_legacy_excludes: bool,
 
     #[arg(
         long = "utf8",

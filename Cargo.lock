@@ -215,6 +215,7 @@ name = "bundle_repo"
 version = "0.8.0"
 dependencies = [
  "arboard",
+ "casefold",
  "chardetng",
  "clap",
  "colored_text",
@@ -224,12 +225,14 @@ dependencies = [
  "flate2",
  "fs_extra",
  "git2",
+ "glob",
  "icu_decimal",
  "icu_locale_core",
  "ignore",
  "infer",
  "regex",
  "rust-embed",
+ "same-file",
  "secrets_scanner",
  "serde",
  "sha2 0.11.0",
@@ -254,6 +257,12 @@ name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
+name = "casefold"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4382156a4e6d5f0c279184bb37207f1259a5061c23084d3aa93eedf2a68c2eed"
 
 [[package]]
 name = "castaway"
@@ -864,10 +873,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "globset"
-version = "0.4.19"
+name = "glob"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e47d37d2ae4464254884b60ab7071be2b876a9c35b696bd018ddcc76847309cd"
+checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
+
+[[package]]
+name = "globset"
+version = "0.4.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c34a9410465b45bd9787443bc7370f37735bad04b0f0cd57ff1a3186c98988"
 dependencies = [
  "aho-corasick",
  "bstr",

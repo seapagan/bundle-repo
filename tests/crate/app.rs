@@ -342,6 +342,90 @@ fn test_no_exclude_patterns() {
 }
 
 #[test]
+fn test_include_paths_combine_cli_and_config() {
+    let args = Flags::parse_from([
+        "program",
+        "--include",
+        "cli.txt",
+        "--include",
+        "shared.txt",
+    ]);
+    let config =
+        create_test_config(r#"include = ["config.txt", "shared.txt"]"#);
+
+    let params = Params::from_args_and_config(&args, config);
+
+    assert_eq!(
+        params.include,
+        Some(vec![
+            "cli.txt".to_string(),
+            "shared.txt".to_string(),
+            "config.txt".to_string(),
+            "shared.txt".to_string(),
+        ])
+    );
+}
+
+#[test]
+fn test_include_paths_work_from_cli_or_config_alone() {
+    let cli = Params::from_args_and_config(
+        &Flags::parse_from(["program", "-i", "cli.txt"]),
+        create_test_config(""),
+    );
+    assert_eq!(cli.include, Some(vec!["cli.txt".to_string()]));
+
+    let config = Params::from_args_and_config(
+        &Flags::parse_from(["program"]),
+        create_test_config(r#"include = ["config.txt"]"#),
+    );
+    assert_eq!(config.include, Some(vec!["config.txt".to_string()]));
+}
+
+#[test]
+fn test_include_remains_active_with_replacement_exclude() {
+    let args = Flags::parse_from([
+        "program",
+        "--exclude",
+        "*.txt",
+        "--include",
+        "keep.txt",
+    ]);
+
+    let params = Params::from_args_and_config(&args, create_test_config(""));
+
+    assert_eq!(params.exclude, Some(vec!["*.txt".to_string()]));
+    assert_eq!(params.include, Some(vec!["keep.txt".to_string()]));
+}
+
+#[test]
+fn test_legacy_exclude_precedence() {
+    let cases: [(&str, &[&str], bool); 6] = [
+        ("", &["program"], false),
+        ("legacy_excludes = false", &["program"], false),
+        ("legacy_excludes = true", &["program"], true),
+        (
+            "legacy_excludes = false",
+            &["program", "--legacy-excludes"],
+            true,
+        ),
+        (
+            "legacy_excludes = true",
+            &["program", "--no-legacy-excludes"],
+            false,
+        ),
+        ("", &["program", "--no-legacy-excludes"], false),
+    ];
+
+    for (toml, arguments, expected) in cases {
+        let params = Params::from_args_and_config(
+            &Flags::parse_from(arguments),
+            create_test_config(toml),
+        );
+        assert_eq!(params.legacy_excludes, expected);
+    }
+}
+
+#[test]
 fn test_application_runs_local_repository_and_reports_success() {
     let temp_dir = tempdir().unwrap();
     initialize_repository(temp_dir.path());
@@ -376,6 +460,113 @@ fn test_application_runs_local_repository_and_reports_success() {
     assert!(normal.contains("-> Reading files and generating XML"));
     assert!(normal.contains("-> Successfully wrote XML to"));
     assert!(diagnostic.is_empty());
+}
+
+#[test]
+fn test_invalid_exclusion_glob_creates_no_output() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    fs::write(temp_dir.path().join("example.txt"), "content").unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        exclude: Some(vec!["[unterminated".to_string()]),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 6);
+    assert!(error.to_string().contains("invalid exclusion glob"));
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn test_invalid_include_creates_no_output() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        include: Some(vec!["../outside.txt".to_string()]),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    let error = run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.exit_code(), 6);
+    assert!(error.to_string().contains("invalid include path"));
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn test_included_ignored_files_keep_secret_and_binary_protection() {
+    let temp_dir = tempdir().unwrap();
+    initialize_repository(temp_dir.path());
+    fs::write(
+        temp_dir.path().join(".gitignore"),
+        "secret.txt\nbinary.bin\n",
+    )
+    .unwrap();
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    fs::write(
+        temp_dir.path().join("secret.txt"),
+        format!("token = {secret}"),
+    )
+    .unwrap();
+    fs::write(temp_dir.path().join("binary.bin"), [0_u8, 159, 146, 150])
+        .unwrap();
+    let output_path = temp_dir.path().join("output.xml");
+    let params = Params {
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        include: Some(vec![
+            "secret.txt".to_string(),
+            "binary.bin".to_string(),
+        ]),
+        ..Params::default()
+    };
+    let args = Flags::parse_from(["program"]);
+    let mut reporter =
+        progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = timings::ProcessingTimings::default();
+
+    run_application(
+        &args,
+        &params,
+        temp_dir.path(),
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap();
+
+    let xml = fs::read_to_string(output_path).unwrap();
+    assert!(xml.matches("secret.txt").count() >= 2);
+    assert!(xml.matches("binary.bin").count() >= 2);
+    assert!(!xml.contains(&secret));
+    assert!(xml.contains("[Secret removed: GitHub Personal Access Token]"));
+    assert!(xml.contains("This file is a binary file and not included"));
 }
 
 #[test]
@@ -516,6 +707,20 @@ fn test_secret_scanner_error_has_stable_exit_code_and_generic_message() {
     assert_eq!(
         error.to_string(),
         "Error: secret scanning failed: secret scanner returned an invalid span"
+    );
+}
+
+#[test]
+fn test_file_selection_error_has_prefix_and_stable_exit_code() {
+    let error = ApplicationError::FileSelection(
+        "invalid include path '../secret': parent traversal is not allowed"
+            .to_string(),
+    );
+
+    assert_eq!(error.exit_code(), 6);
+    assert_eq!(
+        error.to_string(),
+        "Error: invalid include path '../secret': parent traversal is not allowed"
     );
 }
 

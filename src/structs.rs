@@ -202,6 +202,8 @@ pub struct Params {
     pub branch: Option<String>,
     pub extend_exclude: Option<Vec<String>>,
     pub exclude: Option<Vec<String>>,
+    pub include: Option<Vec<String>>,
+    pub legacy_excludes: bool,
     pub utf8: bool,
     pub gzip: bool,
     pub gzip_level: u32,
@@ -223,6 +225,8 @@ impl Default for Params {
             branch: None,
             extend_exclude: None,
             exclude: None,
+            include: None,
+            legacy_excludes: false,
             utf8: false,
             gzip: false,
             gzip_level: 6,
@@ -257,6 +261,13 @@ impl From<Config> for Params {
         );
         params.exclude =
             configured_optional_or(&settings, "exclude", params.exclude);
+        params.include =
+            configured_optional_or(&settings, "include", params.include);
+        params.legacy_excludes = configured_or(
+            &settings,
+            "legacy_excludes",
+            params.legacy_excludes,
+        );
         params.utf8 = configured_or(&settings, "utf8", params.utf8);
         params.gzip = configured_or(&settings, "gzip", params.gzip);
         params.gzip_level =
@@ -297,6 +308,20 @@ fn gzip_options(args: &cli::Flags, config: &Params) -> (bool, u32) {
     }
 }
 
+fn merge_optional_lists(
+    cli: &Option<Vec<String>>,
+    configured: &Option<Vec<String>>,
+) -> Option<Vec<String>> {
+    match (cli, configured) {
+        (Some(cli), Some(configured)) => {
+            Some([cli.clone(), configured.clone()].concat())
+        }
+        (Some(cli), None) => Some(cli.clone()),
+        (None, Some(configured)) => Some(configured.clone()),
+        (None, None) => None,
+    }
+}
+
 fn extended_excludes(
     args: &cli::Flags,
     config: &Params,
@@ -304,31 +329,22 @@ fn extended_excludes(
     if args.exclude.is_some() || config.exclude.is_some() {
         return None;
     }
-    match (&args.extend_exclude, &config.extend_exclude) {
-        (Some(cli_excludes), Some(config_excludes)) => {
-            Some([cli_excludes.clone(), config_excludes.clone()].concat())
-        }
-        (Some(cli_excludes), None) => Some(cli_excludes.clone()),
-        (None, Some(config_excludes)) => Some(config_excludes.clone()),
-        (None, None) => None,
-    }
+    merge_optional_lists(&args.extend_exclude, &config.extend_exclude)
 }
 
-fn utf8_enabled(args: &cli::Flags, configured: bool) -> bool {
-    !args.no_utf8 && (args.utf8 || configured)
-}
-
-fn secret_scan_enabled(args: &cli::Flags, configured: bool) -> bool {
-    if args.no_secret_scan {
-        return false;
-    }
-    args.secret_scan || configured
+const fn paired_boolean_enabled(
+    negative: bool,
+    positive: bool,
+    configured: bool,
+) -> bool {
+    !negative && (positive || configured)
 }
 
 impl Params {
     pub fn from_args_and_config(args: &cli::Flags, config: Params) -> Self {
         let (gzip, gzip_level) = gzip_options(args, &config);
         let extend_exclude = extended_excludes(args, &config);
+        let include = merge_optional_lists(&args.include, &config.include);
 
         Params {
             output_file: args
@@ -348,10 +364,20 @@ impl Params {
             branch: args.branch.clone().or(config.branch),
             extend_exclude,
             exclude: args.exclude.clone().or(config.exclude),
-            utf8: utf8_enabled(args, config.utf8),
+            include,
+            legacy_excludes: paired_boolean_enabled(
+                args.no_legacy_excludes,
+                args.legacy_excludes,
+                config.legacy_excludes,
+            ),
+            utf8: paired_boolean_enabled(args.no_utf8, args.utf8, config.utf8),
             gzip,
             gzip_level,
-            secret_scan: secret_scan_enabled(args, config.secret_scan),
+            secret_scan: paired_boolean_enabled(
+                args.no_secret_scan,
+                args.secret_scan,
+                config.secret_scan,
+            ),
         }
     }
 }
