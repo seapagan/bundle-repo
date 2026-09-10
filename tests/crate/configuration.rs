@@ -330,6 +330,77 @@ fn test_parse_error_outside_metadata_keeps_legacy_fallback() {
 }
 
 #[test]
+fn test_interleaved_dotted_metadata_errors_are_fatal_in_both_sources() {
+    let secret = crate::secret_scanning::synthetic_github_pat();
+    for entry in [
+        format!("name = '{secret}'"),
+        "later = [".to_string(),
+        "later = \"unfinished".to_string(),
+        "later =".to_string(),
+        "later 'missing separator'".to_string(),
+    ] {
+        let input = format!(
+            "metadata.name = 'safe'\nmodel = 'gpt5'\nmetadata.{entry}\n"
+        );
+        assert_metadata_parse_error_in_both_sources(&input, 3, &secret);
+    }
+}
+
+#[test]
+fn test_malformed_root_metadata_headers_are_fatal_in_both_sources() {
+    for header in ["[metadata", "['metadata'", r#"["meta\u0064ata""#] {
+        assert_metadata_parse_error_in_both_sources(
+            &format!("{header}\nname = 'safe'\n"),
+            1,
+            "name = 'safe'",
+        );
+    }
+}
+
+fn assert_metadata_parse_error_in_both_sources(
+    input: &str,
+    expected_line: usize,
+    private_text: &str,
+) {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    let missing = directory.path().join("missing.toml");
+    fs::write(&path, input).unwrap();
+    for (global, local, identity) in [
+        (Some(path.as_path()), &missing, ConfigSourceIdentity::Global),
+        (None, &path, ConfigSourceIdentity::RepositoryLocal),
+    ] {
+        let error = metadata_error(load_config_from_paths(global, local));
+        assert!(matches!(error, MetadataError::Parse { line, .. }
+            if line == expected_line));
+        let diagnostic = format!("{error} {error:?}");
+        assert!(diagnostic.contains(&identity.to_string()));
+        assert!(!diagnostic.contains(private_text));
+        assert!(!diagnostic.contains(&path.display().to_string()));
+    }
+}
+
+#[test]
+fn test_metadata_lookalikes_and_unrelated_errors_keep_legacy_fallback() {
+    for input in [
+        "# [metadata\nmodel = [\n",
+        "model = '[metadata'\nother = [\n",
+        "model = '''\n[metadata\n'''\nother = [\n",
+        "[metadatax\nname = 'safe'\n",
+        "[other.metadata\nname = 'safe'\n",
+        "[other.metadata]\nname = [\n",
+        "other = { metadata = 'safe' }\nmodel = [\n",
+        "metadata.name = 'safe'\nmodel = [\n",
+        "metadata.name = 'safe'\n[other.metadata]\nname = [\n",
+        "model = [\n",
+    ] {
+        let loaded = load_local(input);
+        assert!(loaded.legacy_error.is_some());
+        assert_eq!(loaded.params, crate::structs::Params::default());
+    }
+}
+
+#[test]
 fn test_malformed_non_metadata_config_keeps_legacy_fallback() {
     let loaded = load_local("model = [\n");
 

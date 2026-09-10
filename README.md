@@ -565,7 +565,9 @@ a matching global value.
 > fatal error for empty or whitespace-only keys, XML 1.0 round-trip failures,
 > and detected secrets. Errors use the fixed source labels `global BundleRepo
 > configuration` or `repository-local .bundlerepo.toml configuration` and
-> include the source line.
+> include the source line. For multiline metadata strings, secret diagnostics
+> report the value token's starting line, which can precede the physical line
+> containing the detected text.
 >
 > BundleRepo requires secret scanning for configured metadata keys and accepted
 > string values. `--no-secret-scan`, `secret_scan = false`, allow markers, and

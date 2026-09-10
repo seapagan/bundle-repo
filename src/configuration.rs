@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use config::{Config, File, FileFormat};
 use dirs_next::home_dir;
 use toml::de::{DeTable, DeValue};
+use toml_parser::Source;
+use toml_parser::parser::{Event, EventKind, RecursionGuard, parse_document};
 
 use crate::secret_scanning::SecretScanner;
 use crate::structs::Params;
@@ -362,36 +364,14 @@ fn parse_metadata(
     identity: ConfigSourceIdentity,
 ) -> Result<Option<MetadataSource>, MetadataError> {
     let (document, errors) = DeTable::parse_recoverable(input);
+    check_metadata_parse_errors(input, identity, &errors)?;
     let table = document.get_ref();
-    let Some((metadata_key, metadata_value)) = table
+    let Some((_, metadata_value)) = table
         .iter()
         .find(|(key, _)| key.get_ref().as_ref() == "metadata")
     else {
         return Ok(None);
     };
-    let metadata_start = metadata_key.span().start;
-    let metadata_end = table
-        .keys()
-        .map(|key| key.span().start)
-        .filter(|start| *start > metadata_start)
-        .min()
-        .unwrap_or(input.len());
-
-    if let Some(error) = errors.iter().find(|error| {
-        error.span().is_some_and(|span| {
-            span.start >= metadata_start && span.start <= metadata_end
-        })
-    }) {
-        let (line, column) =
-            source_location(input, error.span().unwrap().start);
-        return Err(MetadataError::Parse {
-            identity,
-            line,
-            column,
-            message: error.message().to_string(),
-        });
-    }
-
     let DeValue::Table(entries) = metadata_value.get_ref() else {
         let (line, _) = source_location(input, metadata_value.span().start);
         return Err(MetadataError::InvalidRootType {
@@ -411,6 +391,88 @@ fn parse_metadata(
         })
         .collect();
     Ok(Some(MetadataSource { identity, entries }))
+}
+
+fn check_metadata_parse_errors(
+    input: &str,
+    identity: ConfigSourceIdentity,
+    errors: &[toml::de::Error],
+) -> Result<(), MetadataError> {
+    if errors.is_empty() {
+        return Ok(());
+    }
+    let regions = metadata_syntax_regions(input);
+    for error in errors {
+        let Some(span) = error.span() else {
+            continue;
+        };
+        let owns_error = regions
+            .iter()
+            .rfind(|(start, _)| *start <= span.start)
+            .is_some_and(|(_, metadata)| *metadata);
+        if owns_error {
+            let (line, column) = source_location(input, span.start);
+            return Err(MetadataError::Parse {
+                identity,
+                line,
+                column,
+                message: error.message().to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn metadata_syntax_regions(input: &str) -> Vec<(usize, bool)> {
+    let source = Source::new(input);
+    let tokens = source.lex().collect::<Vec<_>>();
+    let mut regions = vec![(0, false)];
+    let (mut root, mut first_key, mut header) = (true, true, false);
+    let mut depth: usize = 0;
+    let mut receiver = |event: Event| match event.kind() {
+        EventKind::StdTableOpen | EventKind::ArrayTableOpen => {
+            root = false;
+            first_key = true;
+            header = true;
+            regions.push((event.span().start(), false));
+        }
+        EventKind::SimpleKey if depth == 0 && first_key => {
+            first_key = false;
+            let metadata = is_metadata_key(source, event);
+            if header {
+                regions.last_mut().unwrap().1 = metadata;
+                header = false;
+            } else if root {
+                regions.push((event.span().start(), metadata));
+            }
+        }
+        EventKind::InlineTableOpen | EventKind::ArrayOpen => depth += 1,
+        EventKind::InlineTableClose | EventKind::ArrayClose => {
+            depth = depth.saturating_sub(1);
+        }
+        EventKind::Newline if depth == 0 => {
+            first_key = root;
+            header = false;
+            if root {
+                regions.push((event.span().end(), false));
+            }
+        }
+        _ => {}
+    };
+    // Match toml's nesting limit while inspecting its physical syntax.
+    let mut receiver = RecursionGuard::new(&mut receiver, 80);
+    parse_document(&tokens, &mut receiver, &mut ());
+    regions
+}
+
+fn is_metadata_key(source: Source<'_>, event: Event) -> bool {
+    let Some(raw) = source.get(event) else {
+        return false;
+    };
+    let mut key = String::new();
+    let mut errors = Vec::new();
+    raw.decode_key(&mut key, &mut errors);
+    errors.is_empty() && key == "metadata"
 }
 
 fn candidate_value(value: &DeValue<'_>) -> CandidateValue {
