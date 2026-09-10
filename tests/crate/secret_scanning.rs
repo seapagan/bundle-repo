@@ -92,6 +92,42 @@ fn test_metadata_scan_detects_bundled_secret_without_allow_markers() {
 }
 
 #[test]
+fn test_metadata_pair_scan_adds_context_with_fixed_identity() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-metadata'
+regex = '(?i)contextual_api_key = ([a-z0-9]{32})'
+path = '^\.bundlerepo\.toml$'
+keywords = ['contextual_api_key']
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let key = "contextual_api_key";
+    let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
+
+    assert!(!scanner.contains_secret(key).unwrap());
+    assert!(!scanner.contains_secret(value).unwrap());
+    assert!(scanner.contains_metadata_pair_secret(key, value).unwrap());
+}
+
+#[test]
+fn test_bundled_contextual_detector_matches_metadata_pair() {
+    let key = "adafruit_api_key";
+    let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
+
+    assert!(!scanner().contains_secret(key).unwrap());
+    assert!(!scanner().contains_secret(value).unwrap());
+    assert!(scanner().contains_metadata_pair_secret(key, value).unwrap());
+    let findings = scanner()
+        .scan_findings(METADATA_SCANNER_PATH, &format!("{key} = {value}"))
+        .unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule_id == "adafruit-api-key")
+    );
+}
+
+#[test]
 fn test_metadata_scan_owns_toml_identity_and_preserves_path_gates() {
     let rules = r#"
 [allowlist]

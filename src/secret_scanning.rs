@@ -143,6 +143,16 @@ impl SecretScanner {
             .is_empty())
     }
 
+    pub(crate) fn contains_metadata_pair_secret(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<bool, SecretScanError> {
+        // Scanner-only canonical form: exact key, fixed delimiter, exact value.
+        let pair = format!("{key} = {value}");
+        self.contains_secret(&pair)
+    }
+
     pub(crate) fn from_bundled() -> Result<Self, SecretScanError> {
         let workers =
             resolved_worker_count(std::thread::available_parallelism().ok());

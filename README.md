@@ -460,7 +460,7 @@ Options:
       --no-legacy-excludes        Disable the legacy built-in exclusion profile, overriding configuration
   -u, --utf8                      Detect and convert legacy text encodings to UTF-8
   -U, --no-utf8                   Disable legacy text conversion to UTF-8
-      --secret-scan               Enable secret scanning (enabled by default), overriding configuration
+      --secret-scan               Enable repository content/path secret scanning (enabled by default), overriding configuration
       --no-secret-scan            Disable repository content/path secret scanning, overriding configuration
   -h, --help                      Print help
 ```

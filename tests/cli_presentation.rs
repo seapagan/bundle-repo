@@ -91,6 +91,68 @@ fn synthetic_github_pat() -> String {
     ["ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"].concat()
 }
 
+fn documented_help(readme: &str) -> &str {
+    readme
+        .split_once("## Command Line Options")
+        .unwrap()
+        .1
+        .split_once("```pre\n")
+        .unwrap()
+        .1
+        .split_once("\n```")
+        .unwrap()
+        .0
+}
+
+#[test]
+fn clap_help_matches_both_readmes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_bundlerepo"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+
+    assert_eq!(
+        documented_help(include_str!("../README.md")),
+        help.trim_end()
+    );
+    assert_eq!(
+        documented_help(include_str!("../README-cratesio.md")),
+        help.trim_end()
+    );
+}
+
+#[test]
+fn contextual_metadata_secret_stops_both_scan_modes_before_repository_work() {
+    let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
+    for mode in ["--secret-scan", "--no-secret-scan"] {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join(".bundlerepo.toml"),
+            format!("[metadata]\nadafruit_api_key = '{value}'\n"),
+        )
+        .unwrap();
+        let target = directory.path().join("missing/output.xml");
+        let output = command(directory.path())
+            .args([mode, "--file"])
+            .arg(&target)
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(1));
+        assert!(contains_bytes(
+            &output.stderr,
+            b"Detected a secret in metadata entry 'adafruit_api_key'"
+        ));
+        assert!(!contains_bytes(&output.stdout, value.as_bytes()));
+        assert!(!contains_bytes(&output.stderr, value.as_bytes()));
+        assert!(!contains_bytes(&output.stdout, b"Loading tokenizer"));
+        assert!(!contains_bytes(&output.stderr, b"Not a git repository"));
+        assert!(!target.exists());
+    }
+}
+
 #[test]
 fn metadata_secrets_fail_before_repository_and_output_work_with_both_scan_modes()
  {

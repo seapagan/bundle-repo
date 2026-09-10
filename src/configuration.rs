@@ -228,6 +228,19 @@ impl MetadataCandidate {
             self.value_line,
             Some(&self.key),
         )?;
+        if scanner
+            .contains_metadata_pair_secret(&self.key, value)
+            .map_err(|_| MetadataError::Scanner {
+                identity,
+                line: self.value_line,
+            })?
+        {
+            return Err(MetadataError::Secret {
+                identity,
+                line: self.value_line,
+                key: Some(self.key.clone()),
+            });
+        }
         if let Some(invalid) = first_invalid_xml10_char(value) {
             return Err(self.xml_error(
                 identity,

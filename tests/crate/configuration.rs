@@ -107,6 +107,23 @@ fn test_metadata_secret_diagnostics_are_anonymous_or_use_a_scanned_key() {
 }
 
 #[test]
+fn test_contextual_bundled_secret_fails_as_safe_value_error() {
+    let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
+    let source = format!("[metadata]\nadafruit_api_key = '{value}'\n");
+    let loaded = load_local(&source);
+    let error = metadata_error(validate_and_merge_metadata(
+        &loaded.metadata_sources,
+        metadata_scanner(),
+    ));
+    let diagnostic = format!("{error} {error:?}");
+
+    assert!(diagnostic.contains("entry 'adafruit_api_key'"));
+    assert!(diagnostic.contains("line 2"));
+    assert!(!diagnostic.contains(value));
+    assert!(!diagnostic.contains(&format!("adafruit_api_key = {value}")));
+}
+
+#[test]
 fn test_metadata_validation_order_protects_keys_and_reports_first_error() {
     let secret = crate::secret_scanning::synthetic_github_pat();
     for (entry, reason) in [

@@ -176,7 +176,7 @@ pub struct Flags {
         long = "secret-scan",
         action = ArgAction::SetTrue,
         conflicts_with = "no_secret_scan",
-        help = "Enable secret scanning (enabled by default), overriding configuration"
+        help = "Enable repository content/path secret scanning (enabled by default), overriding configuration"
     )]
     pub secret_scan: bool,
 
@@ -184,7 +184,7 @@ pub struct Flags {
         long = "no-secret-scan",
         action = ArgAction::SetTrue,
         conflicts_with = "secret_scan",
-        help = "Disable secret scanning, overriding configuration"
+        help = "Disable repository content/path secret scanning, overriding configuration"
     )]
     pub no_secret_scan: bool,
 }
