@@ -95,6 +95,17 @@ fn normalize_line_endings(text: &str) -> String {
     text.replace("\r\n", "\n")
 }
 
+fn normalize_clap_help(text: &str) -> String {
+    let mut normalized = normalize_line_endings(text);
+    if normalized.starts_with("Usage: bundlerepo.exe ") {
+        normalized.replace_range(
+            .."Usage: bundlerepo.exe".len(),
+            "Usage: bundlerepo",
+        );
+    }
+    normalized
+}
+
 fn documented_help(readme: &str) -> String {
     normalize_line_endings(readme)
         .split_once("## Command Line Options")
@@ -110,14 +121,24 @@ fn documented_help(readme: &str) -> String {
 }
 
 #[test]
+fn clap_help_normalizes_only_windows_executable_in_usage() {
+    let help =
+        "Usage: bundlerepo.exe [OPTIONS] [REPO]\r\n\r\nRun tool.exe\r\n";
+
+    assert_eq!(
+        normalize_clap_help(help),
+        "Usage: bundlerepo [OPTIONS] [REPO]\n\nRun tool.exe\n"
+    );
+}
+
+#[test]
 fn clap_help_matches_both_readmes() {
     let output = Command::new(env!("CARGO_BIN_EXE_bundlerepo"))
         .arg("--help")
         .output()
         .unwrap();
     assert!(output.status.success());
-    let help =
-        normalize_line_endings(&String::from_utf8(output.stdout).unwrap());
+    let help = normalize_clap_help(&String::from_utf8(output.stdout).unwrap());
 
     assert_eq!(
         documented_help(include_str!("../README.md")),
