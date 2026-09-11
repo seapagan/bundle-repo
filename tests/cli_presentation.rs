@@ -91,6 +91,223 @@ fn synthetic_github_pat() -> String {
     ["ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"].concat()
 }
 
+fn normalize_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
+fn normalize_clap_help(text: &str) -> String {
+    let mut normalized = normalize_line_endings(text);
+    let usage = "Usage: bundlerepo.exe ";
+    if let Some(start) = normalized
+        .match_indices(usage)
+        .map(|(start, _)| start)
+        .find(|&start| start == 0 || normalized.as_bytes()[start - 1] == b'\n')
+    {
+        normalized.replace_range(
+            start..start + "Usage: bundlerepo.exe".len(),
+            "Usage: bundlerepo",
+        );
+    }
+    normalized
+}
+
+fn documented_help(readme: &str) -> String {
+    normalize_line_endings(readme)
+        .split_once("## Command Line Options")
+        .unwrap()
+        .1
+        .split_once("```pre\n")
+        .unwrap()
+        .1
+        .split_once("\n```")
+        .unwrap()
+        .0
+        .to_string()
+}
+
+#[test]
+fn clap_help_normalizes_only_windows_executable_in_usage() {
+    let help = concat!(
+        "Pack a local or remote Git Repository to XML for LLM Consumption.\r\n",
+        "\r\n",
+        "Usage: bundlerepo.exe [OPTIONS] [REPO]\r\n",
+        "\r\n",
+        "Run tool.exe\r\n",
+    );
+
+    assert_eq!(
+        normalize_clap_help(help),
+        concat!(
+            "Pack a local or remote Git Repository to XML for LLM Consumption.\n",
+            "\n",
+            "Usage: bundlerepo [OPTIONS] [REPO]\n",
+            "\n",
+            "Run tool.exe\n",
+        )
+    );
+}
+
+#[test]
+fn clap_help_matches_both_readmes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_bundlerepo"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = normalize_clap_help(&String::from_utf8(output.stdout).unwrap());
+
+    assert_eq!(
+        documented_help(include_str!("../README.md")),
+        help.trim_end()
+    );
+    assert_eq!(
+        documented_help(include_str!("../README-cratesio.md")),
+        help.trim_end()
+    );
+}
+
+#[test]
+fn contextual_metadata_secret_stops_both_scan_modes_before_repository_work() {
+    let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
+    for mode in ["--secret-scan", "--no-secret-scan"] {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join(".bundlerepo.toml"),
+            format!("[metadata]\nadafruit_api_key = '{value}'\n"),
+        )
+        .unwrap();
+        let target = directory.path().join("missing/output.xml");
+        let output = command(directory.path())
+            .args([mode, "--file"])
+            .arg(&target)
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(1));
+        assert!(contains_bytes(
+            &output.stderr,
+            b"Detected a secret in metadata key"
+        ));
+        assert!(!contains_bytes(&output.stdout, b"adafruit_api_key"));
+        assert!(!contains_bytes(&output.stderr, b"adafruit_api_key"));
+        assert!(!contains_bytes(&output.stdout, value.as_bytes()));
+        assert!(!contains_bytes(&output.stderr, value.as_bytes()));
+        assert!(!contains_bytes(&output.stdout, b"Loading tokenizer"));
+        assert!(!contains_bytes(&output.stderr, b"Not a git repository"));
+        assert!(!target.exists());
+    }
+}
+
+#[test]
+fn metadata_secrets_fail_before_repository_and_output_work_with_both_scan_modes()
+ {
+    let secret = synthetic_github_pat();
+    for scan_mode in ["--secret-scan", "--no-secret-scan"] {
+        for entry in [
+            format!("safe_name = '{secret}'"),
+            format!("'{secret}' = ''"),
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let directory = parent.path().join(&secret);
+            fs::create_dir(&directory).unwrap();
+            fs::write(
+                directory.join(".bundlerepo.toml"),
+                format!("[metadata]\n{entry}\n"),
+            )
+            .unwrap();
+            let target = directory.join("missing/output.xml");
+            let output = command(&directory)
+                .arg(scan_mode)
+                .arg("--file")
+                .arg(&target)
+                .env("TMPDIR", directory.join("missing/temp"))
+                .env("TMP", directory.join("missing/temp"))
+                .env("TEMP", directory.join("missing/temp"))
+                .env("BUNDLEREPO_PHASE_TIMINGS", "1")
+                .output()
+                .unwrap();
+            assert!(!contains_bytes(&output.stdout, secret.as_bytes()));
+            assert!(!contains_bytes(&output.stderr, secret.as_bytes()));
+            assert_eq!(output.status.code(), Some(1));
+            assert!(contains_bytes(
+                &output.stderr,
+                b"Detected a secret in metadata"
+            ));
+            assert!(!contains_bytes(&output.stdout, b"Loading tokenizer"));
+            assert!(!contains_bytes(&output.stdout, b"BundleRepo"));
+            assert!(!contains_bytes(&output.stderr, b"Not a git repository"));
+            assert!(!contains_bytes(&output.stderr, b"Failed to write XML"));
+            assert!(!target.exists());
+        }
+    }
+}
+
+#[test]
+fn metadata_secrets_fail_before_clone_and_stdout_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let secret = synthetic_github_pat();
+    fs::write(
+        directory.path().join(".bundlerepo.toml"),
+        format!("[metadata]\nname = '{secret}'\n"),
+    )
+    .unwrap();
+    let output = command(directory.path())
+        .args(["invalid-repository", "--stdout", "--no-secret-scan"])
+        .env("BUNDLEREPO_PHASE_TIMINGS", "1")
+        .output()
+        .unwrap();
+    assert!(!contains_bytes(&output.stdout, secret.as_bytes()));
+    assert!(!contains_bytes(&output.stderr, secret.as_bytes()));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(contains_bytes(
+        &output.stderr,
+        b"Detected a secret in metadata"
+    ));
+    assert!(!contains_bytes(&output.stderr, b"Loading tokenizer"));
+    assert!(!contains_bytes(&output.stderr, b"Cloning"));
+    assert!(!contains_bytes(&output.stderr, b"panicked"));
+}
+
+#[test]
+fn xml_incompatible_metadata_stops_before_repository_and_output_work() {
+    let directory = tempfile::tempdir().unwrap();
+    let private_value = "private_marker_before\\u000Bprivate_marker_after";
+    fs::write(
+        directory.path().join(".bundlerepo.toml"),
+        format!("[metadata]\nvisible = \"{private_value}\"\n"),
+    )
+    .unwrap();
+    let target = directory.path().join("missing/output.xml");
+    let output = command(directory.path())
+        .args(["--no-secret-scan", "--file"])
+        .arg(&target)
+        .env("TMPDIR", directory.path().join("missing/temp"))
+        .env("TMP", directory.path().join("missing/temp"))
+        .env("TEMP", directory.path().join("missing/temp"))
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(contains_bytes(
+        &output.stderr,
+        b"Invalid metadata entry 'visible'"
+    ));
+    assert!(contains_bytes(&output.stderr, b"U+000B"));
+    for private_fragment in [
+        b"private_marker_before".as_slice(),
+        b"private_marker_after".as_slice(),
+    ] {
+        assert!(!contains_bytes(&output.stderr, private_fragment));
+        assert!(!contains_bytes(&output.stdout, private_fragment));
+    }
+    assert!(!contains_bytes(&output.stdout, b"BundleRepo"));
+    assert!(!contains_bytes(&output.stdout, b"Loading tokenizer"));
+    assert!(!contains_bytes(&output.stderr, b"Not a git repository"));
+    assert!(!contains_bytes(&output.stderr, b"Failed to write XML"));
+    assert!(!target.exists());
+}
+
 #[test]
 fn default_captured_output_is_plain() {
     let repository = initialize_repository("example content");
@@ -100,6 +317,46 @@ fn default_captured_output_is_plain() {
     assert!(output.status.success());
     assert!(!contains_bytes(&output.stdout, b"\x1b["));
     assert!(!contains_bytes(&output.stderr, b"\x1b["));
+}
+
+#[test]
+fn interleaved_local_metadata_errors_stop_preflight_in_both_scan_modes() {
+    let secret = synthetic_github_pat();
+    for entry in [format!("name = '{secret}'"), "later = [".to_string()] {
+        assert_metadata_parse_preflight(&format!(
+            "metadata.name = 'safe'\nmodel = 'gpt5'\nmetadata.{entry}\n"
+        ));
+    }
+}
+
+#[test]
+fn malformed_local_metadata_headers_stop_preflight_in_both_scan_modes() {
+    assert_metadata_parse_preflight("[metadata\nname = 'safe'\n");
+}
+
+fn assert_metadata_parse_preflight(input: &str) {
+    for mode in ["--secret-scan", "--no-secret-scan"] {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join(".bundlerepo.toml"), input).unwrap();
+        let target = directory.path().join("missing/output.xml");
+        let output = command(directory.path())
+            .args(["invalid-repository", mode, "--file"])
+            .arg(&target)
+            .env("BUNDLEREPO_PHASE_TIMINGS", "1")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(contains_bytes(&output.stderr, b"Invalid metadata"));
+        assert!(output.stdout.is_empty());
+        assert!(!contains_bytes(
+            &output.stderr,
+            synthetic_github_pat().as_bytes()
+        ));
+        assert!(!contains_bytes(&output.stderr, b"name = 'safe'"));
+        assert!(!contains_bytes(&output.stderr, b"loading config"));
+        assert!(!contains_bytes(&output.stderr, b"phase="));
+        assert!(!target.exists());
+    }
 }
 
 #[test]

@@ -8,7 +8,7 @@ use partitions::{PartitionedScanners, build_partitioned_scanners};
 use redaction::redact_findings;
 use redaction::{
     SafeFinding, common_secret_type, normalize_secret_type, normalized_ranges,
-    redact_ranges,
+    redact_ranges, validated_secret_span,
 };
 #[cfg(test)]
 use secrets_scanner::{Finding, Scanner};
@@ -18,6 +18,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 
 const PATH_COMPONENT_SCAN_PATH: &str = "repository-path-component";
+const METADATA_SCANNER_PATH: &str = ".bundlerepo.toml";
 const MAX_SCAN_WORKERS: usize = 28;
 const PARALLEL_SCAN_THRESHOLD: usize = 1024 * 1024;
 
@@ -28,6 +29,13 @@ pub(crate) fn synthetic_github_pat() -> String {
 
 pub(crate) struct SecretScanner {
     scanners: PartitionedScanners,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MetadataPairSecret {
+    Clean,
+    Value,
+    Unsafe,
 }
 
 pub(crate) struct SecretRedaction {
@@ -132,6 +140,28 @@ impl Error for SecretScanError {
 }
 
 impl SecretScanner {
+    pub(crate) fn contains_secret(
+        &self,
+        text: &str,
+    ) -> Result<bool, SecretScanError> {
+        Ok(!self
+            .scan(METADATA_SCANNER_PATH, text, ScanSchedule::Content)?
+            .findings
+            .is_empty())
+    }
+
+    pub(crate) fn contains_metadata_pair_secret(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<MetadataPairSecret, SecretScanError> {
+        // Scanner-only canonical form: exact key, fixed delimiter, exact value.
+        let pair = format!("{key} = {value}");
+        let result =
+            self.scan(METADATA_SCANNER_PATH, &pair, ScanSchedule::Content)?;
+        Ok(classify_metadata_pair_result(&pair, key.len() + 3, result))
+    }
+
     pub(crate) fn from_bundled() -> Result<Self, SecretScanError> {
         let workers =
             resolved_worker_count(std::thread::available_parallelism().ok());
@@ -299,6 +329,32 @@ impl SecretScanner {
             .map(|finding| finding.rule_id)
             .collect()
     }
+}
+
+fn classify_metadata_pair_result(
+    pair: &str,
+    value_start: usize,
+    result: ScanResult,
+) -> MetadataPairSecret {
+    if result.findings_truncated {
+        return MetadataPairSecret::Unsafe;
+    }
+    if result.findings.is_empty() {
+        return MetadataPairSecret::Clean;
+    }
+    for finding in result.findings {
+        let Ok(span) = validated_secret_span(
+            pair,
+            finding.secret_start_offset,
+            finding.secret_end_offset,
+        ) else {
+            return MetadataPairSecret::Unsafe;
+        };
+        if span.start < value_start {
+            return MetadataPairSecret::Unsafe;
+        }
+    }
+    MetadataPairSecret::Value
 }
 
 fn scanner_config() -> ScanConfig {

@@ -308,9 +308,12 @@ with a fixed unavailable-content diagnostic. Repository-controlled path
 allowlists are not allowed to suppress content protection. Binary-file behavior
 is unchanged.
 
-Use `--no-secret-scan` or set `secret_scan = false` to disable protection. The
-`--secret-scan` flag overrides a disabled configuration value. Disabling the
-scanner restores the original content and path behavior and can expose secrets.
+Use `--no-secret-scan` or set `secret_scan = false` to disable repository
+content and path protection. The `--secret-scan` flag overrides a disabled
+configuration value. Configured metadata keys and accepted string values
+remain protected: BundleRepo scans them for secrets and rejects matches, with
+no disable or allowlist mechanism. Disabling repository scanning restores the
+original content and path behavior and can expose secrets.
 
 #### Compress with gzip
 
@@ -457,8 +460,8 @@ Options:
       --no-legacy-excludes        Disable the legacy built-in exclusion profile, overriding configuration
   -u, --utf8                      Detect and convert legacy text encodings to UTF-8
   -U, --no-utf8                   Disable legacy text conversion to UTF-8
-      --secret-scan               Enable secret scanning (enabled by default), overriding configuration
-      --no-secret-scan            Disable secret scanning, overriding configuration
+      --secret-scan               Enable repository content/path secret scanning (enabled by default), overriding configuration
+      --no-secret-scan            Disable repository content/path secret scanning, overriding configuration
   -h, --help                      Print help
 ```
 
@@ -490,7 +493,14 @@ legacy_excludes = true  # Restore the pre-0.9 context-saving exclusions
 utf8 = true  # Detect and convert legacy text encodings to UTF-8
 gzip = false  # Set true to gzip file or stdout output by default
 gzip_level = 6  # Compression level from 1 to 9; does not enable gzip by itself
-secret_scan = true  # Scan content and path components for secrets
+secret_scan = true  # Scan repository content and path components for secrets
+
+[metadata]
+project_name = "BundleRepo"
+description = "Pack Git repositories for LLM consumption."
+global_instructions = "Follow organization-wide engineering standards."
+repository_instructions = "Run cargo make verify before submitting changes."
+review_focus = "Check error handling and security boundaries."
 ```
 
 All settings are optional. Settings are applied in the following order of
@@ -531,6 +541,37 @@ Available configuration options:
   level does not enable gzip by itself. Invalid values are ignored.
 - `secret_scan`: Whether to scan emitted text and repository path components
   for secrets (default: true)
+- `metadata`: Arbitrary repository metadata keys with string values (default:
+  none)
+
+Metadata key names have no built-in semantics. Names such as `project_name`,
+`description`, and `review_focus` are conventions that help readers interpret
+the output. Use distinct names such as `global_instructions` and
+`repository_instructions` when you want to retain both kinds of guidance.
+BundleRepo preserves each parsed key and string value, including whitespace and
+case, without assigning meaning to the entry.
+
+BundleRepo merges global and repository-local metadata per exact key. A local
+entry overrides a global entry when both keys match byte-for-byte. After the
+merge, an empty or whitespace-only local value suppresses that key, including
+a matching global value.
+
+> [!IMPORTANT]
+>
+> BundleRepo validates every global and local metadata entry before merging
+> them, including entries that a subsequent source overrides or suppresses. Each
+> value must be a TOML string. BundleRepo reports unsupported value types as
+> fatal type errors before scanning the value. BundleRepo stops with a
+> fatal error for empty or whitespace-only keys, XML 1.0 round-trip failures,
+> and detected secrets. Errors use the fixed source labels `global BundleRepo
+> configuration` or `repository-local .bundlerepo.toml configuration` and
+> include the source line. For multiline metadata strings, secret diagnostics
+> report the value token's starting line, which can precede the physical line
+> containing the detected text.
+>
+> BundleRepo requires secret scanning for configured metadata keys and accepted
+> string values. `--no-secret-scan`, `secret_scan = false`, allow markers, and
+> repository allowlists cannot disable or bypass this metadata scan.
 
 Gzip resolution follows these rules: `--no-gzip` disables it; an explicit
 `-z=N` or `--gzip=N` enables level `N`; a bare `-z` or `--gzip` enables the
@@ -538,9 +579,11 @@ configured level; otherwise `gzip = true` enables the configured level. If none
 applies, output remains uncompressed. The local-over-global configuration
 precedence described above still applies to both gzip settings.
 
-Secret scanning resolution follows the same configuration precedence.
-`--no-secret-scan` disables it, `--secret-scan` enables it, and either flag
-overrides local and global `secret_scan` values.
+Repository content and path secret scanning follows the same configuration
+precedence. `--no-secret-scan` disables those repository scans,
+`--secret-scan` enables them, and either flag overrides local and global
+`secret_scan` values. These settings do not affect the mandatory metadata
+scan.
 
 The `extend_exclude` and `exclude` options can be specified either by using
 multiple `-e` or `-x` flags on the command line:
@@ -662,6 +705,13 @@ understood by an LLM. Below is an example layout with explanations for each tag:
     <!-- It also contains some instructions to help the LLM properly decode and understand the data -->
   </file_summary>
 
+  <repository_metadata>
+    <summary>User-provided repository metadata from BundleRepo configuration.</summary>
+    <entry key="description">Pack Git repositories for LLM consumption.</entry>
+    <entry key="project_name">BundleRepo</entry>
+    <entry key="review_focus">Check error handling and security boundaries.</entry>
+  </repository_metadata>
+
   <repository_structure>
     <summary>
       <!-- A brief summary of the folder structure in the repository -->
@@ -700,6 +750,19 @@ understood by an LLM. Below is an example layout with explanations for each tag:
   </repository_files>
 </repository>
 ```
+
+The optional `<repository_metadata>` section follows `<file_summary>`.
+BundleRepo omits the complete section when the merged metadata map is empty.
+BundleRepo writes each arbitrary key in a generic `<entry>` element's `key`
+attribute and orders the entries lexically by exact key. It writes the fixed
+`<summary>` text shown above.
+
+BundleRepo validates metadata keys and values for lossless XML 1.0
+representation and fails generation if either cannot round-trip. BundleRepo
+escapes ordinary syntax characters in key attributes and value character data.
+BundleRepo writes each CR in a metadata value as `&#xD;` and leaves the
+following LF in a CRLF pair intact. An XML parser reconstructs the original
+lone CR and CRLF characters from that representation.
 
 BundleRepo emits `<repository_skipped>` when secret scanning omits a file or
 subtree whose path contains a detected value. Its `<skipped>` entries contain

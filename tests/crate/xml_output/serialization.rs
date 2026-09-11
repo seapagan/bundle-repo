@@ -1,6 +1,158 @@
 use super::*;
 
 #[test]
+fn test_metadata_conventional_and_arbitrary_keys_use_generic_entries() {
+    let entries = [
+        ("project_name", "same value"),
+        ("repository_instructions", "same value"),
+        ("review_focus", "same value"),
+        ("unrelated arbitrary key", "same value"),
+    ];
+    let xml = serialize_metadata_fixture(&metadata_params(&entries), &[]);
+    let parsed = parse_metadata(&xml).expect("metadata section");
+    assert_eq!(
+        parsed.summary,
+        "User-provided repository metadata from BundleRepo configuration."
+    );
+    assert_eq!(
+        parsed.entries,
+        entries.map(|(key, value)| (key.to_string(), value.to_string()))
+    );
+}
+
+#[test]
+fn test_metadata_declaration_order_does_not_change_document_bytes() {
+    let ordered = ["A", "Z", "a", "project_name", "z", "é", "Ω", "😀"];
+    let entries = ordered.map(|key| (key, "ordinary value"));
+    let forward = metadata_params(&entries);
+    let reverse_entries = entries.into_iter().rev().collect::<Vec<_>>();
+    let reverse = metadata_params(&reverse_entries);
+    let forward_xml = serialize_metadata_fixture(&forward, &[]);
+    let reverse_xml = serialize_metadata_fixture(&reverse, &[]);
+    assert_eq!(forward_xml, reverse_xml);
+    let parsed = parse_metadata(&forward_xml).expect("metadata section");
+    assert_eq!(
+        parsed
+            .entries
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect::<Vec<_>>(),
+        ordered
+    );
+}
+
+#[test]
+fn test_metadata_xml_sensitive_text_round_trips_without_mutation() {
+    let key = " key \"' <>&\n\r😀𐐷 ";
+    let value = " value \"' <>&\n\r\r\n\t😀𐐷 ";
+    let flags = metadata_params(&[(key, value)]);
+    let xml = serialize_metadata_fixture(&flags, &[]);
+    let parsed = parse_metadata(&xml).expect("metadata section");
+    assert_eq!(parsed.entries, [(key.to_string(), value.to_string())]);
+}
+
+#[test]
+fn test_metadata_line_endings_round_trip_without_normalization() {
+    let entries = [
+        ("cr", "before\rafter"),
+        ("crlf", "before\r\nafter"),
+        ("lf", "before\nafter"),
+        ("mixed", "one\rtwo\r\nthree\nfour"),
+        ("repeated", "before\r\rafter"),
+        ("start_end", "\rvalue\r"),
+    ];
+    let xml = serialize_metadata_fixture(&metadata_params(&entries), &[]);
+    let parsed = parse_metadata(&xml).expect("metadata section");
+    assert_eq!(
+        parsed.entries,
+        entries.map(|(key, value)| (key.to_string(), value.to_string()))
+    );
+    assert!(
+        String::from_utf8_lossy(&xml)
+            .contains("<entry key=\"cr\">before&#xD;after</entry>")
+    );
+}
+
+#[test]
+fn test_metadata_cr_preserves_literal_references_and_sensitive_neighbors() {
+    let entries = [
+        ("literal", "&#xD;\r&amp;\r&#13;"),
+        ("neighbors", "\r\t\"'<>&😀𐐷\r\n]]>\n\r"),
+        ("ordinary", "\t\"'<>&😀𐐷\n"),
+    ];
+    let xml = serialize_metadata_fixture(&metadata_params(&entries), &[]);
+    let parsed = parse_metadata(&xml).expect("metadata section");
+    assert_eq!(
+        parsed.entries,
+        entries.map(|(key, value)| (key.to_string(), value.to_string()))
+    );
+}
+
+#[test]
+fn test_metadata_tab_rejected_for_keys_but_preserved_in_values() {
+    use crate::configuration::{
+        ConfigSourceIdentity, validate_and_merge_metadata,
+    };
+    let scanner = SecretScanner::from_bundled().unwrap();
+    let source = metadata_source(
+        ConfigSourceIdentity::Global,
+        &[("tab\tkey", "value")],
+    );
+    assert!(validate_and_merge_metadata(&[source], &scanner).is_err());
+    assert_eq!(first_invalid_xml10_char("tab\tkey"), None);
+    assert_eq!(
+        first_invalid_xml_attribute_char("tab\tkey")
+            .unwrap()
+            .character,
+        '\t'
+    );
+    let flags = metadata_params(&[("key", "value\twith tab")]);
+    let xml = serialize_metadata_fixture(&flags, &[]);
+    assert_eq!(
+        parse_metadata(&xml).unwrap().entries,
+        [("key".to_string(), "value\twith tab".to_string())]
+    );
+}
+
+#[test]
+fn test_effectively_empty_metadata_has_no_section() {
+    let flags = metadata_params(&[("empty", ""), ("whitespace", " \t\n\r ")]);
+    assert!(flags.metadata.is_empty());
+    let xml = serialize_metadata_fixture(&flags, &[]);
+    assert_eq!(parse_metadata(&xml), None);
+    assert_eq!(xml, serialize_metadata_fixture(&Params::default(), &[]));
+}
+
+#[test]
+fn test_local_empty_suppression_has_no_metadata_section() {
+    use crate::configuration::{
+        ConfigSourceIdentity, validate_and_merge_metadata,
+    };
+    let sources = [
+        metadata_source(
+            ConfigSourceIdentity::Global,
+            &[("project_name", "global value")],
+        ),
+        metadata_source(
+            ConfigSourceIdentity::RepositoryLocal,
+            &[("project_name", "")],
+        ),
+    ];
+    let flags = Params {
+        metadata: validate_and_merge_metadata(
+            &sources,
+            &SecretScanner::from_bundled().unwrap(),
+        )
+        .unwrap(),
+        ..Params::default()
+    };
+    assert!(flags.metadata.is_empty());
+    let xml = serialize_metadata_fixture(&flags, &[]);
+    assert_eq!(parse_metadata(&xml), None);
+    assert_eq!(xml, serialize_metadata_fixture(&Params::default(), &[]));
+}
+
+#[test]
 fn test_xml10_character_boundaries() {
     for character in [
         '\0', '\u{0001}', '\u{0008}', '\u{000b}', '\u{000c}', '\u{000e}',

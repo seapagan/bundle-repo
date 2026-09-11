@@ -1,6 +1,7 @@
 use crate::cli;
 use config::Config;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Debug)]
@@ -208,6 +209,7 @@ pub struct Params {
     pub gzip: bool,
     pub gzip_level: u32,
     pub secret_scan: bool,
+    pub metadata: BTreeMap<String, String>,
 }
 
 pub const DEFAULT_OUTPUT_FILE: &str = "packed-repo.xml";
@@ -231,6 +233,7 @@ impl Default for Params {
             gzip: false,
             gzip_level: 6,
             secret_scan: true,
+            metadata: BTreeMap::new(),
         }
     }
 }
@@ -378,6 +381,7 @@ impl Params {
                 args.secret_scan,
                 config.secret_scan,
             ),
+            metadata: config.metadata,
         }
     }
 }

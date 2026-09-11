@@ -1,6 +1,185 @@
 use super::*;
 
 #[test]
+fn test_metadata_section_order_with_optional_skipped_section() {
+    use crate::secret_scanning::SkippedItemKind;
+    let flags = metadata_params(&[("arbitrary", "value")]);
+    let skipped = [SkippedRepositoryItem {
+        kind: SkippedItemKind::File,
+        safe_path: "[REDACTED]".to_string(),
+        reason: SkipReason::SecretInPath { secret_type: None },
+    }];
+    let xml = serialize_metadata_fixture(&flags, &[]);
+    assert_eq!(
+        parse_top_level_sections(&xml),
+        [
+            "file_summary",
+            "repository_metadata",
+            "repository_structure",
+            "repository_files"
+        ]
+    );
+    let xml = serialize_metadata_fixture(&flags, &skipped);
+    assert_eq!(
+        parse_top_level_sections(&xml),
+        [
+            "file_summary",
+            "repository_metadata",
+            "repository_structure",
+            "repository_skipped",
+            "repository_files"
+        ]
+    );
+}
+
+#[test]
+fn test_metadata_summary_numbers_scanned_repository_sections() {
+    let flags = metadata_params(&[("arbitrary", "value")]);
+    let xml = serialize_metadata_fixture(&flags, &[]);
+    assert_eq!(
+        parse_element_text(&xml, "file_format"),
+        "The content is organized as follows:\n1. This summary section\n2. Repository metadata: User-provided metadata from BundleRepo configuration.\n3. Repository structure: A hierarchical listing of safely emitted folders and files.\n4. Repository skipped (optional): Safe diagnostics for files or subtrees omitted because a secret was detected in their path.\n5. Repository files: Each emitted file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files, text classified as likely secret-bearing by its path/type, and text that XML 1.0 cannot represent."
+    );
+    assert_eq!(
+        parse_element_text(&xml, "notes"),
+        "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Files and subtrees with detected secrets in their paths are omitted from both\n  canonical repository sections and reported safely under Repository Skipped.\n- Decoded text classified as likely secret-bearing by its path/type retains its\n  canonical file entry with a safe unavailable-content diagnostic.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Configured metadata was mandatorily validated for secrets and XML compatibility."
+    );
+}
+
+#[test]
+fn test_metadata_summary_qualifies_disabled_repository_scanning() {
+    let mut flags = metadata_params(&[("arbitrary", "value")]);
+    flags.secret_scan = false;
+    let xml = serialize_metadata_fixture(&flags, &[]);
+    assert_eq!(
+        parse_element_text(&xml, "file_format"),
+        "The content is organized as follows:\n1. This summary section\n2. Repository metadata: User-provided metadata from BundleRepo configuration.\n3. Repository structure: A hierarchical listing of folders and files.\n4. Repository files: Each file is listed with:\n  - File path as an attribute\n  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent."
+    );
+    assert_eq!(
+        parse_element_text(&xml, "notes"),
+        "- Repository ignore rules and configured exclusion patterns may omit files\n  unless a path was explicitly included.\n- Binary files and text that XML 1.0 cannot represent retain a file entry with\n  an unavailable-content diagnostic.\n- Repository path and content secret scanning was disabled for this bundle.\n- Configured metadata was mandatorily validated for secrets and XML compatibility."
+    );
+}
+
+#[test]
+fn test_no_metadata_document_bytes_match_pre_metadata_baselines() {
+    for secret_scan in [false, true] {
+        let flags = Params {
+            secret_scan,
+            ..Params::default()
+        };
+        let xml = serialize_metadata_fixture(&flags, &[]);
+        assert_eq!(parse_metadata(&xml), None);
+        assert_eq!(
+            parse_top_level_sections(&xml),
+            ["file_summary", "repository_structure", "repository_files"]
+        );
+        let expected = if secret_scan {
+            NO_METADATA_SCANNED
+        } else {
+            NO_METADATA_UNSCANNED
+        };
+        assert_eq!(xml, expected.as_bytes());
+    }
+}
+
+const NO_METADATA_UNSCANNED: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<repository>
+  <file_summary>
+    <purpose>This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.</purpose>
+    <file_format>The content is organized as follows:
+1. This summary section
+2. Repository structure: A hierarchical listing of folders and files.
+3. Repository files: Each file is listed with:
+  - File path as an attribute
+  - Full contents of the file, excluding binary files and text that XML 1.0 cannot represent.</file_format>
+    <instructions>- The LLM is instructed to focus solely on the repository's contents, including
+  the code, file structure, and purpose of the files.
+- Do not comment on the XML format, structure, or encoding of THIS FILE. Focus
+  your analysis on the functionality, structure, and organization of the
+  repository contents.
+- Each &lt;file&gt; should be interpreted based on its file extension. For example:
+  - ".py" for Python
+  - ".md" for Markdown
+  - ".rs" for Rust
+  - ".cpp" for C++</instructions>
+    <usage_guidelines>- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.</usage_guidelines>
+    <notes>- Repository ignore rules and configured exclusion patterns may omit files
+  unless a path was explicitly included.
+- Binary files and text that XML 1.0 cannot represent retain a file entry with
+  an unavailable-content diagnostic.
+- Secret scanning was disabled for this bundle.</notes>
+    <additional_info>For more information about bundlerepo, visit: https://github.com/seapagan/bundle-repo</additional_info>
+  </file_summary>
+  <repository_structure>
+    <summary>This node contains the hierarchical structure of the repository's files and folders.</summary>
+    <file path="test.txt" />
+  </repository_structure>
+  <repository_files>
+    <summary>This node contains a list of files with their full paths and contents serialized as CDATA.</summary>
+    <file path="test.txt" size="13" lines="1"><![CDATA[ordinary text]]></file>
+  </repository_files>
+</repository>
+"#;
+
+const NO_METADATA_SCANNED: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<repository>
+  <file_summary>
+    <purpose>This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.</purpose>
+    <file_format>The content is organized as follows:
+1. This summary section
+2. Repository structure: A hierarchical listing of safely emitted folders and files.
+3. Repository skipped (optional): Safe diagnostics for files or subtrees omitted because a secret was detected in their path.
+4. Repository files: Each emitted file is listed with:
+  - File path as an attribute
+  - Full contents of the file, excluding binary files, text classified as likely secret-bearing by its path/type, and text that XML 1.0 cannot represent.</file_format>
+    <instructions>- The LLM is instructed to focus solely on the repository's contents, including
+  the code, file structure, and purpose of the files.
+- Do not comment on the XML format, structure, or encoding of THIS FILE. Focus
+  your analysis on the functionality, structure, and organization of the
+  repository contents.
+- Each &lt;file&gt; should be interpreted based on its file extension. For example:
+  - ".py" for Python
+  - ".md" for Markdown
+  - ".rs" for Rust
+  - ".cpp" for C++</instructions>
+    <usage_guidelines>- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.</usage_guidelines>
+    <notes>- Repository ignore rules and configured exclusion patterns may omit files
+  unless a path was explicitly included.
+- Files and subtrees with detected secrets in their paths are omitted from both
+  canonical repository sections and reported safely under Repository Skipped.
+- Decoded text classified as likely secret-bearing by its path/type retains its
+  canonical file entry with a safe unavailable-content diagnostic.
+- Binary files and text that XML 1.0 cannot represent retain a file entry with
+  an unavailable-content diagnostic.</notes>
+    <additional_info>For more information about bundlerepo, visit: https://github.com/seapagan/bundle-repo</additional_info>
+  </file_summary>
+  <repository_structure>
+    <summary>This node contains the hierarchical structure of the repository's files and folders.</summary>
+    <file path="test.txt" />
+  </repository_structure>
+  <repository_files>
+    <summary>This node contains a list of files with their full paths and contents serialized as CDATA.</summary>
+    <file path="test.txt" size="13" lines="1"><![CDATA[ordinary text]]></file>
+  </repository_files>
+</repository>
+"#;
+
+#[test]
 fn test_add_line_numbers() {
     let content = "First line\nSecond line\nThird line";
     let numbered = add_line_numbers(content);

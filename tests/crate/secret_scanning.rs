@@ -66,6 +66,256 @@ fn github_pat() -> String {
     synthetic_github_pat()
 }
 
+#[test]
+fn test_metadata_scan_detects_bundled_secret_without_allow_markers() {
+    assert!(
+        !scanner()
+            .contains_secret("ordinary metadata 日本語")
+            .unwrap()
+    );
+    let secret = github_pat();
+    for suffix in ["", " # gitleaks:allow", " # secrets-scanner:allow"] {
+        assert!(
+            scanner()
+                .contains_secret(&format!("{secret}{suffix}"))
+                .unwrap()
+        );
+    }
+    let findings = scanner()
+        .scan_findings(".bundlerepo.toml", &secret)
+        .unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule_id == "github-pat")
+    );
+}
+
+#[test]
+fn test_metadata_pair_scan_adds_context_with_fixed_identity() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-metadata'
+regex = '(?i)contextual_api_key = ([a-z0-9]{32})'
+path = '^\.bundlerepo\.toml$'
+keywords = ['contextual_api_key']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let key = "contextual_api_key";
+    let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
+
+    assert!(!scanner.contains_secret(key).unwrap());
+    assert!(!scanner.contains_secret(value).unwrap());
+    assert_eq!(
+        scanner.contains_metadata_pair_secret(key, value).unwrap(),
+        MetadataPairSecret::Value
+    );
+}
+
+#[test]
+fn test_metadata_pair_scan_classifies_key_secret_as_unsafe() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-key'
+regex = '(contextual_secret_key) = ordinary'
+keywords = ['contextual_secret_key']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let key = "contextual_secret_key";
+    let value = "ordinary";
+
+    assert!(!scanner.contains_secret(key).unwrap());
+    assert!(!scanner.contains_secret(value).unwrap());
+    assert_eq!(
+        scanner.contains_metadata_pair_secret(key, value).unwrap(),
+        MetadataPairSecret::Unsafe
+    );
+}
+
+#[test]
+fn test_metadata_pair_scan_invalid_span_is_unsafe() {
+    let rules = r#"
+[[rules]]
+id = 'contextual-value'
+regex = 'safe = (SECRETAA)'
+keywords = ['SECRETAA']
+secretGroup = 1
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let key = "safe";
+    let value = "SECRETAA";
+    let pair = format!("{key} = {value}");
+    let value_start = key.len() + 3;
+    let mut finding = scanner
+        .scan_findings(METADATA_SCANNER_PATH, &pair)
+        .unwrap()
+        .pop()
+        .unwrap();
+    finding.secret_start_offset = finding.secret_end_offset;
+    let result = ScanResult {
+        findings: vec![finding],
+        findings_truncated: false,
+    };
+
+    assert_eq!(
+        classify_metadata_pair_result(&pair, value_start, result),
+        MetadataPairSecret::Unsafe
+    );
+}
+
+#[test]
+fn test_bundled_contextual_detector_matches_metadata_pair() {
+    let key = "adafruit_api_key";
+    let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
+
+    assert!(!scanner().contains_secret(key).unwrap());
+    assert!(!scanner().contains_secret(value).unwrap());
+    assert_eq!(
+        scanner().contains_metadata_pair_secret(key, value).unwrap(),
+        MetadataPairSecret::Unsafe
+    );
+    let findings = scanner()
+        .scan_findings(METADATA_SCANNER_PATH, &format!("{key} = {value}"))
+        .unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule_id == "adafruit-api-key")
+    );
+}
+
+#[test]
+fn test_metadata_scan_owns_toml_identity_and_preserves_path_gates() {
+    let rules = r#"
+[allowlist]
+paths = ['^\.bundlerepo\.toml$']
+
+[[rules]]
+id = 'terraform-content'
+regex = '(TERRAFORMSECRET)'
+path = '\.tf$'
+keywords = ['TERRAFORMSECRET']
+
+[[rules]]
+id = 'certificate-path'
+path = '\.p12$'
+
+[[rules]]
+id = 'metadata-identity'
+regex = '(METADATASECRET)'
+path = '^\.bundlerepo\.toml$'
+keywords = ['METADATASECRET']
+"#;
+    let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    assert!(
+        !scanner
+            .scan_findings("main.tf", "TERRAFORMSECRET")
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!scanner.contains_secret("TERRAFORMSECRET").unwrap());
+    assert!(
+        !scanner
+            .scan_findings("key.p12", "ordinary")
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!scanner.contains_secret("key.p12").unwrap());
+    assert!(scanner.contains_secret("METADATASECRET").unwrap());
+}
+
+#[test]
+fn test_metadata_scan_errors_are_safe_and_fail_closed() {
+    let mut scanner = SecretScanner::from_rules_for_workers(
+        "[[rules]]\nid = 'test'\nregex = '(SECRETAA)'",
+        1,
+    )
+    .unwrap();
+    scanner.scanners.rule_order.clear();
+    let error = scanner.contains_secret("SECRETAA").unwrap_err();
+    assert!(matches!(error, SecretScanError::PartitionIntegrity));
+    assert!(!format!("{error} {error:?}").contains("SECRETAA"));
+}
+
+#[test]
+fn test_metadata_scan_rejects_truncation_and_every_returned_finding() {
+    let rules = "[[rules]]\nid = 'test'\nregex = '(SECRETAA)'";
+    let mut config = scanner_config();
+    config.max_findings_per_file = Some(1);
+    let scanner = SecretScanner {
+        scanners: build_partitioned_scanners(rules, 1, &config).unwrap(),
+    };
+    let error = scanner.contains_secret("SECRETAA SECRETAA").unwrap_err();
+    assert!(matches!(error, SecretScanError::TruncatedFindings));
+    assert!(!format!("{error} {error:?}").contains("SECRETAA"));
+    let path_only = SecretScanner::from_rules_for_workers(
+        "[[rules]]\nid = 'toml-path'\npath = '^\\.bundlerepo\\.toml$'",
+        1,
+    )
+    .unwrap();
+    assert!(path_only.contains_secret("ordinary").unwrap());
+}
+
+#[test]
+fn test_metadata_scan_panic_uses_existing_silent_engine_boundary() {
+    let secret = github_pat();
+    let (result, deliveries) = execution::scan_sequential_with_test_panic(
+        scanner().partitioned(),
+        METADATA_SCANNER_PATH,
+        &secret,
+    );
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("expected scanner panic error"),
+    };
+    assert_eq!(deliveries, 0);
+    assert!(matches!(error, SecretScanError::ScanPanic));
+    assert!(!format!("{error} {error:?}").contains(&secret));
+}
+
+#[test]
+fn test_metadata_scan_failure_has_application_exit_five_without_input() {
+    let mut scanner = SecretScanner::from_rules_for_workers(
+        "[[rules]]\nid = 'test'\nregex = '(SECRETAA)'",
+        1,
+    )
+    .unwrap();
+    scanner.scanners.rule_order.clear();
+    let sources = [crate::configuration::MetadataSource {
+        identity: crate::configuration::ConfigSourceIdentity::Global,
+        entries: vec![crate::configuration::MetadataCandidate {
+            key: "SECRETAA".to_string(),
+            key_line: 2,
+            value_line: 2,
+            value: crate::configuration::CandidateValue::String(
+                "safe".to_string(),
+            ),
+        }],
+    }];
+    let mut slot = Some(scanner);
+    let mut reporter =
+        crate::progress::ProgressReporter::new(Vec::new(), Vec::new(), false);
+    let mut timings = crate::timings::ProcessingTimings::default();
+    let error = crate::prepare_metadata(
+        &sources,
+        &mut crate::Params::default(),
+        &mut slot,
+        &mut reporter,
+        &mut timings,
+    )
+    .unwrap_err();
+    assert_eq!(error.exit_code(), 5);
+    assert!(!format!("{error} {error:?}").contains("SECRETAA"));
+    let (normal, diagnostic) = reporter.into_parts();
+    assert!(normal.is_empty());
+    assert!(diagnostic.is_empty());
+    let mut records = Vec::new();
+    timings.write_records(&mut records).unwrap();
+    assert!(!String::from_utf8(records).unwrap().contains("SECRETAA"));
+}
+
 fn gitlab_pat() -> String {
     ["glpat-", "Ab1Cd2Ef3Gh4Ij5Kl6Mn"].concat()
 }
