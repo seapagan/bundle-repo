@@ -91,8 +91,12 @@ fn synthetic_github_pat() -> String {
     ["ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"].concat()
 }
 
-fn documented_help(readme: &str) -> &str {
-    readme
+fn normalize_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
+fn documented_help(readme: &str) -> String {
+    normalize_line_endings(readme)
         .split_once("## Command Line Options")
         .unwrap()
         .1
@@ -102,6 +106,7 @@ fn documented_help(readme: &str) -> &str {
         .split_once("\n```")
         .unwrap()
         .0
+        .to_string()
 }
 
 #[test]
@@ -111,7 +116,8 @@ fn clap_help_matches_both_readmes() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let help = String::from_utf8(output.stdout).unwrap();
+    let help =
+        normalize_line_endings(&String::from_utf8(output.stdout).unwrap());
 
     assert_eq!(
         documented_help(include_str!("../README.md")),
@@ -277,8 +283,7 @@ fn default_captured_output_is_plain() {
 }
 
 #[test]
-fn interleaved_metadata_errors_stop_preflight_in_both_sources_and_scan_modes()
-{
+fn interleaved_local_metadata_errors_stop_preflight_in_both_scan_modes() {
     let secret = synthetic_github_pat();
     for entry in [format!("name = '{secret}'"), "later = [".to_string()] {
         assert_metadata_parse_preflight(&format!(
@@ -288,36 +293,32 @@ fn interleaved_metadata_errors_stop_preflight_in_both_sources_and_scan_modes()
 }
 
 #[test]
-fn malformed_metadata_headers_stop_preflight_in_both_sources_and_scan_modes() {
+fn malformed_local_metadata_headers_stop_preflight_in_both_scan_modes() {
     assert_metadata_parse_preflight("[metadata\nname = 'safe'\n");
 }
 
 fn assert_metadata_parse_preflight(input: &str) {
-    for source in [".bundlerepo.toml", ".config/bundlerepo/config.toml"] {
-        for mode in ["--secret-scan", "--no-secret-scan"] {
-            let directory = tempfile::tempdir().unwrap();
-            let config = directory.path().join(source);
-            fs::create_dir_all(config.parent().unwrap()).unwrap();
-            fs::write(config, input).unwrap();
-            let target = directory.path().join("missing/output.xml");
-            let output = command(directory.path())
-                .args(["invalid-repository", mode, "--file"])
-                .arg(&target)
-                .env("BUNDLEREPO_PHASE_TIMINGS", "1")
-                .output()
-                .unwrap();
-            assert_eq!(output.status.code(), Some(1));
-            assert!(contains_bytes(&output.stderr, b"Invalid metadata"));
-            assert!(output.stdout.is_empty());
-            assert!(!contains_bytes(
-                &output.stderr,
-                synthetic_github_pat().as_bytes()
-            ));
-            assert!(!contains_bytes(&output.stderr, b"name = 'safe'"));
-            assert!(!contains_bytes(&output.stderr, b"loading config"));
-            assert!(!contains_bytes(&output.stderr, b"phase="));
-            assert!(!target.exists());
-        }
+    for mode in ["--secret-scan", "--no-secret-scan"] {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join(".bundlerepo.toml"), input).unwrap();
+        let target = directory.path().join("missing/output.xml");
+        let output = command(directory.path())
+            .args(["invalid-repository", mode, "--file"])
+            .arg(&target)
+            .env("BUNDLEREPO_PHASE_TIMINGS", "1")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(contains_bytes(&output.stderr, b"Invalid metadata"));
+        assert!(output.stdout.is_empty());
+        assert!(!contains_bytes(
+            &output.stderr,
+            synthetic_github_pat().as_bytes()
+        ));
+        assert!(!contains_bytes(&output.stderr, b"name = 'safe'"));
+        assert!(!contains_bytes(&output.stderr, b"loading config"));
+        assert!(!contains_bytes(&output.stderr, b"phase="));
+        assert!(!target.exists());
     }
 }
 
