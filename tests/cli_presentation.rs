@@ -97,9 +97,14 @@ fn normalize_line_endings(text: &str) -> String {
 
 fn normalize_clap_help(text: &str) -> String {
     let mut normalized = normalize_line_endings(text);
-    if normalized.starts_with("Usage: bundlerepo.exe ") {
+    let usage = "Usage: bundlerepo.exe ";
+    if let Some(start) = normalized
+        .match_indices(usage)
+        .map(|(start, _)| start)
+        .find(|&start| start == 0 || normalized.as_bytes()[start - 1] == b'\n')
+    {
         normalized.replace_range(
-            .."Usage: bundlerepo.exe".len(),
+            start..start + "Usage: bundlerepo.exe".len(),
             "Usage: bundlerepo",
         );
     }
@@ -122,12 +127,23 @@ fn documented_help(readme: &str) -> String {
 
 #[test]
 fn clap_help_normalizes_only_windows_executable_in_usage() {
-    let help =
-        "Usage: bundlerepo.exe [OPTIONS] [REPO]\r\n\r\nRun tool.exe\r\n";
+    let help = concat!(
+        "Pack a local or remote Git Repository to XML for LLM Consumption.\r\n",
+        "\r\n",
+        "Usage: bundlerepo.exe [OPTIONS] [REPO]\r\n",
+        "\r\n",
+        "Run tool.exe\r\n",
+    );
 
     assert_eq!(
         normalize_clap_help(help),
-        "Usage: bundlerepo [OPTIONS] [REPO]\n\nRun tool.exe\n"
+        concat!(
+            "Pack a local or remote Git Repository to XML for LLM Consumption.\n",
+            "\n",
+            "Usage: bundlerepo [OPTIONS] [REPO]\n",
+            "\n",
+            "Run tool.exe\n",
+        )
     );
 }
 
