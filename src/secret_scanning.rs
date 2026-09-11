@@ -162,17 +162,6 @@ impl SecretScanner {
         Ok(classify_metadata_pair_result(&pair, key.len() + 3, result))
     }
 
-    #[cfg(test)]
-    fn classify_metadata_pair_result_for_tests(
-        &self,
-        key: &str,
-        value: &str,
-        result: ScanResult,
-    ) -> MetadataPairSecret {
-        let pair = format!("{key} = {value}");
-        classify_metadata_pair_result(&pair, key.len() + 3, result)
-    }
-
     pub(crate) fn from_bundled() -> Result<Self, SecretScanError> {
         let workers =
             resolved_worker_count(std::thread::available_parallelism().ok());

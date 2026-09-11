@@ -144,8 +144,12 @@ keywords = ['SECRETAA']
 secretGroup = 1
 "#;
     let scanner = SecretScanner::from_rules_for_workers(rules, 1).unwrap();
+    let key = "safe";
+    let value = "SECRETAA";
+    let pair = format!("{key} = {value}");
+    let value_start = key.len() + 3;
     let mut finding = scanner
-        .scan_findings(METADATA_SCANNER_PATH, "safe = SECRETAA")
+        .scan_findings(METADATA_SCANNER_PATH, &pair)
         .unwrap()
         .pop()
         .unwrap();
@@ -156,9 +160,7 @@ secretGroup = 1
     };
 
     assert_eq!(
-        scanner.classify_metadata_pair_result_for_tests(
-            "safe", "SECRETAA", result
-        ),
+        classify_metadata_pair_result(&pair, value_start, result),
         MetadataPairSecret::Unsafe
     );
 }

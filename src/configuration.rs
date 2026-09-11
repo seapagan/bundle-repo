@@ -39,11 +39,8 @@ pub(crate) fn load_config_from_paths(
     let sources = config_sources(global, local);
     let metadata_sources = sources
         .iter()
-        .map(parse_metadata_source)
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect();
+        .filter_map(|source| parse_metadata_source(source).transpose())
+        .collect::<Result<Vec<_>, _>>()?;
     let mut builder = Config::builder();
 
     for source in &sources {

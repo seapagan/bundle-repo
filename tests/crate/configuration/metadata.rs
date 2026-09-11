@@ -115,7 +115,7 @@ fn test_metadata_secret_diagnostics_are_anonymous_or_use_a_scanned_key() {
 fn test_contextual_bundled_secret_with_full_match_is_anonymous() {
     let value = "a9b8c7d6e5f4g3h2i1j0k9l8m7n6o5p4";
     let source = format!("[metadata]\nadafruit_api_key = '{value}'\n");
-    let loaded = load_local(&source);
+    let loaded = super::load_local(&source);
     let error = metadata_error(validate_and_merge_metadata(
         &loaded.metadata_sources,
         metadata_scanner(),
@@ -142,7 +142,7 @@ secretGroup = 1
             rules, 1,
         )
         .unwrap();
-    let loaded = load_local("[metadata]\nsafe_name = 'SECRETAA'\n");
+    let loaded = super::load_local("[metadata]\nsafe_name = 'SECRETAA'\n");
     let error = metadata_error(validate_and_merge_metadata(
         &loaded.metadata_sources,
         &scanner,
@@ -169,7 +169,7 @@ secretGroup = 1
         )
         .unwrap();
     let loaded =
-        load_local("[metadata]\ncontextual_secret_key = 'ordinary'\n");
+        super::load_local("[metadata]\ncontextual_secret_key = 'ordinary'\n");
     let error = metadata_error(validate_and_merge_metadata(
         &loaded.metadata_sources,
         &scanner,
@@ -216,13 +216,6 @@ fn test_metadata_validation_order_protects_keys_and_reports_first_error() {
     }
 }
 
-fn load_local(source: &str) -> LoadedConfig {
-    let temp_dir = tempdir().unwrap();
-    let local = temp_dir.path().join(".bundlerepo.toml");
-    fs::write(&local, source).unwrap();
-    load_config_from_paths(None, &local).unwrap()
-}
-
 fn metadata_error<T>(result: Result<T, MetadataError>) -> MetadataError {
     match result {
         Ok(_) => panic!("expected metadata error"),
@@ -233,7 +226,7 @@ fn metadata_error<T>(result: Result<T, MetadataError>) -> MetadataError {
 #[test]
 fn test_metadata_unvalidated_type_error_never_owns_a_secret_key() {
     let secret = crate::secret_scanning::synthetic_github_pat();
-    let loaded = load_local(&format!("[metadata]\n'{secret}' = 42\n"));
+    let loaded = super::load_local(&format!("[metadata]\n'{secret}' = 42\n"));
     let source = &loaded.metadata_sources[0];
     let error = source.entries[0].string_value(source.identity).unwrap_err();
     assert!(!format!("{error} {error:?}").contains(&secret));
@@ -290,7 +283,7 @@ fn test_metadata_rejects_each_non_string_type_safely() {
     ];
 
     for (category, entry, key) in cases {
-        let loaded = load_local(&format!("[metadata]\n{entry}\n"));
+        let loaded = super::load_local(&format!("[metadata]\n{entry}\n"));
         let error = metadata_error(validate_and_merge_metadata(
             &loaded.metadata_sources,
             metadata_scanner(),
@@ -313,7 +306,8 @@ fn test_metadata_rejects_each_non_string_type_safely() {
 #[test]
 fn test_metadata_array_with_secret_like_content_remains_a_safe_type_error() {
     let secret = crate::secret_scanning::synthetic_github_pat();
-    let loaded = load_local(&format!("[metadata]\nitems = [\"{secret}\"]\n"));
+    let loaded =
+        super::load_local(&format!("[metadata]\nitems = [\"{secret}\"]\n"));
     let error = metadata_error(validate_and_merge_metadata(
         &loaded.metadata_sources,
         metadata_scanner(),
