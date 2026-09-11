@@ -302,6 +302,17 @@ fn classify_output_error(error: std::io::Error) -> ApplicationError {
     }
 }
 
+fn load_config_or_exit() -> configuration::LoadedConfig {
+    match load_config() {
+        Ok(config) => config,
+        Err(error) => {
+            let mut reporter = progress::ProgressReporter::terminal(false);
+            reporter.error(&format!("Error: {error}")).unwrap();
+            exit(1);
+        }
+    }
+}
+
 fn main() {
     let args = cli::Flags::parse();
     let timing_enabled = timings::ProcessingTimings::enabled_from_env();
@@ -313,14 +324,7 @@ fn main() {
     }
 
     // Load config values
-    let loaded = match load_config() {
-        Ok(config) => config,
-        Err(error) => {
-            let mut reporter = progress::ProgressReporter::terminal(false);
-            reporter.error(&format!("Error: {error}")).unwrap();
-            exit(1);
-        }
-    };
+    let loaded = load_config_or_exit();
     let mut params = Params::from_args_and_config(&args, loaded.params);
     let mut reporter = progress::ProgressReporter::terminal(params.stdout);
 
