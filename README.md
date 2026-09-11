@@ -28,7 +28,7 @@ however future versions may include additional formats.
 > format for feeding context and instructions into an LLM).
 
 ```pre
-BundleRepo Version 0.8.0, © 2024-2026 Grant Ramsay <seapagan@gmail.com>
+BundleRepo Version 0.9.0, © 2024-2026 Grant Ramsay <seapagan@gmail.com>
 
 Pack a local or remote Git Repository to XML for LLM Consumption.
 
