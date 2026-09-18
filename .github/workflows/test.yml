@@ -22,7 +22,7 @@ env:
 jobs:
   msrv:
     name: Check MSRV
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout repository
@@ -49,7 +49,7 @@ jobs:
 
   unix:
     name: Native Linux
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout repository
@@ -375,7 +375,7 @@ jobs:
 
   coverage:
     name: Combined coverage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: [unix, windows]
 
     steps:

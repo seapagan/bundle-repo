@@ -20,7 +20,7 @@ env:
 jobs:
   package:
     name: Publishability
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     outputs:
       report_ready: ${{ steps.package_report_ready.outputs.ready }}
@@ -92,7 +92,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       needs.package.outputs.report_ready == 'true'
     needs: package
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     permissions:
       actions: read # Download the pre-rendered package comment artifact.
