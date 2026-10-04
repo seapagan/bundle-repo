@@ -370,9 +370,9 @@ checksum = "d3fd119d74b830634cea2a0f58bbd0d54540518a14397557951e79340abc28c0"
 
 [[package]]
 name = "colored_text"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "745f8a64d62b40a725042e502af674abe0fb85726224780f1b2ff70552a4914c"
+checksum = "a417299b51c29a65cc9261c6d1223bb870bced2b195448ef4ae0137c8ee42418"
 
 [[package]]
 name = "compact_str"
