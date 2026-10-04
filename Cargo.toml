@@ -27,7 +27,7 @@ arboard = { version = "3.4.1", default-features = false, features = [
 casefold = "=0.1.0"
 chardetng = "1.0.0"
 clap = { version = "4.1", features = ["derive"] }
-colored_text = "0.5.1"
+colored_text = "0.6.0"
 config = "0.15.0"
 dirs-next = "2.0.0"
 encoding_rs = "0.8.33"
